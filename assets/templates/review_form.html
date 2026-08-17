@@ -67,6 +67,15 @@
         </div>
 
         <div class="mb-4">
+            <label for="engine" class="form-label fw-bold text-secondary">レビューの深さ</label>
+            <select id="engine" name="engine" class="form-select">
+                {{range .Engines}}
+                <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}（{{.Description}}）</option>
+                {{end}}
+            </select>
+        </div>
+
+        <div class="mb-4">
             <label for="gemini_model" class="form-label fw-bold text-secondary">Geminiモデル</label>
             <select id="gemini_model" name="gemini_model" class="form-select" required>
                 {{range .GeminiModels}}

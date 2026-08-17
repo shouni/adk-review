@@ -204,6 +204,22 @@ func IsValidMode(mode string) bool {
 	return ok
 }
 
+// ResolveEngine は、モードの既定と依頼ごとの上書き指定から、実行するエンジンを決めます。
+//
+// 受付時（フォーム）と実行時（ワーカー）の両方から呼びます。判定を 2 か所に書くと、
+// 画面に出した内容と実際に走るエンジンが食い違う余地が生まれるためです。
+func ResolveEngine(mode, override string) (Engine, error) {
+	if override != "" {
+		switch Engine(override) {
+		case EngineSingle, EngineAgent:
+			return Engine(override), nil
+		default:
+			return "", fmt.Errorf("未知のレビューエンジンです: %q（single か agent）", override)
+		}
+	}
+	return EngineFor(mode)
+}
+
 // EngineFor は、モードを実行するレビューエンジンを返します。
 func EngineFor(mode string) (Engine, error) {
 	set, err := loadModes()

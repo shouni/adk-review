@@ -148,3 +148,39 @@ func TestDisplayNameFallsBackToKey(t *testing.T) {
 		t.Errorf("DisplayName() = %q, want %q", got, "x")
 	}
 }
+
+func TestResolveEngine(t *testing.T) {
+	tests := []struct {
+		name     string
+		mode     string
+		override string
+		want     Engine
+		wantErr  bool
+	}{
+		{name: "既定はモードの宣言に従う", mode: "code", want: EngineAgent},
+		{name: "単発へ上書き", mode: "code", override: "single", want: EngineSingle},
+		{name: "エージェントへ上書き", mode: "code", override: "agent", want: EngineAgent},
+		{name: "未知のエンジンは拒否", mode: "code", override: "turbo", wantErr: true},
+		{name: "未知のモードは拒否", mode: "no-such-mode", wantErr: true},
+		// 上書きがあるときはモードを見ません。存在しないモードでも指定どおりに解決します。
+		{name: "上書きはモードより優先", mode: "no-such-mode", override: "single", want: EngineSingle},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ResolveEngine(tt.mode, tt.override)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("エラーを期待しましたが nil でした")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("予期しないエラー: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("ResolveEngine() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

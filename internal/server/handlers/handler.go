@@ -20,8 +20,10 @@ type ReviewFormPageData struct {
 	FeatureBranch  string
 	ReviewMode     string
 	GeminiModel    string
+	Engine         string
 	ReviewModes    []ReviewModeOption
 	GeminiModels   []GeminiModelOption
+	Engines        []EngineOption
 	CSRFToken      string
 	CSRFTokenField string
 	RepoURLPattern string
@@ -39,6 +41,14 @@ type ReviewModeOption struct {
 type GeminiModelOption struct {
 	Value    string
 	Selected bool
+}
+
+// EngineOption はフォームに表示するレビューエンジンの選択肢です。
+type EngineOption struct {
+	Value       string
+	Label       string
+	Description string
+	Selected    bool
 }
 
 type reviewTaskEnqueuer interface {

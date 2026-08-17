@@ -141,7 +141,16 @@ type errNotRecorded struct{}
 func (errNotRecorded) Error() string { return "not recorded" }
 
 // newTestPipeline は、観察用フックを差し込んだパイプラインを組み立てます。
-func newTestPipeline(t *testing.T, source stubSource, publisher stubPublisher) *pipeline.Pipeline {
+// singleCore は、EngineRouter を挟まず 1 本のパイプラインへ流す coreRunner です。
+// ReviewPipeline（記録・締切・再配信の面倒を見る層）の検証にエンジンの選択を
+// 巻き込まないために使います。ルーティング自体は engine_router_test.go が見ます。
+type singleCore struct{ core *pipeline.Pipeline }
+
+func (s singleCore) Run(ctx context.Context, req domain.ReviewRequest) (review.Result, *review.Report, error) {
+	return s.core.Run(ctx, toReviewRequest(req))
+}
+
+func newTestPipeline(t *testing.T, source stubSource, publisher stubPublisher) coreRunner {
 	t.Helper()
 	return newTestPipelineWith(t, source, publisher, &stubNotifier{})
 }
@@ -151,7 +160,7 @@ func newTestPipelineWith(
 	source stubSource,
 	publisher stubPublisher,
 	notifier review.Notifier,
-) *pipeline.Pipeline {
+) coreRunner {
 	t.Helper()
 
 	p, err := pipeline.New(pipeline.Deps{
@@ -164,7 +173,7 @@ func newTestPipelineWith(
 	if err != nil {
 		t.Fatalf("パイプラインの構築に失敗: %v", err)
 	}
-	return p
+	return singleCore{core: p}
 }
 
 func testDomainRequest() domain.ReviewRequest {
