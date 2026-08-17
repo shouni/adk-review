@@ -1,0 +1,46 @@
+{{define "content"}}
+<section class="py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6 text-center">
+            <div class="card shadow-sm border-0 p-4">
+                <div class="card-body">
+                    <div class="mb-4">
+                        <i class="bi bi-shield-exclamation text-warning" style="font-size: 4rem;"></i>
+                    </div>
+
+                    <h1 class="h3 mb-3 fw-bold">送信元が許可されていません</h1>
+
+                    <div class="alert alert-light border-0 bg-light mb-4">
+                        <p class="mb-2 text-secondary">
+                            セキュリティ保護のため、このリクエストはブロックされました。
+                        </p>
+                        <ul class="text-start d-inline-block small text-muted">
+                            <li>別サイトや別オリジンから送信された</li>
+                            <li>ブラウザやプロキシが送信元情報を正しく送れていない</li>
+                            <li>古いページや不正な導線から送信された</li>
+                        </ul>
+                    </div>
+
+                    <p class="mb-4 text-secondary">
+                        このサイトを<strong>開き直して</strong>から、再度お試しください。
+                    </p>
+
+                    <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+                        <a href="javascript:history.back()" class="btn btn-primary px-4 fw-bold">
+                            <i class="bi bi-arrow-clockwise me-1"></i>前のページに戻る
+                        </a>
+                        <a href="/" class="btn btn-outline-secondary px-4">
+                            <i class="bi bi-house-door me-1"></i>Homeに戻る
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 text-muted small">
+                <i class="bi bi-info-circle me-1"></i>
+                問題が続く場合は、ブラウザ拡張機能や社内プロキシがヘッダーを変更していないか確認してください。
+            </div>
+        </div>
+    </div>
+</section>
+{{end}}

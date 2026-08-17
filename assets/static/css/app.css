@@ -1,0 +1,18 @@
+:root {
+    --zunda-green: #76bc21;
+    --zunda-dark: #64a01c;
+}
+body { background-color: #fcfdfb; }
+.navbar { background-color: var(--zunda-green); }
+.nav-link { color: white !important; transition: all 0.2s; }
+.nav-link:hover { opacity: 0.8; transform: translateY(-1px); }
+
+/* ボタン等のブランドカラー統一 */
+.btn-primary { background-color: var(--zunda-green); border-color: var(--zunda-green); }
+.btn-primary:hover { background-color: var(--zunda-dark); border-color: var(--zunda-dark); }
+
+/* アクティブなリンクの強調 */
+.nav-link.active { font-weight: bold; border-bottom: 2px solid white; }
+
+/* フッターの装飾 */
+footer hr { border-top: 1px solid #dee2e6; width: 50%; margin: 2rem auto; }

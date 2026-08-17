@@ -1,0 +1,166 @@
+{{define "content"}}
+<section class="py-4">
+    <div class="d-flex align-items-center mb-3">
+        <i class="bi bi-robot h3 me-2 text-primary"></i>
+        <h1 class="h3 mb-0">AIコードレビュー依頼フォーム</h1>
+    </div>
+
+    {{if .Error}}
+    <div class="alert alert-danger shadow-sm d-flex align-items-center" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <div><strong>エラーが発生しました:</strong> {{.Error}}</div>
+    </div>
+    {{end}}
+
+    {{if .Message}}
+    <div class="alert alert-success shadow-sm" role="alert">
+        <h4 class="alert-heading text-success fw-bold"><i class="bi bi-check-circle-fill me-2"></i>成功</h4>
+        <p class="mb-0">{{.Message}}</p>
+        {{if .ResultURL}}
+        <hr>
+        <p class="mb-2"><strong>結果URL:</strong></p>
+        <a href="{{.ResultURL}}" class="btn btn-outline-success btn-sm" target="_blank" rel="noopener noreferrer">
+            <i class="bi bi-file-earmark-text me-1"></i>レビュー結果をこちらから確認
+        </a>
+        <div class="mt-2 text-muted small"><i class="bi bi-shield-lock me-1"></i>※セキュリティのため、URLは一定時間後に無効になります。</div>
+        {{end}}
+    </div>
+    {{end}}
+
+    <form action="/submit_review" method="POST" id="reviewForm" class="card p-4 shadow-sm border-0">
+        {{if .CSRFToken}}
+        <input type="hidden" name="{{.CSRFTokenField}}" value="{{.CSRFToken}}">
+        {{end}}
+
+        <div class="mb-3">
+            <label for="repo_url" class="form-label fw-bold text-secondary">GitHub SSH リポジトリURL</label>
+            <input type="text" id="repo_url" name="repo_url" class="form-control"
+                   placeholder="例: git@github.com:user/repo.git"
+                   value="{{.RepoURL}}"
+                   pattern="{{.RepoURLPattern}}"
+                   title="git@github.com:owner/repo.git の形式で入力してください。"
+                   required>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <label for="base_branch" class="form-label fw-bold text-secondary">ベースブランチ (比較元)</label>
+                <input type="text" id="base_branch" name="base_branch" class="form-control"
+                       value="{{.BaseBranch}}" pattern="{{.BranchPattern}}"
+                       title="有効なブランチ名を入力してください。" required>
+            </div>
+            <div class="col-md-6">
+                <label for="feature_branch" class="form-label fw-bold text-secondary">フィーチャーブランチ (比較対象)</label>
+                <input type="text" id="feature_branch" name="feature_branch" class="form-control"
+                       value="{{.FeatureBranch}}" pattern="{{.BranchPattern}}"
+                       title="有効なブランチ名を入力してください。" required>
+            </div>
+        </div>
+
+        <div class="mb-4">
+            <label for="review_mode" class="form-label fw-bold text-secondary">レビューモード</label>
+            <select id="review_mode" name="review_mode" class="form-select" required>
+                {{range .ReviewModes}}
+                <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Value}} ({{.Description}})</option>
+                {{end}}
+            </select>
+        </div>
+
+        <div class="mb-4">
+            <label for="gemini_model" class="form-label fw-bold text-secondary">Geminiモデル</label>
+            <select id="gemini_model" name="gemini_model" class="form-select" required>
+                {{range .GeminiModels}}
+                <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Value}}</option>
+                {{end}}
+            </select>
+        </div>
+
+        <button type="submit" id="submitBtn" class="btn btn-primary w-100 py-2 fw-bold shadow-sm">
+            <i id="btnIcon" class="bi bi-cpu-fill me-2"></i>
+            <span id="btnSpinner" class="spinner-border spinner-border-sm me-2 d-none" aria-hidden="true"></span>
+            <span id="btnText">レビュー開始 (Queue Job)</span>
+        </button>
+    </form>
+
+    <div class="mt-4 p-3 bg-light border-start border-4 border-primary rounded shadow-sm">
+        <p class="mb-0 small text-muted">
+            <i class="bi bi-info-circle-fill me-1"></i>
+            <strong>注意:</strong> このリクエストはバックエンドのCloud Tasksに非同期でキューイングされ、処理完了後に結果がGCSに保存されます。
+        </p>
+    </div>
+</section>
+
+<script>
+    (function() {
+        const submitBtn = document.getElementById('submitBtn');
+        const btnIcon = document.getElementById('btnIcon');
+        const btnSpinner = document.getElementById('btnSpinner');
+        const btnText = document.getElementById('btnText');
+
+        const reviewForm = document.getElementById('reviewForm');
+        const baseBranchInput = document.getElementById('base_branch');
+        const featureBranchInput = document.getElementById('feature_branch');
+
+        /**
+         * ブランチ名のバリデーション
+         */
+        function validateBranchInput(input) {
+            const value = input.value || '';
+            if (value.includes('..') || value.includes('//')) {
+                input.setCustomValidity("'..' または '//' は使用できません。");
+                return false;
+            }
+            if (value.endsWith('/') || value.endsWith('.')) {
+                input.setCustomValidity("末尾に '/' や '.' は使用できません。");
+                return false;
+            }
+            input.setCustomValidity('');
+            return true;
+        }
+
+        /**
+         * ボタンの表示状態を切り替えるヘルパー
+         */
+        function setSubmittingState(isSubmitting) {
+            submitBtn.disabled = isSubmitting;
+            if (isSubmitting) {
+                btnIcon.classList.add('d-none');
+                btnSpinner.classList.remove('d-none');
+                btnText.textContent = '送信中...';
+            } else {
+                btnIcon.classList.remove('d-none');
+                btnSpinner.classList.add('d-none');
+                btnText.textContent = 'レビュー開始 (Queue Job)';
+            }
+        }
+
+        baseBranchInput.addEventListener('input', () => validateBranchInput(baseBranchInput));
+        featureBranchInput.addEventListener('input', () => validateBranchInput(featureBranchInput));
+
+        reviewForm.addEventListener('submit', function(event) {
+            const baseOK = validateBranchInput(baseBranchInput);
+            const featureOK = validateBranchInput(featureBranchInput);
+
+            if (!baseOK || !featureOK || !reviewForm.checkValidity()) {
+                event.preventDefault();
+                reviewForm.reportValidity();
+                return;
+            }
+
+            // 即時無効化による送信キャンセルを避けるためsetTimeoutを使用
+            setTimeout(() => {
+                setSubmittingState(true);
+            }, 0);
+        });
+
+        /**
+         * ブラウザの「戻る」ボタン等でBFキャッシュから復元された際の処理
+         */
+        window.addEventListener('pageshow', function(event) {
+            if (event.persisted) {
+                setSubmittingState(false);
+            }
+        });
+    })();
+</script>
+{{end}}

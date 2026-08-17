@@ -1,0 +1,60 @@
+substitutions:
+  _ENV_PREFIX: 'develop'
+  _REGION: 'asia-northeast1'
+  _IMAGE_BASE: 'asia-northeast1-docker.pkg.dev'
+  _REPO_PATH: 'ap-repo/adk-review'
+  _WEB_SERVICE_NAME: 'adk-review'
+  _WORKER_SERVICE_NAME: 'adk-review-worker'
+  _TAG: '${_ENV_PREFIX}-${SHORT_SHA}'
+  _CACHE_TAG: '${_ENV_PREFIX}-latest'
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Setup Buildx'
+    args: ['buildx', 'create', '--driver', 'docker-container', '--name', 'builder', '--use']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'Build with BuildKit'
+    args:
+      - 'buildx'
+      - 'build'
+      - '-t'
+      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}'
+      - '-t'
+      - '${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_CACHE_TAG}'
+      - '--cache-from'
+      - 'type=registry,ref=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:buildcache'
+      - '--cache-to'
+      - 'type=registry,ref=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:buildcache,mode=max'
+      - '--push'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Deploy Worker to Cloud Run'
+    entrypoint: 'gcloud'
+    waitFor: ['Build with BuildKit']
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_WORKER_SERVICE_NAME}'
+      - '--image=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--quiet'
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Deploy Web to Cloud Run'
+    entrypoint: 'gcloud'
+    waitFor: ['Build with BuildKit']
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_WEB_SERVICE_NAME}'
+      - '--image=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--quiet'
+
+options:
+  machineType: 'E2_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
