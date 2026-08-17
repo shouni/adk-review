@@ -173,7 +173,8 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 | `GCP_PROJECT_ID` | GCP のプロジェクト ID | `your-gcp-project` |
 | `GCP_LOCATION_ID` | Cloud Tasks キューのリージョン | `asia-northeast1` |
 | `CLOUD_TASKS_QUEUE_ID` | 使用する Cloud Tasks のキュー名 | `review-queue` |
-| `SERVICE_ACCOUNT_EMAIL` | タスク発行に使用するサービスアカウント | - |
+| `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` | 投入するタスクの OIDC に指定する caller SA（web 面のみ） | `adk-review-web-runner@...` |
+| `ALLOWED_TASK_SERVICE_ACCOUNTS` | worker が受け付けるトークンの発行元 SA（カンマ区切り、worker 面のみ）。web 面の SA を並べる | `adk-review-web-runner@...` |
 | `GCS_REVIEW_BUCKET` | レビュー結果と進行状況を保存する GCS バケット名 | `your-review-archive-bucket` |
 | `GEMINI_MODELS` | 使用する Gemini モデル名。カンマ区切りで複数指定するとフォームで選択可能（先頭がデフォルト）。**アプリ側に既定値は無く、未設定だと起動時に落ちます** | **必須**（Google の最新モデル ID を確認して設定） |
 | `TASK_AUDIENCE_URL` | Cloud Tasks の OIDC トークン検証に使う audience。未設定なら `SERVICE_URL` | `https://myapp.run.app` |
@@ -197,12 +198,11 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 
 ### 2. 必要なIAMロールの設定
 
-web / worker を別サービスに分けたため、実行 SA も面ごとに分けられます（1 つを共用しても
-動きます）。`SERVICE_ACCOUNT_EMAIL` は Cloud Tasks が発行する OIDC トークンの**発行者**
-（web 面がタスクに載せる SA）であると同時に、worker 面の受信側**許可リスト**でもあるため、
-両サービスに同じ値を設定してください。
+実行 SA は面ごとに分けます（ap-infra の「1 ワークロード 1 SA」規約）。Cloud Tasks の OIDC は
+web 面が `TASK_CALLER_SERVICE_ACCOUNT_EMAIL`（署名者 = web SA）を指定し、worker 面が
+`ALLOWED_TASK_SERVICE_ACCOUNTS`（許可する発行元 = web SA）で検証します。
 
-必要な権限は次のとおりです。
+IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必要な権限は次のとおりです。
 
 - **web 面の SA**: GCS バケットの読み書き（受付記録・履歴表示・削除）、Cloud Tasks キューへの
   タスク投入と `SERVICE_ACCOUNT_EMAIL` を指定した OIDC トークンの発行（ActAs）

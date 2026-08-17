@@ -2,8 +2,9 @@ substitutions:
   _ENV_PREFIX: 'develop'
   _REGION: 'asia-northeast1'
   _IMAGE_BASE: 'asia-northeast1-docker.pkg.dev'
-  _REPO_PATH: 'ap-repo/git-gemini'
-  _SERVICE_NAME: 'git-gemini'
+  _REPO_PATH: 'ap-repo/adk-review'
+  _WEB_SERVICE_NAME: 'adk-review'
+  _WORKER_SERVICE_NAME: 'adk-review-worker'
   _TAG: '${_ENV_PREFIX}-${SHORT_SHA}'
   _CACHE_TAG: '${_ENV_PREFIX}-latest'
 
@@ -29,12 +30,26 @@ steps:
       - '.'
 
   - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'Deploy to Cloud Run'
+    id: 'Deploy Worker to Cloud Run'
     entrypoint: 'gcloud'
+    waitFor: ['Build with BuildKit']
     args:
       - 'run'
       - 'deploy'
-      - '${_SERVICE_NAME}'
+      - '${_WORKER_SERVICE_NAME}'
+      - '--image=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--quiet'
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Deploy Web to Cloud Run'
+    entrypoint: 'gcloud'
+    waitFor: ['Build with BuildKit']
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_WEB_SERVICE_NAME}'
       - '--image=${_IMAGE_BASE}/${PROJECT_ID}/${_REPO_PATH}:${_TAG}'
       - '--region=${_REGION}'
       - '--platform=managed'

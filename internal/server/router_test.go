@@ -50,14 +50,14 @@ func newRouterForTest(t *testing.T) http.Handler {
 	t.Helper()
 
 	cfg := &config.Config{
-		ServiceURL:          "https://service.example.com",
-		TaskAudienceURL:     "https://service.example.com",
-		ServiceAccountEmail: "tasks@example.iam.gserviceaccount.com",
-		GoogleClientID:      "client-id",
-		GoogleClientSecret:  "client-secret",
-		SessionSecret:       "1234567890abcdef",
-		SessionEncryptKey:   "1234567890123456",
-		AllowedEmails:       []string{"tester@example.com"},
+		ServiceURL:                 "https://service.example.com",
+		TaskAudienceURL:            "https://service.example.com",
+		AllowedTaskServiceAccounts: []string{"tasks@example.iam.gserviceaccount.com"},
+		GoogleClientID:             "client-id",
+		GoogleClientSecret:         "client-secret",
+		SessionSecret:              "1234567890abcdef",
+		SessionEncryptKey:          "1234567890123456",
+		AllowedEmails:              []string{"tester@example.com"},
 	}
 
 	authHandler, err := auth.NewHandler(auth.Config{
@@ -86,7 +86,7 @@ func newRouterForTest(t *testing.T) http.Handler {
 		Auth:     authHandler,
 		Web:      webHandler,
 		Worker:   workerHandler,
-		TaskAuth: auth.NewTaskVerifier(cfg.TaskAudienceURL, []string{cfg.ServiceAccountEmail}),
+		TaskAuth: auth.NewTaskVerifier(cfg.TaskAudienceURL, cfg.AllowedTaskServiceAccounts),
 	}
 	return NewRouter(appHandlers)
 }

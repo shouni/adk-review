@@ -34,16 +34,24 @@ type Config struct {
 	// WorkerURL は、タスクの投入先（worker サービス）の URL です。web / worker を
 	// 別サービスに分けたため、投入先は自分自身とは限りません。未設定なら SERVICE_URL
 	// （both で動かすローカル開発の形）へ落ちます。
-	WorkerURL           string
-	Port                string
-	ProjectID           string
-	LocationID          string
-	QueueID             string
-	TaskAudienceURL     string // OIDC トークンの検証に使用する Audience URL
-	ServiceAccountEmail string
-	GCSBucket           string
-	SlackWebhookURL     string
-	GeminiAPIKey        string
+	WorkerURL       string
+	Port            string
+	ProjectID       string
+	LocationID      string
+	QueueID         string
+	TaskAudienceURL string // OIDC トークンの検証に使用する Audience URL
+	// TaskCallerServiceAccountEmail は、投入するタスクの oidcToken に指定する caller SA です。
+	// トークンを生成して付与するのは Cloud Tasks であり、このプロセスではありません。
+	// 投入側（web 面）だけの設定です。
+	TaskCallerServiceAccountEmail string
+	// AllowedTaskServiceAccounts は、worker が受け付けるトークンの発行元 SA の許可リストです。
+	// web と worker で実行 SA を分けているため、ここには「他人（web 面）の SA」が並びます。
+	// 旧 git-gemini の SERVICE_ACCOUNT_EMAIL 兼用方式は、同じ値でも役割ごとに意味が反転して
+	// 読めなくなるため採りません（ap-infra docs/conventions.md「Cloud Tasks の OIDC」）。
+	AllowedTaskServiceAccounts []string
+	GCSBucket                  string
+	SlackWebhookURL            string
+	GeminiAPIKey               string
 
 	// AgentMaxToolCalls は、エージェントレビュー 1 件あたりのツール呼び出し回数上限です。
 	// 0 なら adkagent 側の既定値を使います。
@@ -96,19 +104,20 @@ func LoadConfig() *Config {
 		AgentMaxToolCalls:    agentMaxToolCalls,
 		agentMaxToolCallsErr: agentMaxToolCallsErr,
 
-		Port:                getEnv("PORT", "8080"),
-		ProjectID:           getEnv("GCP_PROJECT_ID", "your-gcp-project"),
-		LocationID:          getEnv("GCP_LOCATION_ID", "asia-northeast1"),
-		QueueID:             getEnv("CLOUD_TASKS_QUEUE_ID", "review-queue"),
-		TaskAudienceURL:     getEnv("TASK_AUDIENCE_URL", serviceURL),
-		ServiceAccountEmail: getEnv("SERVICE_ACCOUNT_EMAIL", ""),
-		GCSBucket:           getEnv("GCS_REVIEW_BUCKET", "your-review-archive-bucket"),
-		SlackWebhookURL:     getEnv("SLACK_WEBHOOK_URL", ""),
-		GeminiAPIKey:        getEnv("GEMINI_API_KEY", ""),
-		GeminiModels:        parseCommaSeparatedList(getEnv("GEMINI_MODELS", "")),
-		SSHKeyPath:          getEnv("SSH_KEY_PATH", "~/.ssh/id_rsa"),
-		PipelineTimeout:     pipelineTimeout,
-		pipelineTimeoutErr:  pipelineTimeoutErr,
+		Port:                          getEnv("PORT", "8080"),
+		ProjectID:                     getEnv("GCP_PROJECT_ID", "your-gcp-project"),
+		LocationID:                    getEnv("GCP_LOCATION_ID", "asia-northeast1"),
+		QueueID:                       getEnv("CLOUD_TASKS_QUEUE_ID", "review-queue"),
+		TaskAudienceURL:               getEnv("TASK_AUDIENCE_URL", serviceURL),
+		TaskCallerServiceAccountEmail: getEnv("TASK_CALLER_SERVICE_ACCOUNT_EMAIL", ""),
+		AllowedTaskServiceAccounts:    parseCommaSeparatedList(getEnv("ALLOWED_TASK_SERVICE_ACCOUNTS", "")),
+		GCSBucket:                     getEnv("GCS_REVIEW_BUCKET", "your-review-archive-bucket"),
+		SlackWebhookURL:               getEnv("SLACK_WEBHOOK_URL", ""),
+		GeminiAPIKey:                  getEnv("GEMINI_API_KEY", ""),
+		GeminiModels:                  parseCommaSeparatedList(getEnv("GEMINI_MODELS", "")),
+		SSHKeyPath:                    getEnv("SSH_KEY_PATH", "~/.ssh/id_rsa"),
+		PipelineTimeout:               pipelineTimeout,
+		pipelineTimeoutErr:            pipelineTimeoutErr,
 
 		// OAuth & Session
 		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),

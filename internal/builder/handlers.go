@@ -58,9 +58,9 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 		// audience と発行元サービスアカウントの両方が揃わないと検証は常に失敗する
 		// （fail-closed）ため、起動時に構成を確かめておきます。
 		appHandlers.Worker = worker.NewHandler[domain.ReviewRequest](appCtx.Pipeline)
-		taskAuth := auth.NewTaskVerifier(appCtx.Config.TaskAudienceURL, []string{appCtx.Config.ServiceAccountEmail})
+		taskAuth := auth.NewTaskVerifier(appCtx.Config.TaskAudienceURL, appCtx.Config.AllowedTaskServiceAccounts)
 		if !taskAuth.Configured() {
-			return nil, fmt.Errorf("cloud Tasks の OIDC 検証を構成できません: TASK_AUDIENCE_URL と SERVICE_ACCOUNT_EMAIL の両方が必要です")
+			return nil, fmt.Errorf("cloud Tasks の OIDC 検証を構成できません: TASK_AUDIENCE_URL と ALLOWED_TASK_SERVICE_ACCOUNTS が必要です")
 		}
 		appHandlers.TaskAuth = taskAuth
 	}

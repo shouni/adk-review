@@ -26,7 +26,7 @@ func buildTaskEnqueuer(ctx context.Context, cfg *config.Config) (*tasks.Enqueuer
 		LocationID:          cfg.LocationID,
 		QueueID:             cfg.QueueID,
 		WorkerURL:           workerURL,
-		ServiceAccountEmail: cfg.ServiceAccountEmail,
+		ServiceAccountEmail: cfg.TaskCallerServiceAccountEmail,
 		Audience:            cfg.TaskAudienceURL,
 		// 未指定だと既定 10 分に落ちる。2026-08-10 まで指定が無かった。
 		DispatchDeadline: config.TaskDispatchDeadline,
