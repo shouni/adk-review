@@ -32,6 +32,9 @@ type JobStatus struct {
 	FeatureBranch string `json:"feature_branch,omitempty"`
 	Mode          string `json:"mode,omitempty"`
 	ModelName     string `json:"model_name,omitempty"`
+	// Engine は、実際に使われたレビューエンジン（single / agent）です。
+	// 同じモードでも依頼ごとに変えられるため、結果を読むときの前提として残します。
+	Engine string `json:"engine,omitempty"`
 
 	// Decision はレビュー全体の判定です。成功時のみ入ります。
 	Decision review.Decision `json:"decision,omitempty"`
@@ -71,6 +74,11 @@ func (s *JobStatus) carryOverFrom(prev *JobStatus) {
 	}
 	if s.Outcome == "" {
 		s.Outcome = prev.Outcome
+	}
+	// 依頼が既定に任せていた場合、解決後のエンジンはワーカーだけが知っています。
+	// 記録済みの値を後続の状態でも保ちます。
+	if s.Engine == "" {
+		s.Engine = prev.Engine
 	}
 }
 
@@ -119,5 +127,6 @@ func newStatus(req ReviewRequest, state jobstatus.State) JobStatus {
 		FeatureBranch: req.FeatureBranch,
 		Mode:          req.Mode,
 		ModelName:     req.ModelName,
+		Engine:        req.Engine,
 	}
 }

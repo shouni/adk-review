@@ -2,7 +2,7 @@
 <section class="py-4">
     <div class="d-flex align-items-center mb-3">
         <i class="bi bi-robot h3 me-2 text-primary"></i>
-        <h1 class="h3 mb-0">AIコードレビュー依頼フォーム</h1>
+        <h1 class="h3 mb-0">AIレビュー依頼フォーム</h1>
     </div>
 
     {{if .Error}}
@@ -62,6 +62,15 @@
             <select id="review_mode" name="review_mode" class="form-select" required>
                 {{range .ReviewModes}}
                 <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Value}} ({{.Description}})</option>
+                {{end}}
+            </select>
+        </div>
+
+        <div class="mb-4">
+            <label for="engine" class="form-label fw-bold text-secondary">レビューの深さ</label>
+            <select id="engine" name="engine" class="form-select">
+                {{range .Engines}}
+                <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}（{{.Description}}）</option>
                 {{end}}
             </select>
         </div>

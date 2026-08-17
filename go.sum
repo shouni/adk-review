@@ -174,8 +174,8 @@ github.com/shouni/go-prompt-kit v1.5.0 h1:2iN6ZF6zMuVrVftH6G21IHB9Pvn36OmfDVPEm8
 github.com/shouni/go-prompt-kit v1.5.0/go.mod h1:V7zDajbwItE1NWNG3xuzCJQKutB9GQksEyppVrsqiUE=
 github.com/shouni/go-remote-io v1.8.1 h1:6FIjZb3VRdywEWwMfDFtudYCxnv2hY4w6wfkfvojcdE=
 github.com/shouni/go-remote-io v1.8.1/go.mod h1:2iajoUdC37HXGU+Nwu17TLPDKaD4mVS7hxpmxYxbsUY=
-github.com/shouni/go-review-kit v1.2.0 h1:lDdrGJdvPIgXxKk4z9ztiRaR2Wuw57XJwQDYZNvZrYQ=
-github.com/shouni/go-review-kit v1.2.0/go.mod h1:IoVVzZtCCms4yCF8lghRaWXqn4FV374c4JFo8+u+q58=
+github.com/shouni/go-review-kit v1.3.0 h1:G1nxbDoFNyEjdhONVmm/m21FSnSntcbpToBrHDe4JUo=
+github.com/shouni/go-review-kit v1.3.0/go.mod h1:6MrIdijq4XbEam98k33mEe3AIdCijYRXJslTE42igPA=
 github.com/shouni/go-utils v1.5.1 h1:bw+YrAbUbtrT9WRbnwWHipwRo9ZY8dyPy2/bBdorDD8=
 github.com/shouni/go-utils v1.5.1/go.mod h1:MRR3X08kWJ+sSS2+KRuvWEikXui5Tixg9vta6r30SnE=
 github.com/shouni/netarmor v1.2.2 h1:2E2nX49juhGnFw3DMFdt7VVrl9TSo3ZS6NXQILnZ0ic=
@@ -224,6 +224,8 @@ go.opentelemetry.io/otel/trace v1.45.0 h1:l/mP6Uv7oNO7/TblbhpbgMidxhq1uO/rPsikOy
 go.opentelemetry.io/otel/trace v1.45.0/go.mod h1:qoJJA2xNMnxRrdISU/kLtfUH2wNeQbiv+jhs/CxI8bc=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
+go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
+go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
 golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d/go.mod h1:IxCIyHEi3zRg3s0A5j5BB6A9Jmi73HwBIUl50j+osU4=
 golang.org/x/crypto v0.55.0 h1:+KWHjbgOaAQ66dh/YlkZKHlz9ZUlq61AFirAR9ntP8M=
 golang.org/x/crypto v0.55.0/go.mod h1:uq0V9dE/fzQuJtbnL+2EhWOE63vo164FY8xqEnV9xis=

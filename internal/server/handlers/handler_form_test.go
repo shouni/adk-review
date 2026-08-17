@@ -62,11 +62,11 @@ func TestHandleReviewForm_RendersPromptModesWithCodeDefault(t *testing.T) {
 	body := html.UnescapeString(w.Body.String())
 	for _, want := range []string{
 		`<option value="article"`,
-		`article (技術記事・ドキュメント品質レビュー)`,
+		`article (技術記事レビュー)`,
 		`<option value="code" selected>`,
-		`code (詳細なコード品質レビュー)`,
+		`code (コード品質レビュー)`,
 		`<option value="novel"`,
-		`novel (小説原稿の詳細レビュー)`,
+		`novel (小説原稿レビュー)`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("review mode option not rendered: want %q body=%s", want, body)

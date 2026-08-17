@@ -8,16 +8,20 @@ import (
 	"github.com/shouni/go-job-kit/jobstatus"
 	"github.com/shouni/go-review-kit/review"
 
+	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/domain"
 )
 
 // recordTimeout は、結末の記録に与える上限です。
 const recordTimeout = 30 * time.Second
 
-// coreRunner は、go-review-kit のパイプラインの実行面です。
-// 実体は *pipeline.Pipeline か、それらを使い分ける EngineRouter です。
+// coreRunner は、レビュー本体の実行面です。実体は EngineRouter で、依頼ごとに
+// go-review-kit のパイプラインを選びます。
+//
+// review.Request ではなく domain.ReviewRequest を受け取るのは、どのエンジンで実行するかが
+// ライブラリの語彙に無い本アプリ固有の情報だからです。変換は選び終えたあとに行います。
 type coreRunner interface {
-	Run(ctx context.Context, req review.Request) (review.Result, *review.Report, error)
+	Run(ctx context.Context, req domain.ReviewRequest) (review.Result, *review.Report, error)
 }
 
 // ReviewPipeline は go-review-kit のパイプラインを domain.Pipeline として公開する ACL です。
@@ -54,6 +58,13 @@ func (p *ReviewPipeline) Execute(ctx context.Context, req domain.ReviewRequest) 
 	if p.skipRedelivery(ctx, req.JobID) {
 		return nil
 	}
+
+	// 実行に使うエンジンを最初に確定させ、以降の記録に載せます。既定に任せた依頼でも
+	// 「どちらで走ったか」が履歴に残るようにするためです（解決の失敗は Run が報告します）。
+	if engine, resolveErr := assets.ResolveEngine(req.Mode, req.Engine); resolveErr == nil {
+		req.Engine = string(engine)
+	}
+
 	p.recordRunning(ctx, req)
 
 	// 締切はレビューにだけ被せます。ここで ctx を上書きしてしまうと、打ち切られた直後の
@@ -65,7 +76,7 @@ func (p *ReviewPipeline) Execute(ctx context.Context, req domain.ReviewRequest) 
 		defer cancel()
 	}
 
-	result, report, err := p.core.Run(runCtx, toReviewRequest(req))
+	result, report, err := p.core.Run(runCtx, req)
 	p.recordOutcome(ctx, req, result, report, err)
 
 	return err

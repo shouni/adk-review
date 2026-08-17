@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	geminiclient "github.com/shouni/go-gemini-client/gemini"
-	"github.com/shouni/go-review-kit/gemini"
 	"github.com/shouni/go-review-kit/review"
 	"google.golang.org/genai"
 
@@ -18,8 +17,7 @@ import (
 // geminiLocationID は、Gemini 呼び出しに使うロケーションです。
 //
 // GCP_LOCATION_ID（Cloud Tasks のリージョン）と分けているのは、モデルの提供リージョンと
-// キューのリージョンは別の都合で決まるためです。旧 git-gemini-web も go-review-kit 側の
-// 既定値として global を使っていました。
+// キューのリージョンが別の都合で決まるためです。
 const geminiLocationID = "global"
 
 // NewGeminiClient は、モデル呼び出しの共有クライアントを構築します。
@@ -35,15 +33,6 @@ func NewGeminiClient(ctx context.Context, cfg *config.Config) (geminiclient.Gene
 		return nil, fmt.Errorf("gemini クライアントの構築に失敗しました: %w", err)
 	}
 	return client, nil
-}
-
-// NewReviewer は、単発（差分のみ）の review.Reviewer を構築します。
-func NewReviewer(client geminiclient.Generator) (review.Reviewer, error) {
-	reviewer, err := gemini.NewWithGenerator(client)
-	if err != nil {
-		return nil, fmt.Errorf("レビュアーアダプターの構築に失敗しました: %w", err)
-	}
-	return reviewer, nil
 }
 
 // NewAgentReviewer は、ADK エージェントの review.WorkspaceReviewer を構築します。
