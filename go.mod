@@ -12,7 +12,7 @@ require (
 	github.com/shouni/go-notify v1.2.4
 	github.com/shouni/go-prompt-kit v1.5.0
 	github.com/shouni/go-remote-io v1.8.1
-	github.com/shouni/go-review-kit v1.2.0
+	github.com/shouni/go-review-kit v0.0.0-20260817210443-82abef43b6d7
 	github.com/shouni/go-utils v1.5.1
 	github.com/shouni/netarmor v1.2.2
 	google.golang.org/adk/v2 v2.2.0
