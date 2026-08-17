@@ -24,12 +24,13 @@ diff 単発では構造的に見えなかった「前の章との矛盾」「登
 本リポジトリは**依頼の受付・認証・非同期実行・結果の保存と表示、そして ADK エージェントの実装**を
 担います。
 
-> **📌 開発状況:** 移行作業中です。現時点の計画は次の順です。
+> **📌 開発状況:** コードの移植は完了し、デプロイ待ちです。
 >
-> 1. `go-review-kit` v2 — `Reviewer` ポートを「作業ディレクトリ + diff」を受け取る形に再設計
-> 2. ADK エージェント版 Reviewer を CLI で PoC（ループ・ツール・レポート出力の検証）
-> 3. `git-gemini-web` の web/worker 骨格（受付・履歴・GCS 保存・Slack 通知）を移植
-> 4. 旧リポジトリをアーカイブ
+> 1. ~~`go-review-kit` v1.2.0 — workspace reviewer ポートの追加~~ ✅
+> 2. ~~ADK エージェント版 Reviewer の PoC（ループ・ツール・レポート出力の検証）~~ ✅
+> 3. ~~`git-gemini-web` の web/worker 骨格（受付・履歴・GCS 保存・Slack 通知）を移植~~ ✅
+> 4. GCP リソース作成（バケット・キュー・Cloud Run x2）とデプロイ
+> 5. 旧リポジトリをアーカイブ
 
 ---
 
@@ -67,8 +68,13 @@ Cloud Tasks 投入     ↘ status.json 記録 / Slack 通知
 * **非同期実行**: 重い解析を Cloud Tasks へ逃がし、Web 側のタイムアウトを回避します。
 * **依存性注入**: `internal/builder` が全コンポーネントを組み立てます。通知先や保存先を
   ロジックに触れずに差し替えられます。
-* **1 バイナリ 2 役**: Web と Worker を同じバイナリが兼ね、自分自身へ self-invoke します
-  （[必要な IAM ロール](#2-必要なiamロールの設定)を参照）。
+* **1 イメージ 2 サービス**: 同じイメージを `SERVER_ROLE`（web / worker）で分け、別々の
+  Cloud Run サービスとしてデプロイします（ap-* 兄弟アプリと同じ方式）。旧 git-gemini-web の
+  「1 サービスが self-invoke」ではなく、Web 面は `WORKER_URL` の worker サービスへタスクを
+  投入します。ローカル開発は `SERVER_ROLE=both` で 1 プロセスに両面を持たせます。
+* **エンジンの使い分け**: プロンプト冒頭の `<!-- engine: agent -->` メタデータで、モードごとに
+  単発レビューとエージェントレビューを切り替えます（既定は single。現在は novel のみ agent）。
+  フォームにエンジンの選択肢は出しません。
 
 ### 成果物の置き場所
 
@@ -96,21 +102,22 @@ gs://{GCS_REVIEW_BUCKET}/reviews/{jobID}/
 
 ## 📂 プロジェクト構造 (Project Structure)
 
-移植完了時の予定です。`git-gemini-web` との違いは `internal/adapters/` に ADK エージェント
-（ツール定義と `submit_report`）が入ることだけで、それ以外の役割分担は同じです。
+`git-gemini-web` との違いは、ADK エージェント一式（`internal/adkagent/`）と、単発／エージェントの
+2 本のパイプラインを使い分ける `EngineRouter`（`internal/adapters/`）が加わったことです。
 
 ```text
 adk-review/
 ├── assets/            # 【資産】静的リソース（embed でバイナリに埋め込み）
-│   ├── prompts/       #   - エージェントへの指示書（ファイル名がレビューモード名）
+│   ├── prompts/       #   - レビュー指示書（ファイル名がモード名。engine メタデータ付き）
 │   ├── partials/      #   - 全モード共通の出力フォーマット説明
 │   ├── templates/     #   - HTML テンプレート
 │   ├── static/        #   - ブラウザへ配信する CSS / JS（/static/ で公開）
-│   └── assets.go      #   - embed.FS の定義
+│   └── assets.go      #   - embed.FS の定義とメタデータ解析
 ├── internal/
-│   ├── adapters/      # 【接続】ADK エージェント / Git / Slack / 結果保存 / パイプライン ACL
+│   ├── adkagent/      # 【頭脳】ADK エージェント（llmagent + ツール + 出力スキーマ）
+│   ├── adapters/      # 【接続】Gemini / Git / Slack / 結果保存 / EngineRouter / パイプライン ACL
 │   ├── app/           # 【基盤】Container による依存の保持とライフサイクル管理
-│   ├── builder/       # 【構築】各コンポーネントの初期化と組み立て
+│   ├── builder/       # 【構築】役割（SERVER_ROLE）に応じた初期化と組み立て
 │   ├── config/        # 【設定】環境変数・定数・バリデーション
 │   ├── domain/        # 【中心】モデル、保存先の規約、ポート定義
 │   ├── giturl/        # 【変換】リポジトリURLの解析と表示用パス
@@ -145,9 +152,10 @@ adk-review/
 
 ### 1. 必要な環境変数
 
-**未設定だと起動時に落ちる**のは `SERVICE_URL`（本番は HTTPS 必須）・`GOOGLE_CLIENT_ID`・
-`GOOGLE_CLIENT_SECRET`・`SESSION_SECRET`・`SESSION_ENCRYPT_KEY`・`GEMINI_MODELS`・
-`ALLOWED_EMAILS` または `ALLOWED_DOMAINS` です。残りは空でも起動します（機能しないだけです）。
+**未設定だと起動時に落ちる**のは、全役割共通で `SERVER_ROLE`・`SERVICE_URL`（本番は HTTPS
+必須）・`GEMINI_MODELS`、web 面ではさらに `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET`・
+`SESSION_SECRET`・`SESSION_ENCRYPT_KEY`・`ALLOWED_EMAILS` または `ALLOWED_DOMAINS` です。
+worker 面は OAuth 系の設定を要求しません。残りは空でも起動します（機能しないだけです）。
 
 `GEMINI_MODELS` にアプリ側の既定値を置かないのは意図的です。モデル ID が古くなるのは
 Google のリリース周期であってこのリポジトリの都合ではないため、既定値があると
@@ -157,7 +165,10 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 
 | 環境変数 | 説明 | デフォルト値（例） |
 | :--- | :--- | :--- |
-| `SERVICE_URL` | アプリケーションのルート URL（末尾スラッシュなし）。**本番では HTTPS 必須** | `https://myapp.run.app` または `http://localhost:8080` |
+| `SERVER_ROLE` | このプロセスの役割: `web` / `worker` / `both`（ローカル開発用）。**必須** | `web` |
+| `SERVICE_URL` | このサービス自身のルート URL（末尾スラッシュなし）。**本番では HTTPS 必須** | `https://myapp.run.app` または `http://localhost:8080` |
+| `WORKER_URL` | タスクの投入先（worker サービス）のルート URL。web 面で使用。未設定なら `SERVICE_URL`（both 用） | `https://myapp-worker.run.app` |
+| `AGENT_MAX_TOOL_CALLS` | エージェントレビュー 1 件あたりのツール呼び出し回数上限。0 で既定値（32） | `0` |
 | `PORT` | サーバーがリッスンするポート | `8080` |
 | `GCP_PROJECT_ID` | GCP のプロジェクト ID | `your-gcp-project` |
 | `GCP_LOCATION_ID` | Cloud Tasks キューのリージョン | `asia-northeast1` |
@@ -186,18 +197,18 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 
 ### 2. 必要なIAMロールの設定
 
-**SA は 1 つだけです。** 1 バイナリが Web と Worker を兼ね、自分自身へ self-invoke します
-（`SERVICE_URL` が自分の URL）。Cloud Tasks 用に別の SA を用意する必要はありません。
-`SERVICE_ACCOUNT_EMAIL` は OIDC トークンの**発行者**であると同時に、受信側の**許可リスト**も
-兼ねるため、SA を変えるときは env も同時に変えてください。
+web / worker を別サービスに分けたため、実行 SA も面ごとに分けられます（1 つを共用しても
+動きます）。`SERVICE_ACCOUNT_EMAIL` は Cloud Tasks が発行する OIDC トークンの**発行者**
+（web 面がタスクに載せる SA）であると同時に、worker 面の受信側**許可リスト**でもあるため、
+両サービスに同じ値を設定してください。
 
-実行 SA には、次のことができる権限が要ります。
+必要な権限は次のとおりです。
 
-- レビュー結果と進行状況を置く GCS バケットの読み書き
-- Cloud Tasks キューへのタスク投入と、自分自身を指定した OIDC トークンの発行（ActAs）
-- 自分自身の Cloud Run サービスの呼び出し
-- Vertex AI の呼び出し
-- 使用するシークレットの読み取り
+- **web 面の SA**: GCS バケットの読み書き（受付記録・履歴表示・削除）、Cloud Tasks キューへの
+  タスク投入と `SERVICE_ACCOUNT_EMAIL` を指定した OIDC トークンの発行（ActAs）
+- **worker 面の SA**: GCS バケットの読み書き（結果保存・進行状況）、Vertex AI の呼び出し
+  （単発・エージェントの両方がここを通ります）
+- 共通: 使用するシークレットの読み取り
 
 **ロール名を列挙していないのは、粒度が環境によって変わるためです。** 決め方だけ挙げておきます。
 

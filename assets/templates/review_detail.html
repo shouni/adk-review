@@ -1,0 +1,141 @@
+{{define "content"}}
+<section class="py-4">
+    <div class="d-flex align-items-center mb-3">
+        <a href="/history" class="btn btn-sm btn-outline-secondary me-3">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <i class="bi bi-file-earmark-text h3 me-2 text-primary"></i>
+        <h1 class="h3 mb-0">レビュー詳細</h1>
+    </div>
+
+    {{if .Error}}
+    <div class="alert alert-danger shadow-sm d-flex align-items-center" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <div>{{.Error}}</div>
+    </div>
+    {{else}}
+    {{with .Detail.Status}}
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                <span class="badge {{stateClass .State .Outcome}}">{{stateLabel .State .Outcome}}</span>
+                {{if .Decision}}
+                <span class="badge {{decisionClass .Decision}}">{{decisionLabel .Decision}}</span>
+                {{end}}
+            </div>
+
+            {{if .Title}}<h2 class="h5 mb-3">{{.Title}}</h2>{{end}}
+
+            <dl class="row mb-0 small">
+                <dt class="col-sm-3 text-muted">リポジトリ</dt>
+                <dd class="col-sm-9">{{repoPath .RepoURL}}</dd>
+
+                {{if .BaseBranch}}
+                <dt class="col-sm-3 text-muted">ブランチ</dt>
+                <dd class="col-sm-9 font-monospace">{{.BaseBranch}} &larr; {{.FeatureBranch}}</dd>
+                {{end}}
+
+                <dt class="col-sm-3 text-muted">モード / モデル</dt>
+                <dd class="col-sm-9">{{.Mode}} / <span class="font-monospace">{{.ModelName}}</span></dd>
+
+                <dt class="col-sm-3 text-muted">受付</dt>
+                <dd class="col-sm-9">{{formatTime .QueuedAt}}</dd>
+
+                <dt class="col-sm-3 text-muted">更新</dt>
+                <dd class="col-sm-9">{{formatTime .UpdatedAt}}</dd>
+
+                {{if gt .Attempts 1}}
+                <dt class="col-sm-3 text-muted">試行回数</dt>
+                <dd class="col-sm-9">{{.Attempts}}</dd>
+                {{end}}
+
+                <dt class="col-sm-3 text-muted">ジョブID</dt>
+                <dd class="col-sm-9 font-monospace text-muted">{{.JobID}}</dd>
+            </dl>
+
+            {{if .Error}}
+            <div class="alert alert-danger mt-3 mb-0 small">
+                <strong>失敗内容:</strong> {{.Error}}
+            </div>
+            {{end}}
+
+            {{if .Deletable}}
+            <div class="d-flex justify-content-end mt-3">
+                <button class="btn btn-sm btn-outline-danger" id="delete-review-btn"
+                        data-job-id="{{.JobID}}" type="button">
+                    <i class="bi bi-trash me-1"></i>削除
+                </button>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+
+    {{with .Detail.Report}}
+    {{if .Verdict.Reason}}
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <h2 class="h6 text-muted mb-2">判定理由</h2>
+            <p class="mb-0">{{.Verdict.Reason}}</p>
+        </div>
+    </div>
+    {{end}}
+
+    {{if .Summary}}
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <h2 class="h6 text-muted mb-2">概要</h2>
+            <p class="mb-0" style="white-space: pre-wrap;">{{.Summary}}</p>
+        </div>
+    </div>
+    {{end}}
+
+    <h2 class="h5 mb-3">指摘 <span class="badge text-bg-secondary">{{len .Findings}}</span></h2>
+
+    {{if .Findings}}
+    {{range .Findings}}
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <span class="badge {{severityClass .Severity}}">{{.Severity}}</span>
+                <span class="font-monospace small text-muted">{{.File}}{{if .Line}}:{{.Line}}{{end}}</span>
+            </div>
+
+            {{if .Excerpt}}
+            <pre class="bg-light border rounded p-2 small mb-2"><code>{{.Excerpt}}</code></pre>
+            {{end}}
+
+            <p class="mb-0" style="white-space: pre-wrap;">{{.Message}}</p>
+
+            {{if .Suggestion}}
+            <div class="mt-2">
+                <div class="text-muted small mb-1"><i class="bi bi-lightbulb me-1"></i>修正案</div>
+                <pre class="bg-light border rounded p-2 small mb-0"><code>{{.Suggestion}}</code></pre>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+    {{else}}
+    <div class="card border-0 shadow-sm">
+        <div class="card-body text-center text-muted py-4">
+            指摘はありません。
+        </div>
+    </div>
+    {{end}}
+    {{end}}
+
+    {{if and (not .Detail.Report) (not .Error)}}
+    <div class="card border-0 shadow-sm">
+        <div class="card-body text-center text-muted py-4">
+            <i class="bi bi-hourglass-split h4 d-block mb-2 opacity-50"></i>
+            このレビューには結果がまだありません。
+        </div>
+    </div>
+    {{end}}
+    {{end}}
+
+    <input type="hidden" id="csrf_token" value="{{.CSRFToken}}">
+    <script src="/static/js/review_detail.js" defer></script>
+</section>
+{{end}}

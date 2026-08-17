@@ -152,11 +152,11 @@ func (r *Reviewer) collectFinalText(ctx context.Context, run *runner.Runner, pro
 		if err != nil {
 			return "", fmt.Errorf("adkagent: エージェントの実行に失敗しました: %w", err)
 		}
-		if event == nil || !event.IsFinalResponse() || event.LLMResponse.Content == nil {
+		if event == nil || !event.IsFinalResponse() || event.Content == nil {
 			continue
 		}
 		final.Reset()
-		for _, part := range event.LLMResponse.Content.Parts {
+		for _, part := range event.Content.Parts {
 			final.WriteString(part.Text)
 		}
 	}
