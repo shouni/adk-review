@@ -15,8 +15,8 @@ import (
 
 // slackTitles はレビュー結果ごとの見出しです。
 var slackTitles = notify.Titles{
-	Success: "✅ AIコードレビューが完了しました。",
-	Failure: "❌ AIコードレビューの生成に失敗しました。",
+	Success: "✅ AIレビューが完了しました。",
+	Failure: "❌ AIレビューの生成に失敗しました。",
 	Skipped: "⏭️ 差分がないため、レビューをスキップしました。",
 }
 

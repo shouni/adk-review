@@ -58,7 +58,7 @@ func NewPromptAdapter() (*PromptAdapter, error) {
 	}, nil
 }
 
-// Generate はコードレビューのプロンプトを生成します。
+// Generate はレビューのプロンプトを生成します。
 func (pa *PromptAdapter) Generate(mode, codeDiff string) (string, error) {
 	data := reviewData{
 		DiffContent:    codeDiff,
