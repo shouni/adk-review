@@ -23,8 +23,8 @@ const (
 // Config は環境変数からアプリケーション設定を読み込む構造体です。
 type Config struct {
 	// Role はこのプロセスが担う役割（web / worker / both）です。兄弟アプリ（ap-*）と
-	// 同じく明示が必須で、未設定・未知の値は起動時エラーになります。旧 git-gemini-web は
-	// 1 サービスが両面を兼ねていましたが、本アプリは面ごとに別サービスとしてデプロイします。
+	// 同じく明示が必須で、未設定・未知の値は起動時エラーになります。面ごとに別サービスと
+	// してデプロイし、both はローカル開発でのみ使います。
 	Role serverrole.Role
 	// roleErr は SERVER_ROLE の解析に失敗したときの理由です。LoadConfig はエラーを
 	// 返さない契約なのでここへ持ち越し、ValidateEssentialConfig が起動時に落とします。
@@ -46,12 +46,11 @@ type Config struct {
 	TaskCallerServiceAccountEmail string
 	// AllowedTaskServiceAccounts は、worker が受け付けるトークンの発行元 SA の許可リストです。
 	// web と worker で実行 SA を分けているため、ここには「他人（web 面）の SA」が並びます。
-	// 旧 git-gemini の SERVICE_ACCOUNT_EMAIL 兼用方式は、同じ値でも役割ごとに意味が反転して
-	// 読めなくなるため採りません（ap-infra docs/conventions.md「Cloud Tasks の OIDC」）。
+	// 発行者と許可リストを 1 つの変数で兼ねると、同じ値でも役割ごとに意味が反転して
+	// 読めなくなるため分けています（ap-infra docs/conventions.md「Cloud Tasks の OIDC」）。
 	AllowedTaskServiceAccounts []string
 	GCSBucket                  string
 	SlackWebhookURL            string
-	GeminiAPIKey               string
 
 	// AgentMaxToolCalls は、エージェントレビュー 1 件あたりのツール呼び出し回数上限です。
 	// 0 なら adkagent 側の既定値を使います。
@@ -113,7 +112,6 @@ func LoadConfig() *Config {
 		AllowedTaskServiceAccounts:    parseCommaSeparatedList(getEnv("ALLOWED_TASK_SERVICE_ACCOUNTS", "")),
 		GCSBucket:                     getEnv("GCS_REVIEW_BUCKET", "your-review-archive-bucket"),
 		SlackWebhookURL:               getEnv("SLACK_WEBHOOK_URL", ""),
-		GeminiAPIKey:                  getEnv("GEMINI_API_KEY", ""),
 		GeminiModels:                  parseCommaSeparatedList(getEnv("GEMINI_MODELS", "")),
 		SSHKeyPath:                    getEnv("SSH_KEY_PATH", "~/.ssh/id_rsa"),
 		PipelineTimeout:               pipelineTimeout,

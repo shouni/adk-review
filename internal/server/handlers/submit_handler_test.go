@@ -203,7 +203,7 @@ func TestHandleReviewSubmit_ValidationErrorPreservesFormValues(t *testing.T) {
                        value="release/2026-04"`,
 		`name="feature_branch" class="form-control"
                        value="feature/new-ui"`,
-		`<option value="novel" selected>novel (小説原稿の詳細レビュー)</option>`,
+		`<option value="novel" selected>novel (小説原稿レビュー)</option>`,
 		`<option value="gemini-2.5-pro" selected>gemini-2.5-pro</option>`,
 	} {
 		if !strings.Contains(body, want) {
@@ -353,7 +353,7 @@ func TestHandleReviewSubmit_SuccessPreservesFormValues(t *testing.T) {
                        value="release/2026-04"`,
 		`name="feature_branch" class="form-control"
                        value="feature/completion-form"`,
-		`<option value="article" selected>article (技術記事・ドキュメント品質レビュー)</option>`,
+		`<option value="article" selected>article (技術記事レビュー)</option>`,
 		`<option value="gemini-2.5-pro" selected>gemini-2.5-pro</option>`,
 	} {
 		if !strings.Contains(body, want) {

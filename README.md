@@ -8,53 +8,45 @@
 ## 🚀 概要 (About)
 
 **ADK Review** は、Git リポジトリの差分を AI エージェントにレビューさせる Web アプリです。
-[`git-gemini-web`](https://github.com/shouni/git-gemini-web) の後継で、機能を本リポジトリへ
-移管したのち、旧リポジトリはアーカイブします。
 
-旧版との違いは、レビューが**単発の diff → LLM 1 回呼び出し**ではなく、
-[ADK for Go](https://github.com/google/adk-go) のエージェントループになることです。
-エージェントはツール（ファイル読み・検索）でリポジトリの **diff の外**を自分で調べてから
-指摘をまとめます。主用途は Git で管理している記事や小説の原稿のレビューで、
-diff 単発では構造的に見えなかった「前の章との矛盾」「登場人物の設定の一貫性」を
-拾えるようにするのが移行の動機です。`assets/prompts/` のプロンプトを差し替えれば、
-コードレビューにも切り替えられます。
+レビューは差分を 1 回モデルへ渡して終わりではなく、[ADK for Go](https://github.com/google/adk-go)
+のエージェントループです。エージェントはツール（ファイル読み・一覧・検索）で
+リポジトリの **差分の外**を自分で調べてから指摘をまとめます。差分だけでは構造的に
+見えない「前の章との矛盾」「登場人物の設定の一貫性」「変更した関数の呼び出し元」を
+拾えるのが、この作りの狙いです。主用途は Git で管理している記事・小説の原稿と
+ソースコードのレビューで、対象は `assets/prompts/` のモードで切り替えます。
 
-レビューの手順そのものは [`go-review-kit`](https://github.com/shouni/go-review-kit)（v2）に、
+レビューの手順そのものは [`go-review-kit`](https://github.com/shouni/go-review-kit) に、
 非同期ジョブの記録とページングは [`go-job-kit`](https://github.com/shouni/go-job-kit) に委ね、
-本リポジトリは**依頼の受付・認証・非同期実行・結果の保存と表示、そして ADK エージェントの実装**を
+本リポジトリは**依頼の受付・認証・非同期実行・結果の保存と表示、そしてレビュアーの実装**を
 担います。
-
-> **📌 開発状況:** コードの移植は完了し、デプロイ待ちです。
->
-> 1. ~~`go-review-kit` v1.2.0 — workspace reviewer ポートの追加~~ ✅
-> 2. ~~ADK エージェント版 Reviewer の PoC（ループ・ツール・レポート出力の検証）~~ ✅
-> 3. ~~`git-gemini-web` の web/worker 骨格（受付・履歴・GCS 保存・Slack 通知）を移植~~ ✅
-> 4. GCP リソース作成（バケット・キュー・Cloud Run x2）とデプロイ
-> 5. 旧リポジトリをアーカイブ
 
 ---
 
 ## 🧠 エージェント設計 (Agent Design)
 
-* **ループの中身**: ADK の LLM Agent に読み取り専用ツール（対象ファイルの全文読み、
-  リポジトリ内検索）を持たせ、diff を起点に必要な文脈を自分で集めさせます。
-* **終端は `submit_report` ツール**: ADK は構造化出力の指定とツール使用が同居しにくいため、
-  レビュー完了時に `submit_report` ツールを呼ばせ、その引数を `go-review-kit` の
-  `Report` スキーマで受けます。検証も既存の `ParseReport` / `Validate` をそのまま使います。
+* **ループの中身**: ADK の LLM Agent に読み取り専用ツール 3 種（`read_file` / `list_files` /
+  `search_text`）を持たせ、差分を起点に必要な文脈を自分で集めさせます。ツールが触れるのは
+  head をチェックアウトした作業ディレクトリの中だけで、パスは実体解決して外への脱出を防ぎます。
+* **出力は `OutputSchema` で固定**: `review.Report` に対応するスキーマを指定します。ADK は
+  ツールと構造化出力を併用でき、最終応答としてスキーマに従う JSON が返ります。デコードと
+  検証は `go-review-kit` の `ParseReport` / `Validate` をそのまま使います。
 * **暴走はツール呼び出し回数の上限で止めます**: レビュー 1 件は Cloud Tasks の
-  dispatch deadline（10 分）内に収める必要があるため、時間ではなく回数で打ち切ります。
-* **単発モードも残します**: `go-review-kit` の従来の単発 Gemini reviewer は v2 でも残すので、
-  軽いレビューは単発・重いレビューはエージェント、と使い分けられます。
+  dispatch deadline（10 分）内に収める必要があるため、時間ではなく回数で打ち切ります
+  （`AGENT_MAX_TOOL_CALLS`、既定 32）。上限に達したら「調査を切り上げて結論を出せ」と
+  モデルへ伝わるので、締切超過ではなくレビューの完了に倒れます。
+* **単発レビュアーも残します**: 差分だけを 1 回投げる `GeminiReviewer`
+  （`internal/adapters`）も配線してあり、モードの `engine: single` で選べます。
 * **依存の隔離**: ADK は `google.golang.org/genai` を直接使うため、
   「genai SDK は `go-gemini-client` の外に出さない」というエコシステムの規約の
-  例外は本リポジトリに閉じ込めます。`go-review-kit` 自体は ADK を知りません。
+  例外は `internal/adkagent` に閉じ込めます。`go-review-kit` 自体は AI SDK を知りません。
 
 ---
 
 ## 🏗 アーキテクチャ (Architecture)
 
 **ヘキサゴナルアーキテクチャ（Ports and Adapters）** を採用し、外部との接続はすべて
-アダプターとして分離しています。この骨格は `git-gemini-web` から引き継ぎます。
+アダプターとして分離しています。
 
 ```text
 フォーム受付          非同期ワーカー
@@ -69,17 +61,16 @@ Cloud Tasks 投入     ↘ status.json 記録 / Slack 通知
 * **依存性注入**: `internal/builder` が全コンポーネントを組み立てます。通知先や保存先を
   ロジックに触れずに差し替えられます。
 * **1 イメージ 2 サービス**: 同じイメージを `SERVER_ROLE`（web / worker）で分け、別々の
-  Cloud Run サービスとしてデプロイします（ap-* 兄弟アプリと同じ方式）。旧 git-gemini-web の
-  「1 サービスが self-invoke」ではなく、Web 面は `WORKER_URL` の worker サービスへタスクを
-  投入します。ローカル開発は `SERVER_ROLE=both` で 1 プロセスに両面を持たせます。
-* **エンジンの使い分け**: プロンプト冒頭の `<!-- engine: agent -->` メタデータで、モードごとに
-  単発レビューとエージェントレビューを切り替えます（既定は single。現在は novel のみ agent）。
-  フォームにエンジンの選択肢は出しません。
+  Cloud Run サービスとしてデプロイします（ap-* 兄弟アプリと同じ方式）。Web 面は
+  `WORKER_URL` の worker サービスへタスクを投入します。ローカル開発は `SERVER_ROLE=both` で
+  1 プロセスに両面を持たせます。
+* **エンジンの使い分け**: プロンプト冒頭の front matter に書く `engine`（`agent` / `single`）で、
+  モードごとにエージェントレビューと単発レビューを切り替えます（現在は全モード `agent`）。
+  どう実行するかはプロンプト資産側の宣言なので、フォームには選択肢を出しません。
 
 ### 成果物の置き場所
 
 1 ジョブ分のオブジェクトは、ジョブ ID のプレフィックス配下にまとめます。
-バケットは本アプリ専用に新規作成します（`git-gemini-web` のバケットは引き継ぎません）。
 
 ```text
 gs://{GCS_REVIEW_BUCKET}/reviews/{jobID}/
@@ -102,20 +93,17 @@ gs://{GCS_REVIEW_BUCKET}/reviews/{jobID}/
 
 ## 📂 プロジェクト構造 (Project Structure)
 
-`git-gemini-web` との違いは、ADK エージェント一式（`internal/adkagent/`）と、単発／エージェントの
-2 本のパイプラインを使い分ける `EngineRouter`（`internal/adapters/`）が加わったことです。
-
 ```text
 adk-review/
 ├── assets/            # 【資産】静的リソース（embed でバイナリに埋め込み）
-│   ├── prompts/       #   - レビュー指示書（ファイル名がモード名。engine メタデータ付き）
-│   ├── partials/      #   - 全モード共通の出力フォーマット説明
+│   ├── prompts/       #   - レビュー指示書（ファイル名がモード名。front matter に説明と engine）
+│   ├── partials/      #   - 全モード共通の出力フォーマット説明（verdict / findings）
 │   ├── templates/     #   - HTML テンプレート
 │   ├── static/        #   - ブラウザへ配信する CSS / JS（/static/ で公開）
-│   └── assets.go      #   - embed.FS の定義とメタデータ解析
+│   └── assets.go      #   - embed.FS の定義と front matter の解析
 ├── internal/
 │   ├── adkagent/      # 【頭脳】ADK エージェント（llmagent + ツール + 出力スキーマ）
-│   ├── adapters/      # 【接続】Gemini / Git / Slack / 結果保存 / EngineRouter / パイプライン ACL
+│   ├── adapters/      # 【接続】単発レビュアー / Git / Slack / 結果保存 / EngineRouter / パイプライン ACL
 │   ├── app/           # 【基盤】Container による依存の保持とライフサイクル管理
 │   ├── builder/       # 【構築】役割（SERVER_ROLE）に応じた初期化と組み立て
 │   ├── config/        # 【設定】環境変数・定数・バリデーション
@@ -133,22 +121,21 @@ adk-review/
 | 要素 | 技術 / ライブラリ |
 | --- | --- |
 | 言語 | Go |
-| エージェント | [ADK for Go](https://github.com/google/adk-go)（`google.golang.org/adk`） |
-| レビュードメイン・Git 差分 | [`go-review-kit`](https://github.com/shouni/go-review-kit) v2 |
+| エージェント | [ADK for Go](https://github.com/google/adk-go)（`google.golang.org/adk/v2`） |
+| レビュードメイン・パイプライン・Git 差分 | [`go-review-kit`](https://github.com/shouni/go-review-kit) |
+| Gemini クライアント（単発レビュアー） | [`go-gemini-client`](https://github.com/shouni/go-gemini-client) |
+| プロンプトテンプレート | [`go-prompt-kit`](https://github.com/shouni/go-prompt-kit) |
 | ジョブ状態・履歴ページング | [`go-job-kit`](https://github.com/shouni/go-job-kit) |
 | 実行基盤 | Cloud Run / Cloud Tasks |
 | 認証・セッション | OAuth 2.0（[`gcp-kit`](https://github.com/shouni/gcp-kit)） |
 | I/O 抽象化 | [`go-remote-io`](https://github.com/shouni/go-remote-io)（GCS 操作） |
 
-**AI は Vertex AI 経由で呼びます。** ADK のモデル層は `google.golang.org/genai` を使うため、
-旧版と同じく `ProjectID` ベースの Vertex AI 認証で配線する予定です。
+**AI は Vertex AI 経由で呼びます。** エージェント（ADK のモデル層）も単発レビュアー
+（go-gemini-client）も `GCP_PROJECT_ID` ベースの認証で、API キー経路は配線していません。
 
 ---
 
 ## ⚙️ セットアップ
-
-環境変数と IAM は `git-gemini-web` の設計をそのまま引き継ぎます。移植中に変わる可能性が
-ありますが、現時点の想定は次の通りです。
 
 ### 1. 必要な環境変数
 

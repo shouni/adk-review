@@ -5,30 +5,16 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sort"
-	"strings"
 	"sync"
 
+	"github.com/shouni/go-prompt-kit/frontmatter"
 	"github.com/shouni/go-prompt-kit/resource"
+	"go.yaml.in/yaml/v3"
 )
 
-const (
-	promptDir             = "prompts"
-	modeDescriptionPrefix = "<!-- mode-description:"
-	enginePrefix          = "<!-- engine:"
-	metadataSuffix        = "-->"
-)
-
-// Engine は、レビューモードが使うレビューエンジンです。
-type Engine string
-
-// レビューエンジンの種別です。
-const (
-	// EngineSingle は、差分だけを見る単発のレビューです（既定）。
-	EngineSingle Engine = "single"
-	// EngineAgent は、作業ディレクトリを調べるエージェント型のレビューです。
-	EngineAgent Engine = "agent"
-)
+const promptDir = "prompts"
 
 var (
 	// promptFiles はプロンプトテンプレートです。ディレクトリ内は現在プロンプトのみのため、
@@ -50,60 +36,120 @@ var (
 	StaticFiles embed.FS
 )
 
-// loadPrompts は、埋め込みプロンプトの解析結果を最初の呼び出しで1度だけ構築します。
+// Engine は、レビューモードが使うレビューエンジンです。
+type Engine string
+
+// レビューエンジンの種別です。
+const (
+	// EngineSingle は、差分だけを見る単発のレビューです。
+	EngineSingle Engine = "single"
+	// EngineAgent は、作業ディレクトリをツールで調べるエージェント型のレビューです。
+	EngineAgent Engine = "agent"
+)
+
+// ModeMetadata は、プロンプト冒頭の front matter に書くモードの説明です。
+// 兄弟アプリ（ap-voice ほか）と同じ方式で、**説明の置き場をプロンプト自身にします。**
 //
-// AvailableModes と IsValidMode はリクエストのたびに呼ばれるため遅延初期化しますが、
-// 二重チェックロックを手で書く必要はありません。読み込み元は埋め込みアセットで、
-// 失敗するとすれば「モード名の衝突」のように毎回同じ結果になるものだけなので、
-// エラーごとキャッシュして再試行しないのが正しい挙動です。
+// 画面側に一覧を持たせない理由は、モードの追加が prompts/<mode>.md を置くだけで
+// 済む仕組みだからです。説明を別ファイルに分けると、モードを足した人が説明を
+// 書き忘れても誰も気付かず、選択肢だけが増えていきます。
+type ModeMetadata struct {
+	// Label は選択肢に出す名前です。キー（ファイル名）は英字なので、日本語の表示名を
+	// 別に持ちます。
+	Label string `yaml:"label"`
+	// Direction は何をレビューするモードなのかの一行説明です。
+	Direction string `yaml:"direction"`
+	// UseWhen は、どういう対象のときに選ぶかです。
+	UseWhen string `yaml:"use_when"`
+	// Engine は、そのモードを実行するレビューエンジンです。空なら EngineSingle 扱いです。
+	//
+	// **どのモードをどう実行するかはプロンプト資産側の宣言です。** 依頼のたびに選ぶ
+	// 性質のものではないため、フォームには出しません。
+	Engine Engine `yaml:"engine"`
+}
+
+// Mode は、フォームに出す 1 モードです。
+type Mode struct {
+	// Key は prompts/<key>.md のファイル名で、そのまま worker へ渡る値です。
+	Key string
+	ModeMetadata
+}
+
+// DisplayName は選択肢に表示する名前です。
 //
-// 返すマップは呼び出し側で共有されます。書き換えないでください
-// （LoadPrompts と AvailableModes は、いずれも新しい入れ物へ写して返します）。
-var loadPrompts = sync.OnceValues(func() (map[string]promptTemplate, error) {
-	files, err := resource.Load(promptFiles, promptDir)
+// front matter が無いプロンプトを置いてもキーで表示され、**選択肢自体は消えません。**
+// 説明の書き忘れで動くはずのモードが画面から消えるほうが困るためです。
+func (m Mode) DisplayName() string {
+	if m.Label != "" {
+		return m.Label
+	}
+	return m.Key
+}
+
+// EngineKind は、そのモードを実行するエンジンを返します。
+func (m Mode) EngineKind() Engine {
+	if m.Engine == "" {
+		return EngineSingle
+	}
+	return m.Engine
+}
+
+// promptSet は、プロンプトの本文と、front matter から組み立てたモード情報です。
+type promptSet struct {
+	bodies map[string]string
+	modes  map[string]Mode
+}
+
+// loadModes は、埋め込みプロンプトの本文と front matter の解析を最初の呼び出しで
+// 1度だけ行います。本文（LoadPrompts）とモード情報（AvailableModes / EngineFor）は
+// 別の入口ですが、出どころは同じディレクトリです。
+//
+// 失敗するとすれば front matter の書式や engine の値のように毎回同じ結果になるものだけ
+// なので、エラーごとキャッシュして再試行しません。
+//
+// 返すマップは呼び出し側で共有されます。書き換えないでください。
+var loadModes = sync.OnceValues(func() (promptSet, error) {
+	raw, err := resource.Load(promptFiles, promptDir)
 	if err != nil {
-		return nil, err
+		return promptSet{}, err
 	}
 
-	parsed := make(map[string]promptTemplate, len(files))
-	for mode, body := range files {
-		description, engine, promptBody, err := parsePromptMetadata(mode, body)
-		if err != nil {
-			return nil, err
-		}
-		parsed[mode] = promptTemplate{
-			body:        promptBody,
-			description: description,
-			engine:      engine,
-		}
+	bodies, fronts := frontmatter.SplitMap(raw)
+
+	// **黙って無視しません。** 書き間違えた説明が空欄になるだけだと、画面を開くまで
+	// 気付けません。
+	metas, err := frontmatter.DecodeMap[ModeMetadata](fronts, yaml.Unmarshal)
+	if err != nil {
+		return promptSet{}, fmt.Errorf("prompts の front matter が読めません: %w", err)
 	}
-	return parsed, nil
+
+	modes := make(map[string]Mode, len(bodies))
+	for key := range bodies {
+		meta := metas[key]
+
+		// engine の綴り違いは起動時に落とします。実行時に既定へ落とすと、
+		// エージェントで動かすつもりのモードが黙って単発で動き続けます。
+		switch meta.Engine {
+		case "", EngineSingle, EngineAgent:
+		default:
+			return promptSet{}, fmt.Errorf("プロンプト %q の engine 指定が不正です: %q（single か agent）", key, meta.Engine)
+		}
+
+		modes[key] = Mode{Key: key, ModeMetadata: meta}
+	}
+	return promptSet{bodies: bodies, modes: modes}, nil
 })
 
-type promptTemplate struct {
-	body        string
-	description string
-	engine      Engine
-}
-
-// ReviewMode は、フォームに表示するレビューモードのメタデータです。
-type ReviewMode struct {
-	Name        string
-	Description string
-}
-
-// LoadPrompts は埋め込まれたプロンプトの本文をモード名で引けるマップとして返します。
+// LoadPrompts は埋め込まれたプロンプトの**本文だけ**を読み込みます。
+//
+// front matter は説明であってプロンプトではないので、ここで落とします。
+// 残したまま渡すと YAML が指示文の先頭に紛れ込みます。
 func LoadPrompts() (map[string]string, error) {
-	cached, err := loadPrompts()
+	set, err := loadModes()
 	if err != nil {
 		return nil, err
 	}
-
-	prompts := make(map[string]string, len(cached))
-	for mode, prompt := range cached {
-		prompts[mode] = prompt.body
-	}
-	return prompts, nil
+	return maps.Clone(set.bodies), nil
 }
 
 // LoadFindingsFormat は、レビュー指摘のJSONフォーマットを説明する共通テキストを読み込みます。
@@ -127,102 +173,47 @@ func loadPartial(name string) (string, error) {
 	return string(b), nil
 }
 
-// AvailableModes は、埋め込まれたレビュープロンプトから利用可能なモード名を返します。
-func AvailableModes() ([]ReviewMode, error) {
-	cached, err := loadPrompts()
+// AvailableModes は、埋め込まれたレビュープロンプトから利用可能なモードをキー順に返します。
+//
+// 並びを固定するのは、map の走査順がそのまま選択肢の順になると、
+// 描画のたびに並びが変わるためです。
+func AvailableModes() ([]Mode, error) {
+	set, err := loadModes()
 	if err != nil {
 		return nil, err
 	}
 
-	modes := make([]ReviewMode, 0, len(cached))
-	for mode, prompt := range cached {
-		modes = append(modes, ReviewMode{
-			Name:        mode,
-			Description: prompt.description,
-		})
+	modes := make([]Mode, 0, len(set.modes))
+	for _, mode := range set.modes {
+		modes = append(modes, mode)
 	}
 
-	sort.Slice(modes, func(i, j int) bool {
-		return modes[i].Name < modes[j].Name
-	})
+	sort.Slice(modes, func(i, j int) bool { return modes[i].Key < modes[j].Key })
 	return modes, nil
 }
 
 // IsValidMode は、指定されたモード名に対応するプロンプトファイルが存在するか確認します。
 func IsValidMode(mode string) bool {
-	cached, err := loadPrompts()
+	set, err := loadModes()
 	if err != nil {
 		slog.Error("failed to load prompts for validation", "error", err)
 		return false
 	}
 
-	_, ok := cached[mode]
+	_, ok := set.modes[mode]
 	return ok
 }
 
-// EngineFor \u306f\u3001\u30e2\u30fc\u30c9\u304c\u4f7f\u3046\u30ec\u30d3\u30e5\u30fc\u30a8\u30f3\u30b8\u30f3\u3092\u8fd4\u3057\u307e\u3059\u3002
-// \u30e1\u30bf\u30c7\u30fc\u30bf\u3067\u6307\u5b9a\u3055\u308c\u3066\u3044\u306a\u3044\u30e2\u30fc\u30c9\u306f EngineSingle \u3067\u3059\u3002
+// EngineFor は、モードを実行するレビューエンジンを返します。
 func EngineFor(mode string) (Engine, error) {
-	cached, err := loadPrompts()
+	set, err := loadModes()
 	if err != nil {
 		return "", err
 	}
 
-	prompt, ok := cached[mode]
+	m, ok := set.modes[mode]
 	if !ok {
-		return "", fmt.Errorf("\u672a\u77e5\u306e\u30ec\u30d3\u30e5\u30fc\u30e2\u30fc\u30c9\u3067\u3059: %q", mode)
+		return "", fmt.Errorf("未知のレビューモードです: %q", mode)
 	}
-	return prompt.engine, nil
-}
-
-// parsePromptMetadata \u306f\u3001\u30d7\u30ed\u30f3\u30d7\u30c8\u5192\u982d\u306e\u30e1\u30bf\u30c7\u30fc\u30bf\u30b3\u30e1\u30f3\u30c8\u3092\u53d6\u308a\u51fa\u3057\u307e\u3059\u3002
-//
-// \u5bfe\u5fdc\u3059\u308b\u306e\u306f mode-description \u3068 engine \u306e 2 \u7a2e\u985e\u3067\u3001\u3069\u3061\u3089\u3082\u4efb\u610f\u30fb\u9806\u4e0d\u540c\u3067\u3059\u3002
-// engine \u306e\u6307\u5b9a\u30df\u30b9\u306f\u8d77\u52d5\u6642\uff08\u521d\u56de\u30ed\u30fc\u30c9\u6642\uff09\u306b\u843d\u3068\u3057\u307e\u3059\u3002\u5b9f\u884c\u6642\u306b\u30d5\u30a9\u30fc\u30eb\u30d0\u30c3\u30af\u3059\u308b\u3068\u3001
-// \u30a8\u30fc\u30b8\u30a7\u30f3\u30c8\u3067\u52d5\u304b\u3059\u3064\u3082\u308a\u306e\u30e2\u30fc\u30c9\u304c\u9ed9\u3063\u3066\u5358\u767a\u3067\u52d5\u304d\u7d9a\u3051\u308b\u305f\u3081\u3067\u3059\u3002
-func parsePromptMetadata(mode, body string) (description string, engine Engine, promptBody string, err error) {
-	description = mode
-	engine = EngineSingle
-	rest := strings.TrimLeft(body, "\ufeff \t\r\n")
-
-	for {
-		switch {
-		case strings.HasPrefix(rest, modeDescriptionPrefix):
-			value, remainder, ok := cutMetadata(rest, modeDescriptionPrefix)
-			if !ok {
-				return description, engine, rest, nil
-			}
-			if value != "" {
-				description = value
-			}
-			rest = remainder
-
-		case strings.HasPrefix(rest, enginePrefix):
-			value, remainder, ok := cutMetadata(rest, enginePrefix)
-			if !ok {
-				return description, engine, rest, nil
-			}
-			switch Engine(value) {
-			case EngineSingle, EngineAgent:
-				engine = Engine(value)
-			default:
-				return "", "", "", fmt.Errorf("\u30d7\u30ed\u30f3\u30d7\u30c8 %q \u306e engine \u6307\u5b9a\u304c\u4e0d\u6b63\u3067\u3059: %q\uff08single \u304b agent\uff09", mode, value)
-			}
-			rest = remainder
-
-		default:
-			return description, engine, rest, nil
-		}
-	}
-}
-
-// cutMetadata \u306f\u3001prefix \u3067\u59cb\u307e\u308b\u30e1\u30bf\u30c7\u30fc\u30bf\u30b3\u30e1\u30f3\u30c8 1 \u3064\u3092\u5024\u3068\u6b8b\u308a\u306b\u5206\u3051\u307e\u3059\u3002
-func cutMetadata(s, prefix string) (value, rest string, ok bool) {
-	end := strings.Index(s, metadataSuffix)
-	if end < len(prefix) {
-		return "", "", false
-	}
-	value = strings.TrimSpace(s[len(prefix):end])
-	rest = strings.TrimLeft(s[end+len(metadataSuffix):], " \t\r\n")
-	return value, rest, true
+	return m.EngineKind(), nil
 }

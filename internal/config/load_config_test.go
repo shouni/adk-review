@@ -32,7 +32,6 @@ func TestLoadConfig_FromEnvironment(t *testing.T) {
 	t.Setenv("ALLOWED_TASK_SERVICE_ACCOUNTS", "web@example.iam.gserviceaccount.com")
 	t.Setenv("GCS_REVIEW_BUCKET", "bucket-a")
 	t.Setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.test")
-	t.Setenv("GEMINI_API_KEY", "api-key")
 	t.Setenv("GEMINI_MODELS", "gemini-2.5-pro, gemini-2.5-flash")
 	t.Setenv("SSH_KEY_PATH", "/tmp/id_rsa")
 	t.Setenv("GOOGLE_CLIENT_ID", "google-client")

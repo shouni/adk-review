@@ -5,41 +5,70 @@ import (
 	"testing"
 )
 
-func TestAvailableModesReadsPromptMetadata(t *testing.T) {
+func TestAvailableModesReadsFrontMatter(t *testing.T) {
 	modes, err := AvailableModes()
 	if err != nil {
 		t.Fatalf("AvailableModes failed: %v", err)
 	}
 
-	got := make(map[string]string, len(modes))
+	got := make(map[string]Mode, len(modes))
 	for _, mode := range modes {
-		got[mode.Name] = mode.Description
+		got[mode.Key] = mode
 	}
 
-	want := map[string]string{
-		"article": "技術記事・ドキュメント品質レビュー",
-		"code":    "詳細なコード品質レビュー",
-		"novel":   "小説原稿の詳細レビュー",
-	}
-	for mode, description := range want {
-		if got[mode] != description {
-			t.Fatalf("unexpected description for %s: got %q want %q", mode, got[mode], description)
+	for _, key := range []string{"article", "code", "novel"} {
+		mode, ok := got[key]
+		if !ok {
+			t.Fatalf("モード %s がありません", key)
+		}
+		// 説明の書き忘れは選択肢の意味を失わせるため、全モードに要求します。
+		if mode.Label == "" {
+			t.Errorf("%s: label がありません", key)
+		}
+		if mode.Direction == "" {
+			t.Errorf("%s: direction がありません", key)
+		}
+		if mode.UseWhen == "" {
+			t.Errorf("%s: use_when がありません", key)
 		}
 	}
 }
 
-func TestLoadPromptsStripsModeDescriptionMetadata(t *testing.T) {
+// 現在の全モードはエージェント実行です。単発へ戻すのは設計判断なので、
+// 意図しない差し戻しに気付けるようテストで固定します。
+func TestAllModesUseAgentEngine(t *testing.T) {
+	modes, err := AvailableModes()
+	if err != nil {
+		t.Fatalf("AvailableModes failed: %v", err)
+	}
+	if len(modes) == 0 {
+		t.Fatal("モードが 1 つもありません")
+	}
+
+	for _, mode := range modes {
+		if mode.EngineKind() != EngineAgent {
+			t.Errorf("%s のエンジン = %q, want %q", mode.Key, mode.EngineKind(), EngineAgent)
+		}
+	}
+}
+
+func TestLoadPromptsStripsFrontMatter(t *testing.T) {
 	prompts, err := LoadPrompts()
 	if err != nil {
 		t.Fatalf("LoadPrompts failed: %v", err)
 	}
 
-	code := prompts["code"]
-	if strings.Contains(code, "mode-description:") {
-		t.Fatalf("metadata should be stripped from prompt body: %q", code[:80])
+	code, ok := prompts["code"]
+	if !ok {
+		t.Fatal("code のプロンプトがありません")
+	}
+	for _, key := range []string{"label:", "direction:", "use_when:", "engine:"} {
+		if strings.Contains(code, key) {
+			t.Errorf("front matter が本文に残っています: %q", key)
+		}
 	}
 	if !strings.HasPrefix(code, "# ") {
-		t.Fatalf("prompt body should start with markdown heading: %q", code[:80])
+		t.Errorf("本文が見出しから始まっていません: %q", code[:min(80, len(code))])
 	}
 }
 
@@ -64,7 +93,7 @@ func TestLoadFindingsFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFindingsFormat failed: %v", err)
 	}
-	for _, want := range []string{"severity", "file", "excerpt", "message", "suggestion"} {
+	for _, want := range []string{"severity", "file", "excerpt", "message", "suggestion", "evidence"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("LoadFindingsFormat() missing %q:\n%s", want, got)
 		}
@@ -76,51 +105,10 @@ func TestLoadVerdictFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadVerdictFormat failed: %v", err)
 	}
-	for _, want := range []string{"decision", "reason"} {
+	for _, want := range []string{"decision", "reason", "title", "summary"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("LoadVerdictFormat() missing %q:\n%s", want, got)
 		}
-	}
-}
-
-func TestParsePromptMetadataTrimsLeadingNoiseWithoutMetadata(t *testing.T) {
-	description, engine, body, err := parsePromptMetadata("custom", "\ufeff\n\n# Custom Prompt")
-
-	if err != nil {
-		t.Fatalf("parsePromptMetadata failed: %v", err)
-	}
-	if description != "custom" {
-		t.Fatalf("unexpected description: got %q want %q", description, "custom")
-	}
-	if engine != EngineSingle {
-		t.Fatalf("unexpected engine: got %q want %q", engine, EngineSingle)
-	}
-	if body != "# Custom Prompt" {
-		t.Fatalf("unexpected body: got %q", body)
-	}
-}
-
-func TestParsePromptMetadataReadsEngine(t *testing.T) {
-	input := "<!-- mode-description: \u539f\u7a3f\u30ec\u30d3\u30e5\u30fc -->\n<!-- engine: agent -->\n# Prompt"
-	description, engine, body, err := parsePromptMetadata("novel", input)
-
-	if err != nil {
-		t.Fatalf("parsePromptMetadata failed: %v", err)
-	}
-	if description != "\u539f\u7a3f\u30ec\u30d3\u30e5\u30fc" {
-		t.Fatalf("unexpected description: got %q", description)
-	}
-	if engine != EngineAgent {
-		t.Fatalf("unexpected engine: got %q want %q", engine, EngineAgent)
-	}
-	if body != "# Prompt" {
-		t.Fatalf("unexpected body: got %q", body)
-	}
-}
-
-func TestParsePromptMetadataRejectsUnknownEngine(t *testing.T) {
-	if _, _, _, err := parsePromptMetadata("novel", "<!-- engine: turbo -->\n# Prompt"); err == nil {
-		t.Fatal("\u672a\u77e5\u306e engine \u304c\u30a8\u30e9\u30fc\u306b\u306a\u308a\u307e\u305b\u3093")
 	}
 }
 
@@ -130,18 +118,33 @@ func TestEngineFor(t *testing.T) {
 		t.Fatalf("EngineFor failed: %v", err)
 	}
 	if engine != EngineAgent {
-		t.Fatalf("novel \u306f agent \u306e\u306f\u305a\u3067\u3059: got %q", engine)
-	}
-
-	engine, err = EngineFor("code")
-	if err != nil {
-		t.Fatalf("EngineFor failed: %v", err)
-	}
-	if engine != EngineSingle {
-		t.Fatalf("code \u306f single \u306e\u306f\u305a\u3067\u3059: got %q", engine)
+		t.Fatalf("novel は agent のはずです: got %q", engine)
 	}
 
 	if _, err := EngineFor("no-such-mode"); err == nil {
-		t.Fatal("\u672a\u77e5\u306e\u30e2\u30fc\u30c9\u304c\u30a8\u30e9\u30fc\u306b\u306a\u308a\u307e\u305b\u3093")
+		t.Fatal("未知のモードがエラーになりません")
+	}
+}
+
+func TestIsValidMode(t *testing.T) {
+	if !IsValidMode("code") {
+		t.Error("code が有効と判定されません")
+	}
+	if IsValidMode("no-such-mode") {
+		t.Error("未知のモードが有効と判定されました")
+	}
+}
+
+// EngineKind は front matter に engine が無いモードを単発として扱います。
+func TestEngineKindDefaultsToSingle(t *testing.T) {
+	if got := (Mode{Key: "x"}).EngineKind(); got != EngineSingle {
+		t.Errorf("EngineKind() = %q, want %q", got, EngineSingle)
+	}
+}
+
+// DisplayName は label が無ければキーで代替します（選択肢自体は消しません）。
+func TestDisplayNameFallsBackToKey(t *testing.T) {
+	if got := (Mode{Key: "x"}).DisplayName(); got != "x" {
+		t.Errorf("DisplayName() = %q, want %q", got, "x")
 	}
 }

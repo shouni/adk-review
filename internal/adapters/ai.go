@@ -17,8 +17,7 @@ import (
 // geminiLocationID は、Gemini 呼び出しに使うロケーションです。
 //
 // GCP_LOCATION_ID（Cloud Tasks のリージョン）と分けているのは、モデルの提供リージョンと
-// キューのリージョンは別の都合で決まるためです。旧 git-gemini-web も go-review-kit 側の
-// 既定値として global を使っていました。
+// キューのリージョンが別の都合で決まるためです。
 const geminiLocationID = "global"
 
 // NewGeminiClient は、モデル呼び出しの共有クライアントを構築します。

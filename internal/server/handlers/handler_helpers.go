@@ -68,13 +68,13 @@ func reviewModeOptions(ctx context.Context, selectedMode string) []ReviewModeOpt
 	options := make([]ReviewModeOption, 0, len(modes))
 	hasSelected := false
 	for _, mode := range modes {
-		selected := mode.Name == selectedMode
+		selected := mode.Key == selectedMode
 		if selected {
 			hasSelected = true
 		}
 		options = append(options, ReviewModeOption{
-			Value:       mode.Name,
-			Description: mode.Description,
+			Value:       mode.Key,
+			Description: mode.DisplayName(),
 			Selected:    selected,
 		})
 	}
