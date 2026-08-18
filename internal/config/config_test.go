@@ -201,7 +201,7 @@ func TestValidateTimeouts(t *testing.T) {
 	})
 
 	// dispatch deadline を伸ばせば、それに合わせて pipeline も伸ばせること。
-	// 定数だった頃はここが再ビルドなしでは動かせませんでした。
+	// ここが定数に戻ると、長いレビューは再ビルドなしには救えなくなります。
 	t.Run("dispatch deadline を伸ばせば pipeline も伸ばせる", func(t *testing.T) {
 		t.Parallel()
 		c := validBase()

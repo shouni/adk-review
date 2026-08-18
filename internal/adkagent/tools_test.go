@@ -150,9 +150,9 @@ func TestSearchText(t *testing.T) {
 
 // 上限を超える日本語ファイルが、バイナリ扱いで拒否されずに読めること。
 //
-// 以前は切り詰めてから utf8.Valid を見ていたため、3 バイト文字が境界で割れる
-// 2/3 の確率で「テキストファイルではありません」になっていました。長い日本語原稿は
-// novel / article モードの主対象なので、いちばん使う経路でだけ壊れる形でした。
+// 切り詰めてから utf8.Valid を見る順序に戻すと、3 バイト文字が境界で割れる 2/3 の
+// 確率で「テキストファイルではありません」になります。長い日本語原稿は novel /
+// article モードの主対象なので、いちばん使う経路でだけ壊れます。
 func TestReadFileTruncatesAtRuneBoundary(t *testing.T) {
 	t.Parallel()
 

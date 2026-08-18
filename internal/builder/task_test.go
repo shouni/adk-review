@@ -10,9 +10,8 @@ import (
 
 // 投入側が組み立てる宛先が、受信側の登録パスと一致すること。
 //
-// この 2 つはかつて別々のリテラルで、ずれると投入したタスクが全部 404 になり、
-// review-queue は max_attempts = 1 なので再試行もされず黙って消えていました。
-// 定数を共有したうえで、組み立て結果まで確かめます。
+// ずれると投入したタスクが全部 404 になり、review-queue は max_attempts = 1 なので
+// 再試行もされず黙って消えます。定数を共有したうえで、組み立て結果まで確かめます。
 func TestWorkerTaskURLMatchesRegisteredPath(t *testing.T) {
 	t.Parallel()
 

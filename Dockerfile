@@ -3,17 +3,13 @@ FROM golang:1.26-alpine AS builder
 RUN apk add --no-cache tzdata ca-certificates curl jq
 WORKDIR /app
 
-# SSH のホスト鍵は GitHub の API から取ってきて焼き込みます。
+# SSH のホスト鍵は GitHub の API から取得して焼き込みます。
 #
-# **リポジトリに固定しません。** 鍵は信頼の起点なので、古びた値を持ち続けるより
-# 出どころに追従するほうが安全です。固定すると、ローテート後は clone が全滅するのに
-# 気付くのは本番で、直すにはコード変更とデプロイが要ります。ローテートの理由が漏洩
-# だった場合は、漏れた鍵を固定し続けることにもなります。取得の失敗ならビルドが赤くなる
-# だけで、再実行で済みます。
+# 鍵をリポジトリに置いて COPY しないでください。ローテートに追従できなくなり、
+# clone が全滅するのに気付くのは本番、直すにはデプロイが要ります。
 #
-# ★ この行は **COPY . . より前** に置きます。後ろにあるとレイヤキャッシュが効かず、
-# ソースを 1 文字変えるだけで毎ビルド GitHub API を叩いていました（未認証呼び出しなので、
-# Cloud Build の共有 IP ではレート制限に当たる余地があります）。
+# このステップは COPY . . より前に置いてください。後ろだとソース変更のたびに
+# レイヤキャッシュが外れ、未認証の API 呼び出しを毎ビルド繰り返します。
 RUN mkdir -p /etc/ssh \
     && curl -fsSL --retry 3 https://api.github.com/meta \
        | jq -er '.ssh_keys[] | "github.com \(.)"' > /etc/ssh/ssh_known_hosts \
