@@ -3,7 +3,7 @@ package adapters
 import (
 	geminiclient "github.com/shouni/go-gemini-client/gemini"
 
-	"github.com/shouni/go-review-kit/review"
+	"github.com/shouni/adk-review/internal/domain"
 )
 
 // reportSchema は、review.Report に対応する構造化出力スキーマです。
@@ -23,7 +23,7 @@ func reportSchema() *geminiclient.Schema {
 			"verdict": {
 				Type: geminiclient.TypeObject,
 				Properties: map[string]*geminiclient.Schema{
-					"decision": {Type: geminiclient.TypeString, Enum: decisionEnum()},
+					"decision": {Type: geminiclient.TypeString, Enum: domain.DecisionEnum()},
 					"reason":   {Type: geminiclient.TypeString},
 				},
 				Required: []string{"decision", "reason"},
@@ -33,7 +33,7 @@ func reportSchema() *geminiclient.Schema {
 				Items: &geminiclient.Schema{
 					Type: geminiclient.TypeObject,
 					Properties: map[string]*geminiclient.Schema{
-						"severity":   {Type: geminiclient.TypeString, Enum: severityEnum()},
+						"severity":   {Type: geminiclient.TypeString, Enum: domain.SeverityEnum()},
 						"file":       {Type: geminiclient.TypeString},
 						"line":       {Type: geminiclient.TypeInteger},
 						"excerpt":    {Type: geminiclient.TypeString},
@@ -46,24 +46,4 @@ func reportSchema() *geminiclient.Schema {
 		},
 		Required: []string{"title", "summary", "verdict", "findings"},
 	}
-}
-
-// severityEnum は、findings[].severity が取りうる値を返します。
-func severityEnum() []string {
-	values := review.Severities()
-	enum := make([]string, 0, len(values))
-	for _, v := range values {
-		enum = append(enum, string(v))
-	}
-	return enum
-}
-
-// decisionEnum は、verdict.decision が取りうる値を返します。
-func decisionEnum() []string {
-	values := review.Decisions()
-	enum := make([]string, 0, len(values))
-	for _, v := range values {
-		enum = append(enum, string(v))
-	}
-	return enum
 }

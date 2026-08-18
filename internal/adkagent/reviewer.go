@@ -61,10 +61,18 @@ type Reviewer struct {
 	clientConfig genai.ClientConfig
 	maxToolCalls int64
 
-	// models は、モデル名 → model.LLM のキャッシュです。モデルの構築は genai.Client の
+	// models は、モデル名 → 構築エントリのキャッシュです。モデルの構築は genai.Client の
 	// 生成を伴うため、同じモデル名のレビューをまたいで再利用します。
 	mu     sync.Mutex
-	models map[string]model.LLM
+	models map[string]*modelEntry
+}
+
+// modelEntry は、1 モデル名ぶんの構築結果です。once で構築を 1 回に絞ることで、
+// 同じモデルを同時に要求されても genai クライアントの生成は 1 回で済みます。
+type modelEntry struct {
+	once sync.Once
+	llm  model.LLM
+	err  error
 }
 
 // 実装がポートを満たすことをコンパイル時に確認します。
@@ -79,7 +87,7 @@ func New(cfg Config) *Reviewer {
 	return &Reviewer{
 		clientConfig: cfg.ClientConfig,
 		maxToolCalls: maxCalls,
-		models:       make(map[string]model.LLM),
+		models:       make(map[string]*modelEntry),
 	}
 }
 
@@ -157,6 +165,12 @@ func (r *Reviewer) collectFinalText(ctx context.Context, run *runner.Runner, pro
 		}
 		final.Reset()
 		for _, part := range event.Content.Parts {
+			// Parts は []*Part なので、要素の nil も event 自体と同じく防ぎます。
+			// ここで panic すると worker のリクエストごと落ち、review-queue は
+			// max_attempts = 1 なのでタスクが黙って失われます。
+			if part == nil {
+				continue
+			}
 			final.WriteString(part.Text)
 		}
 	}
@@ -168,18 +182,30 @@ func (r *Reviewer) collectFinalText(ctx context.Context, run *runner.Runner, pro
 }
 
 // model は、モデル名に対応する model.LLM を返します（キャッシュあり）。
+//
+// 構築はモデル名ごとの sync.Once に閉じ込め、mutex はキャッシュの出し入れだけに使います。
+// gemini.NewModel は Vertex AI では認証情報の検出とメタデータサーバーへの往復を伴うため、
+// ロックを握ったまま呼ぶと、初回構築中に同居する他のレビューが全部そこで直列に待ちます。
 func (r *Reviewer) model(ctx context.Context, name string) (model.LLM, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if llm, ok := r.models[name]; ok {
-		return llm, nil
+	entry, ok := r.models[name]
+	if !ok {
+		entry = &modelEntry{}
+		r.models[name] = entry
 	}
+	r.mu.Unlock()
 
-	llm, err := gemini.NewModel(ctx, name, &r.clientConfig)
-	if err != nil {
-		return nil, fmt.Errorf("adkagent: モデルの初期化に失敗しました (model: %s): %w", name, err)
+	entry.once.Do(func() {
+		entry.llm, entry.err = gemini.NewModel(ctx, name, &r.clientConfig)
+	})
+	if entry.err != nil {
+		// 失敗を握り続けないよう、次回は作り直せるようにします。
+		r.mu.Lock()
+		if r.models[name] == entry {
+			delete(r.models, name)
+		}
+		r.mu.Unlock()
+		return nil, fmt.Errorf("adkagent: モデルの初期化に失敗しました (model: %s): %w", name, entry.err)
 	}
-	r.models[name] = llm
-	return llm, nil
+	return entry.llm, nil
 }

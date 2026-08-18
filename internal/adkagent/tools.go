@@ -21,6 +21,7 @@ const (
 	maxListEntries   = 500
 	maxSearchHits    = 100
 	maxSearchByteLen = 1 * 1024 * 1024 // これより大きいファイルは検索対象から外します
+	maxSearchFiles   = 2000            // 1 回の検索で開くファイル数の上限
 )
 
 // toolbox は、1 回のレビュー実行に紐付くワークスペース参照ツール一式です。
@@ -33,14 +34,12 @@ type toolbox struct {
 	remaining atomic.Int64
 }
 
-// errorResult は、ツールの失敗をモデルへ伝える戻り値です。
+// budgetExhaustedMsg は、回数を使い切ったことをモデルへ伝える文言です。
 //
-// Go の error として返すとフレームワークがエラーイベントとして扱い、モデルが
-// リカバリー（別のパスを試す、諦めて最終回答へ進む）を選べません。失敗も正常な
-// 戻り値として渡し、判断はモデルに委ねます。
-type errorResult struct {
-	Error string `json:"error"`
-}
+// ツールの失敗を Go の error として返すとフレームワークがエラーイベントとして扱い、
+// モデルがリカバリー（別のパスを試す、諦めて最終回答へ進む）を選べません。失敗も
+// 各ツールの Error フィールドに載せた正常な戻り値として渡し、判断はモデルに委ねます。
+const budgetExhaustedMsg = "ツールの呼び出し回数上限に達しました。これ以上の調査はできません。ここまでに得た情報で最終レビューをまとめてください。"
 
 // newTools は、root 配下だけを参照できるツール一式を組み立てます。
 func newTools(root string, budget int64) ([]tool.Tool, error) {
@@ -100,11 +99,6 @@ func (t *toolbox) spend() bool {
 	return t.remaining.Add(-1) >= 0
 }
 
-// budgetExhausted は、回数を使い切ったことをモデルへ伝える戻り値です。
-func budgetExhausted() errorResult {
-	return errorResult{Error: "ツールの呼び出し回数上限に達しました。これ以上の調査はできません。ここまでに得た情報で最終レビューをまとめてください。"}
-}
-
 // resolve は、相対パスを root 配下の絶対パスへ解決します。
 //
 // filepath.Clean だけでは symlink 経由の脱出を防げないため、実体パスまで解決して
@@ -149,7 +143,7 @@ type readFileResult struct {
 
 func (t *toolbox) readFile(_ agent.Context, args readFileArgs) (readFileResult, error) {
 	if !t.spend() {
-		return readFileResult{Error: budgetExhausted().Error}, nil
+		return readFileResult{Error: budgetExhaustedMsg}, nil
 	}
 
 	path, err := t.resolve(args.Path)
@@ -162,15 +156,33 @@ func (t *toolbox) readFile(_ agent.Context, args readFileArgs) (readFileResult, 
 		return readFileResult{Error: fmt.Sprintf("読み込みに失敗しました: %v", err)}, nil
 	}
 
-	truncated := false
-	if len(content) > maxFileBytes {
-		content = content[:maxFileBytes]
-		truncated = true
-	}
+	// テキストかどうかは読み込んだ内容そのもので判定します。先に切り詰めると、
+	// 日本語のようなマルチバイト文字が途中で割れて「テキストではない」と誤判定されます
+	// （3 バイト文字なら切り口が文字境界に当たるのは 1/3 だけです）。
 	if !utf8.Valid(content) {
 		return readFileResult{Error: "テキストファイルではありません"}, nil
 	}
+
+	truncated := false
+	if len(content) > maxFileBytes {
+		content = content[:truncateAtRune(content, maxFileBytes)]
+		truncated = true
+	}
 	return readFileResult{Content: string(content), Truncated: truncated}, nil
+}
+
+// truncateAtRune は、limit を超えない範囲で最も後ろの文字境界を返します。
+// content は utf8.Valid 済みであることを前提とします。
+func truncateAtRune(content []byte, limit int) int {
+	if len(content) <= limit {
+		return len(content)
+	}
+	// limit の位置が文字の途中なら、その文字の先頭まで戻します。
+	// UTF-8 の継続バイトは 0b10xxxxxx なので、最大 3 バイト戻れば境界に着きます。
+	for limit > 0 && content[limit]&0xC0 == 0x80 {
+		limit--
+	}
+	return limit
 }
 
 // --- list_files ---
@@ -187,7 +199,7 @@ type listFilesResult struct {
 
 func (t *toolbox) listFiles(_ agent.Context, args listFilesArgs) (listFilesResult, error) {
 	if !t.spend() {
-		return listFilesResult{Error: budgetExhausted().Error}, nil
+		return listFilesResult{Error: budgetExhaustedMsg}, nil
 	}
 
 	dir := args.Dir
@@ -243,7 +255,7 @@ type searchTextResult struct {
 
 func (t *toolbox) searchText(_ agent.Context, args searchTextArgs) (searchTextResult, error) {
 	if !t.spend() {
-		return searchTextResult{Error: budgetExhausted().Error}, nil
+		return searchTextResult{Error: budgetExhaustedMsg}, nil
 	}
 	if strings.TrimSpace(args.Query) == "" {
 		return searchTextResult{Error: "query が空です"}, nil
@@ -252,6 +264,7 @@ func (t *toolbox) searchText(_ agent.Context, args searchTextArgs) (searchTextRe
 	query := strings.ToLower(args.Query)
 	var hits []string
 	truncated := false
+	scanned := 0
 
 	err := filepath.WalkDir(t.root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -263,7 +276,11 @@ func (t *toolbox) searchText(_ agent.Context, args searchTextArgs) (searchTextRe
 			}
 			return nil
 		}
-		if truncated {
+		// 走査したファイル数でも打ち切ります。ヒットが 1 件も無いとヒット上限が効かず、
+		// 1 レビューぶんのツール予算をリポジトリの全走査に何度も使ってしまうためです。
+		scanned++
+		if scanned > maxSearchFiles {
+			truncated = true
 			return filepath.SkipAll
 		}
 
@@ -280,7 +297,12 @@ func (t *toolbox) searchText(_ agent.Context, args searchTextArgs) (searchTextRe
 		if err != nil {
 			return err
 		}
-		for i, line := range strings.Split(string(content), "\n") {
+		// strings.Lines は行を切り出しながら回すので、大きなファイルでも
+		// 全行ぶんのスライスを一度に確保しません。
+		lineNo := 0
+		for line := range strings.Lines(string(content)) {
+			lineNo++
+			line = strings.TrimRight(line, "\n")
 			if !strings.Contains(strings.ToLower(line), query) {
 				continue
 			}
@@ -288,7 +310,7 @@ func (t *toolbox) searchText(_ agent.Context, args searchTextArgs) (searchTextRe
 				truncated = true
 				return filepath.SkipAll
 			}
-			hits = append(hits, fmt.Sprintf("%s:%d: %s", filepath.ToSlash(rel), i+1, strings.TrimSpace(line)))
+			hits = append(hits, fmt.Sprintf("%s:%d: %s", filepath.ToSlash(rel), lineNo, strings.TrimSpace(line)))
 		}
 		return nil
 	})

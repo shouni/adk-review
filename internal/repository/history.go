@@ -84,7 +84,9 @@ func (h *History) List(ctx context.Context, page, perPage int) (domain.HistoryPa
 func (h *History) Get(ctx context.Context, jobID string) (domain.ReviewDetail, error) {
 	status, err := h.store.Get(ctx, jobID)
 	if err != nil {
-		return domain.ReviewDetail{}, err
+		// %w で包みます。呼び出し側は errors.Is で ErrNotFound（404）と
+		// それ以外（500）を切り分けるため、種類は保ったまま文脈だけ足します。
+		return domain.ReviewDetail{}, fmt.Errorf("進行状況の取得に失敗しました (job_id: %s): %w", jobID, err)
 	}
 
 	detail := domain.ReviewDetail{Status: status}
@@ -160,15 +162,24 @@ func (h *History) Invalidate() {
 
 // loadStatus は 1 件分の進行状況を読み取ります。
 //
-// 読めなかった ID も一覧からは落とさず、ジョブ ID だけの行として残します。
+// まだ記録が無い ID は一覧から落とさず、ジョブ ID だけの行として残します。
 // 一覧から消えると、投入したはずのレビューを画面から追えなくなるためです。
+//
+// ★ ただしそれは **ErrNotFound のときだけ** です。読み取り自体が失敗した場合
+// （権限剥奪・ストレージ障害）まで同じ扱いにすると、一覧が「ジョブ ID だけの空行が
+// 並ぶ 200 OK」になり、障害が障害に見えなくなります。store は両者を別のエラーとして
+// 返すので、後者は呼び出し元へ持ち上げます。
 func (h *History) loadStatus(ctx context.Context, jobID string) (domain.JobStatus, error) {
 	status, err := h.store.Get(ctx, jobID)
-	if err != nil {
-		h.logger.WarnContext(ctx, "進行状況の読み込みに失敗しました", "job_id", jobID, "error", err)
+	switch {
+	case err == nil:
+		return status, nil
+	case errors.Is(err, jobstatus.ErrNotFound):
 		return domain.JobStatus{Status: jobstatus.Status{JobID: jobID}}, nil
+	default:
+		h.logger.ErrorContext(ctx, "進行状況の読み込みに失敗しました", "job_id", jobID, "error", err)
+		return domain.JobStatus{}, fmt.Errorf("進行状況を読み込めませんでした (job_id: %s): %w", jobID, err)
 	}
-	return status, nil
 }
 
 // listJobIDs はプレフィックス直下のジョブ ID を集めます。

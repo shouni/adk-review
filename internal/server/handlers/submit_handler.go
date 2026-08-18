@@ -54,21 +54,23 @@ func (h *Handler) HandleReviewSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Cloud Tasks へのタスク投入
+	// 4. 受付を履歴へ残す
+	//
+	// ★ 投入より **先** に記録します。あとに回すと、Cloud Tasks の配送が数十ミリ秒で
+	// 届くため「ワーカーが running を書く → web が queued で踏み潰す」順序が起こり、
+	// 実行中のジョブが履歴で受付済みのまま止まって見えます。
+	// 積めなかったジョブを履歴に残さない配慮は、下の投入失敗時の取り消しで担保します。
+	h.recordQueued(ctx, req)
+
+	// 5. Cloud Tasks へのタスク投入
 	if err := h.taskEnqueuer.Enqueue(ctx, req); err != nil {
 		slog.ErrorContext(ctx, "Cloud Tasksへの投入失敗", "error", err, "repo", req.RepoURL, "job_id", req.JobID)
+		h.discardQueued(ctx, req.JobID)
 		h.renderForm(w, r, http.StatusServiceUnavailable, reviewFormPageData(req, ReviewFormPageData{
 			Error: "現在レビューの受け付けができません。時間をおいて再度お試しください。",
 		}))
 		return
 	}
-
-	// 5. 受付を履歴へ残す
-	//
-	// 投入したあとに記録するのは、積めていないジョブを履歴に出さないためです。
-	// 記録に失敗しても投入自体は成立しているので、受付は成功として返します
-	// （ワーカーが running を記録した時点で履歴には現れます）。
-	h.recordQueued(ctx, req)
 
 	// 6. 成功応答を返します
 	slog.InfoContext(ctx, "レビュータスク投入成功", "repo", req.RepoURL, "job_id", req.JobID)
@@ -107,6 +109,18 @@ func (h *Handler) recordQueued(ctx context.Context, req domain.ReviewRequest) {
 	}
 
 	// 投入直後に一覧へ現れるよう、ジョブID一覧のキャッシュを捨てます。
+	h.history.Invalidate()
+}
+
+// discardQueued は、投入に失敗した受付記録を取り消します。
+//
+// 取り消せなくても投入の失敗自体は利用者へ伝わっているので、ログだけ残して続けます
+// （残った場合も queued のまま古びるだけで、実行はされません）。
+func (h *Handler) discardQueued(ctx context.Context, jobID string) {
+	if err := h.history.Delete(ctx, jobID); err != nil {
+		slog.WarnContext(ctx, "投入に失敗した受付記録を取り消せませんでした", "job_id", jobID, "error", err)
+		return
+	}
 	h.history.Invalidate()
 }
 
