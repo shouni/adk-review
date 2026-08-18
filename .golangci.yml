@@ -12,10 +12,38 @@ linters:
     - unused
     - gocritic
     - revive
+    # 以下は adk-review が扱うものに合わせた追加分。
+    # SSH 秘密鍵・OAuth のセッション暗号鍵・署名付き URL・外部リポジトリの clone を
+    # 扱うので、セキュリティリンターは外せません（http.Server のタイムアウト欠落も
+    # ここが拾います）。
+    - gosec
+    # エラーは全域で %w ラップと errors.Is/As に頼っています。== 比較や %v 誤用を
+    # 見つけるのはこのリンターだけです。
+    - errorlint
+    # errcheck で (io.ReadCloser).Close を除外しているぶん、レスポンスボディの
+    # 閉じ忘れを見る目が他にありません。
+    - bodyclose
+    # 三段のタイムアウトを軸に設計しているので、context 無しの HTTP 呼び出しは
+    # その設計を素通りします。
+    - noctx
+    - copyloopvar
+    - unconvert
+    - misspell
   settings:
     errcheck:
       exclude-functions:
         - (io.ReadCloser).Close
+    gosec:
+      excludes:
+        # G104 は errcheck と重複するため無効化します。
+        - G104
+  exclusions:
+    rules:
+      # テストの httptest.NewRequest は context を持たない形が定石で、
+      # ここを直しても本番の呼び出しは 1 つも安全になりません。
+      - path: _test\.go
+        linters:
+          - noctx
 
 formatters:
   enable:

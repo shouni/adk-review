@@ -151,7 +151,9 @@ func (t *toolbox) readFile(_ agent.Context, args readFileArgs) (readFileResult, 
 		return readFileResult{Error: err.Error()}, nil
 	}
 
-	content, err := os.ReadFile(path)
+	// path は resolve が root 配下へ閉じ込め済みです（symlink 経由の脱出も実体解決で
+	// 弾いています）。ここを可変にしないとツールとして成立しません。
+	content, err := os.ReadFile(path) //nolint:gosec // resolve でワークスペース内に限定済み
 	if err != nil {
 		return readFileResult{Error: fmt.Sprintf("読み込みに失敗しました: %v", err)}, nil
 	}
@@ -288,7 +290,8 @@ func (t *toolbox) searchText(_ agent.Context, args searchTextArgs) (searchTextRe
 		if err != nil || info.Size() > maxSearchByteLen {
 			return nil
 		}
-		content, err := os.ReadFile(path)
+		// path は WalkDir が t.root 配下から渡す実在パスです。
+		content, err := os.ReadFile(path) //nolint:gosec // 走査元が root 配下に限定済み
 		if err != nil || !utf8.Valid(content) {
 			return nil
 		}
