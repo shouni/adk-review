@@ -26,7 +26,7 @@ const geminiLocationID = "global"
 // 集約します（AI は Vertex AI 経由で呼びます。設計は README の技術スタックを参照）。
 func NewGeminiClient(ctx context.Context, cfg *config.Config) (geminiclient.Generator, error) {
 	client, err := geminiclient.NewClient(ctx, geminiclient.Config{
-		ProjectID:  cfg.ProjectID,
+		ProjectID:  cfg.GCP.ProjectID,
 		LocationID: geminiLocationID,
 	})
 	if err != nil {
@@ -43,9 +43,9 @@ func NewAgentReviewer(cfg *config.Config) review.WorkspaceReviewer {
 	return adkagent.New(adkagent.Config{
 		ClientConfig: genai.ClientConfig{
 			Backend:  genai.BackendVertexAI,
-			Project:  cfg.ProjectID,
+			Project:  cfg.GCP.ProjectID,
 			Location: geminiLocationID,
 		},
-		MaxToolCalls: cfg.AgentMaxToolCalls,
+		MaxToolCalls: cfg.AI.AgentMaxToolCalls,
 	})
 }

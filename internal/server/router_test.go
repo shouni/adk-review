@@ -50,25 +50,29 @@ func newRouterForTest(t *testing.T) http.Handler {
 	t.Helper()
 
 	cfg := &config.Config{
-		ServiceURL:                 "https://service.example.com",
-		TaskAudienceURL:            "https://service.example.com",
-		AllowedTaskServiceAccounts: []string{"tasks@example.iam.gserviceaccount.com"},
-		GoogleClientID:             "client-id",
-		GoogleClientSecret:         "client-secret",
-		SessionSecret:              "1234567890abcdef",
-		SessionEncryptKey:          "1234567890123456",
-		AllowedEmails:              []string{"tester@example.com"},
+		Server: config.ServerConfig{ServiceURL: "https://service.example.com"},
+		Tasks: config.TasksConfig{
+			TaskAudienceURL:        "https://service.example.com",
+			AllowedServiceAccounts: []string{"tasks@example.iam.gserviceaccount.com"},
+		},
+		Auth: config.AuthConfig{
+			GoogleClientID:     "client-id",
+			GoogleClientSecret: "client-secret",
+			SessionSecret:      "1234567890abcdef",
+			SessionEncryptKey:  "1234567890123456",
+			AllowedEmails:      []string{"tester@example.com"},
+		},
 	}
 
 	authHandler, err := auth.NewHandler(auth.Config{
-		ClientID:          cfg.GoogleClientID,
-		ClientSecret:      cfg.GoogleClientSecret,
-		RedirectURL:       cfg.ServiceURL + "/auth/callback",
-		SessionAuthKey:    cfg.SessionSecret,
-		SessionEncryptKey: cfg.SessionEncryptKey,
+		ClientID:          cfg.Auth.GoogleClientID,
+		ClientSecret:      cfg.Auth.GoogleClientSecret,
+		RedirectURL:       cfg.Server.ServiceURL + "/auth/callback",
+		SessionAuthKey:    cfg.Auth.SessionSecret,
+		SessionEncryptKey: cfg.Auth.SessionEncryptKey,
 		SessionName:       "test-session",
 		IsSecureCookie:    true,
-		AllowedEmails:     cfg.AllowedEmails,
+		AllowedEmails:     cfg.Auth.AllowedEmails,
 	})
 	if err != nil {
 		t.Fatalf("failed to create auth handler: %v", err)
@@ -86,7 +90,7 @@ func newRouterForTest(t *testing.T) http.Handler {
 		Auth:     authHandler,
 		Web:      webHandler,
 		Worker:   workerHandler,
-		TaskAuth: auth.NewTaskVerifier(cfg.TaskAudienceURL, cfg.AllowedTaskServiceAccounts),
+		TaskAuth: auth.NewTaskVerifier(cfg.Tasks.TaskAudienceURL, cfg.Tasks.AllowedServiceAccounts),
 	}
 	return NewRouter(appHandlers)
 }
@@ -183,8 +187,8 @@ func TestFormRendersCSRFTokenFromMiddleware(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.Config{
-		ServiceURL:   "https://service.example.com",
-		GeminiModels: []string{"gemini-2.5-flash"},
+		Server: config.ServerConfig{ServiceURL: "https://service.example.com"},
+		AI:     config.AIConfig{GeminiModels: []string{"gemini-2.5-flash"}},
 	}
 	webHandler, err := handlers.NewHandler(handlers.Deps{
 		Config: cfg, TaskEnqueuer: noopTaskEnqueuer{},

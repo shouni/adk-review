@@ -31,7 +31,7 @@ type AppHandlers struct {
 // BuildHandlers は依存関係を注入し、役割が担う面のハンドラーだけを生成します。
 func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 	appHandlers := &AppHandlers{}
-	role := appCtx.Config.Role
+	role := appCtx.Config.Server.Role
 
 	if role.ServesWeb() {
 		authHandler, err := createAuthHandler(appCtx.Config)
@@ -58,7 +58,7 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 		// audience と発行元サービスアカウントの両方が揃わないと検証は常に失敗する
 		// （fail-closed）ため、起動時に構成を確かめておきます。
 		appHandlers.Worker = worker.NewHandler[domain.ReviewRequest](appCtx.Pipeline)
-		taskAuth := auth.NewTaskVerifier(appCtx.Config.TaskAudienceURL, appCtx.Config.AllowedTaskServiceAccounts)
+		taskAuth := auth.NewTaskVerifier(appCtx.Config.Tasks.TaskAudienceURL, appCtx.Config.Tasks.AllowedServiceAccounts)
 		if !taskAuth.Configured() {
 			return nil, fmt.Errorf("cloud Tasks の OIDC 検証を構成できません: TASK_AUDIENCE_URL と ALLOWED_TASK_SERVICE_ACCOUNTS が必要です")
 		}
@@ -70,20 +70,20 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 
 // createAuthHandler は、提供された設定(Config)に基づいて認証ハンドラーを初期化して返します。
 func createAuthHandler(cfg *config.Config) (*auth.Handler, error) {
-	redirectURL, err := url.JoinPath(cfg.ServiceURL, "/auth/callback")
+	redirectURL, err := url.JoinPath(cfg.Server.ServiceURL, "/auth/callback")
 	if err != nil {
 		return nil, fmt.Errorf("リダイレクトURLの構築失敗: %w", err)
 	}
 
 	return auth.NewHandler(auth.Config{
-		ClientID:          cfg.GoogleClientID,
-		ClientSecret:      cfg.GoogleClientSecret,
+		ClientID:          cfg.Auth.GoogleClientID,
+		ClientSecret:      cfg.Auth.GoogleClientSecret,
 		RedirectURL:       redirectURL,
-		SessionAuthKey:    cfg.SessionSecret,
-		SessionEncryptKey: cfg.SessionEncryptKey,
+		SessionAuthKey:    cfg.Auth.SessionSecret,
+		SessionEncryptKey: cfg.Auth.SessionEncryptKey,
 		SessionName:       defaultSessionName,
 		IsSecureCookie:    cfg.IsSecureServiceURL(),
-		AllowedEmails:     cfg.AllowedEmails,
-		AllowedDomains:    cfg.AllowedDomains,
+		AllowedEmails:     cfg.Auth.AllowedEmails,
+		AllowedDomains:    cfg.Auth.AllowedDomains,
 	})
 }

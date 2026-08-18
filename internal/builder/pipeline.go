@@ -17,7 +17,7 @@ import (
 // エージェント（作業ディレクトリを調査）の 2 本をアダプター共有で組み、モードごとの
 // 使い分けは adapters.EngineRouter が行います。
 func buildPipeline(ctx context.Context, appCtx *app.Container) (domain.Pipeline, error) {
-	sources, err := adapters.NewDiffSourceFactory(appCtx.Config.SSHKeyPath)
+	sources, err := adapters.NewDiffSourceFactory(appCtx.Config.Git.SSHKeyPath)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func buildPipeline(ctx context.Context, appCtx *app.Container) (domain.Pipeline,
 	}
 
 	router := adapters.NewEngineRouter(single, agent)
-	return adapters.NewReviewPipeline(router, appCtx.StatusStore, appCtx.Config.PipelineTimeout), nil
+	return adapters.NewReviewPipeline(router, appCtx.StatusStore, appCtx.Config.Pipeline.Timeout), nil
 }
 
 // newCore は、共有依存にレビュアーを 1 つ差して pipeline を組み立てます。

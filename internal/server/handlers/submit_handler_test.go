@@ -75,9 +75,9 @@ func buildTestHandler(t *testing.T, jobIDErr, enqueueErr error) (*Handler, *fake
 
 	h, err := NewHandler(Deps{
 		Config: &config.Config{
-			ServiceURL:   "https://service.example.com",
-			GeminiModels: []string{"gemini-2.5-flash", "gemini-2.5-pro"},
-			GCSBucket:    "bucket-a",
+			Server:  config.ServerConfig{ServiceURL: "https://service.example.com"},
+			AI:      config.AIConfig{GeminiModels: []string{"gemini-2.5-flash", "gemini-2.5-pro"}},
+			Storage: config.StorageConfig{GCSBucket: "bucket-a"},
 		},
 		TaskEnqueuer: enq,
 		Layout:       domain.NewStorageLayout("bucket-a"),
