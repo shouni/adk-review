@@ -22,7 +22,7 @@ func buildPipeline(ctx context.Context, appCtx *app.Container) (domain.Pipeline,
 		return nil, err
 	}
 
-	publisher, err := adapters.NewReportPublisher(appCtx.RemoteIO.Writer, appCtx.Layout)
+	publisher, err := adapters.NewReportPublisher(appCtx.RemoteIO.Writer)
 	if err != nil {
 		return nil, fmt.Errorf("ReportPublisher の構築に失敗しました: %w", err)
 	}

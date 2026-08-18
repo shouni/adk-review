@@ -5,7 +5,6 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/shouni/go-http-kit/httpkit"
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-review-kit/review"
 
@@ -27,9 +26,8 @@ type Container struct {
 	// Business Logic
 	Pipeline domain.Pipeline
 	// External Adapters
-	HTTPClient httpkit.Requester
-	Notifier   review.Notifier
-	PromptGen  review.PromptGenerator
+	Notifier  review.Notifier
+	PromptGen review.PromptGenerator
 }
 
 // TaskEnqueuer は、レビュー要求を非同期タスクとしてキューへ投入する役割です。

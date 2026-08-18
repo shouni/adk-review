@@ -12,8 +12,13 @@ import (
 	"github.com/shouni/adk-review/internal/config"
 )
 
-// シャットダウンのデフォルト猶予時間
-const defaultShutdownTimeout = 30 * time.Second
+const (
+	// readHeaderTimeout はリクエストヘッダの読み取りに許す時間です。
+	// Slowloris 対策なので、正常なクライアントには十分すぎる短さで足ります。
+	readHeaderTimeout = 5 * time.Second
+	// idleTimeout は keep-alive 接続を保持する上限です。
+	idleTimeout = 120 * time.Second
+)
 
 // Run は、サーバーの構築、起動、およびライフサイクル管理を行います。
 func Run(ctx context.Context, cfg *config.Config) error {
@@ -41,6 +46,14 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	srv := &http.Server{
 		Addr:    ":" + cfg.Server.Port,
 		Handler: router,
+		// ヘッダを少しずつ送り続ける接続に同時実行スロットを占有されないよう、
+		// 読み取りには必ず上限を置きます（Cloud Run は同時リクエスト数でスケールするため、
+		// 遅い接続を数本掴まれるだけでインスタンスが詰まります）。
+		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
+		// WriteTimeout は置きません。レビューの実行は worker 側のハンドラーで
+		// 数分かかることがあり、ここで切ると正常な応答を落とします。
+		// 実行時間の上限は PIPELINE_TIMEOUT と dispatch deadline が受け持ちます。
 	}
 
 	// 5. サーバー起動（別ゴルーチン）
@@ -59,14 +72,17 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	case <-ctx.Done():
 		slog.Info("⚠️ コンテキストのキャンセルを受信、グレースフルシャットダウンを開始します...")
-		return gracefulShutdown(srv)
+		return gracefulShutdown(srv, cfg.Server.ShutdownTimeout)
 	}
 }
 
 // gracefulShutdown は、サーバーを安全に停止させます。
-func gracefulShutdown(srv *http.Server) error {
+//
+// 猶予は設定から受け取ります。Cloud Run が SIGKILL するまでの時間より長く取っても
+// 待ち切れないため、待つ長さはデプロイ側の事情に合わせられる必要があります。
+func gracefulShutdown(srv *http.Server, timeout time.Duration) error {
 	// シャットダウン用のタイムアウト付きコンテキスト
-	ctx, cancel := context.WithTimeout(context.Background(), defaultShutdownTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {

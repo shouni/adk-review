@@ -28,8 +28,8 @@ func buildTaskEnqueuer(ctx context.Context, cfg *config.Config) (*tasks.Enqueuer
 		WorkerURL:           workerURL,
 		ServiceAccountEmail: cfg.Tasks.CallerServiceAccountEmail,
 		Audience:            cfg.Tasks.TaskAudienceURL,
-		// 未指定だと既定 10 分に落ちる。2026-08-10 まで指定が無かった。
-		DispatchDeadline: config.TaskDispatchDeadline,
+		// 未指定だと Cloud Tasks 既定の 10 分に落ちる。2026-08-10 まで指定が無かった。
+		DispatchDeadline: cfg.Tasks.DispatchDeadline,
 	}
 	return tasks.NewEnqueuer[domain.ReviewRequest](ctx, taskCfg)
 }
