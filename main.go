@@ -29,7 +29,11 @@ func run() error {
 	defer stop()
 
 	// 設定のロードとバリデーション
-	cfg := config.LoadConfig()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		slog.Error("設定の読み込みに失敗しました", "error", err)
+		return err
+	}
 	if err := cfg.ValidateEssentialConfig(); err != nil {
 		slog.Error("必須設定のバリデーションに失敗しました", "error", err)
 		return err

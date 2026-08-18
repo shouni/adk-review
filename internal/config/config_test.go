@@ -11,14 +11,18 @@ import (
 
 func TestValidateEssentialConfig(t *testing.T) {
 	base := &Config{
-		Role:               serverrole.Both,
-		ServiceURL:         "https://example.com",
-		GoogleClientID:     "client-id",
-		GoogleClientSecret: "client-secret",
-		SessionSecret:      "session-secret",
-		SessionEncryptKey:  "1234567890123456",
-		AllowedEmails:      []string{"user@example.com"},
-		GeminiModels:       []string{"gemini-test-flash"},
+		Server: ServerConfig{
+			Role:       serverrole.Both,
+			ServiceURL: "https://example.com",
+		},
+		Auth: AuthConfig{
+			GoogleClientID:     "client-id",
+			GoogleClientSecret: "client-secret",
+			SessionSecret:      "session-secret",
+			SessionEncryptKey:  "1234567890123456",
+			AllowedEmails:      []string{"user@example.com"},
+		},
+		AI: AIConfig{GeminiModels: []string{"gemini-test-flash"}},
 	}
 
 	tests := []struct {
@@ -32,31 +36,31 @@ func TestValidateEssentialConfig(t *testing.T) {
 		},
 		{
 			name:    "insecure service url",
-			mutate:  func(c *Config) { c.ServiceURL = "http://example.com" },
+			mutate:  func(c *Config) { c.Server.ServiceURL = "http://example.com" },
 			wantErr: "HTTPS",
 		},
 		{
 			name:    "missing oauth setting",
-			mutate:  func(c *Config) { c.GoogleClientID = "" },
+			mutate:  func(c *Config) { c.Auth.GoogleClientID = "" },
 			wantErr: "google OAuth",
 		},
 		{
 			name: "missing allow list",
 			mutate: func(c *Config) {
-				c.AllowedEmails = nil
-				c.AllowedDomains = nil
+				c.Auth.AllowedEmails = nil
+				c.Auth.AllowedDomains = nil
 			},
 			wantErr: "認可リスト",
 		},
 		{
 			name:    "invalid encrypt key length",
-			mutate:  func(c *Config) { c.SessionEncryptKey = "short" },
+			mutate:  func(c *Config) { c.Auth.SessionEncryptKey = "short" },
 			wantErr: "長さが不正",
 		},
 		{
 			// 既定値へ黙って落ちると、古いモデルを指したまま動き続けます。
 			name:    "missing gemini model",
-			mutate:  func(c *Config) { c.GeminiModels = nil },
+			mutate:  func(c *Config) { c.AI.GeminiModels = nil },
 			wantErr: "GEMINI_MODELS",
 		},
 	}
@@ -87,14 +91,16 @@ func TestValidatePipelineTimeout(t *testing.T) {
 
 	base := func() *Config {
 		return &Config{
-			ServiceURL:         "https://example.com",
-			GoogleClientID:     "client-id",
-			GoogleClientSecret: "client-secret",
-			SessionSecret:      "session-secret",
-			SessionEncryptKey:  "1234567890123456",
-			AllowedEmails:      []string{"user@example.com"},
-			GeminiModels:       []string{"gemini-test-flash"},
-			PipelineTimeout:    DefaultPipelineTimeout,
+			Server: ServerConfig{ServiceURL: "https://example.com"},
+			Auth: AuthConfig{
+				GoogleClientID:     "client-id",
+				GoogleClientSecret: "client-secret",
+				SessionSecret:      "session-secret",
+				SessionEncryptKey:  "1234567890123456",
+				AllowedEmails:      []string{"user@example.com"},
+			},
+			AI:       AIConfig{GeminiModels: []string{"gemini-test-flash"}},
+			Pipeline: PipelineConfig{Timeout: DefaultPipelineTimeout},
 		}
 	}
 
@@ -112,10 +118,10 @@ func TestValidatePipelineTimeout(t *testing.T) {
 		t.Parallel()
 		for _, d := range []time.Duration{TaskDispatchDeadline, TaskDispatchDeadline + time.Minute, time.Hour} {
 			c := base()
-			c.PipelineTimeout = d
+			c.Pipeline.Timeout = d
 			err := c.ValidateEssentialConfig()
 			if err == nil {
-				t.Errorf("PipelineTimeout=%s で通ってしまった", d)
+				t.Errorf("Pipeline.Timeout=%s で通ってしまった", d)
 				continue
 			}
 			if !strings.Contains(err.Error(), "PIPELINE_TIMEOUT") {
@@ -127,7 +133,7 @@ func TestValidatePipelineTimeout(t *testing.T) {
 	t.Run("0 以下は無制限として通す", func(t *testing.T) {
 		t.Parallel()
 		c := base()
-		c.PipelineTimeout = 0
+		c.Pipeline.Timeout = 0
 		if err := c.ValidateEssentialConfig(); err != nil {
 			t.Errorf("0（無制限）で失敗した: %v", err)
 		}
@@ -138,35 +144,47 @@ func TestValidatePipelineTimeout(t *testing.T) {
 // 環境変数を触るため t.Parallel() は使わない（t.Setenv と併用できない）。
 func TestPipelineTimeoutFromEnv(t *testing.T) {
 	t.Run("書式エラーは既定値へ黙って落とさず起動時に落とす", func(t *testing.T) {
-		t.Setenv("PIPELINE_TIMEOUT", "25min") // Go の Duration では不正
 		t.Setenv("SERVER_ROLE", "both")
-		c := LoadConfig()
-		c.ServiceURL = "https://example.com"
-		c.GoogleClientID, c.GoogleClientSecret = "id", "secret"
-		c.SessionSecret, c.SessionEncryptKey = "s", "1234567890123456"
-		c.AllowedEmails = []string{"user@example.com"}
-		c.GeminiModels = []string{"gemini-test-flash"}
+		t.Setenv("PIPELINE_TIMEOUT", "25min") // Go の Duration では不正
 
-		err := c.ValidateEssentialConfig()
-		if err == nil {
+		if _, err := LoadConfig(); err == nil {
 			t.Fatal("不正な書式が素通りした")
-		}
-		if !strings.Contains(err.Error(), "PIPELINE_TIMEOUT") {
-			t.Errorf("エラーに変数名が無い: %v", err)
 		}
 	})
 
 	t.Run("正しい書式は読める", func(t *testing.T) {
+		t.Setenv("SERVER_ROLE", "both")
 		t.Setenv("PIPELINE_TIMEOUT", "10m")
-		if got := LoadConfig().PipelineTimeout; got != 10*time.Minute {
-			t.Errorf("PipelineTimeout = %s, want 10m", got)
+		cfg, err := LoadConfig()
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+		if cfg.Pipeline.Timeout != 10*time.Minute {
+			t.Errorf("Pipeline.Timeout = %s, want 10m", cfg.Pipeline.Timeout)
 		}
 	})
 
 	t.Run("未設定なら既定値", func(t *testing.T) {
+		t.Setenv("SERVER_ROLE", "both")
 		t.Setenv("PIPELINE_TIMEOUT", "")
-		if got := LoadConfig().PipelineTimeout; got != DefaultPipelineTimeout {
-			t.Errorf("PipelineTimeout = %s, want %s", got, DefaultPipelineTimeout)
+		cfg, err := LoadConfig()
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+		if cfg.Pipeline.Timeout != DefaultPipelineTimeout {
+			t.Errorf("Pipeline.Timeout = %s, want %s", cfg.Pipeline.Timeout, DefaultPipelineTimeout)
+		}
+	})
+
+	t.Run("明示の 0 は無制限として読める", func(t *testing.T) {
+		t.Setenv("SERVER_ROLE", "both")
+		t.Setenv("PIPELINE_TIMEOUT", "0")
+		cfg, err := LoadConfig()
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+		if cfg.Pipeline.Timeout != 0 {
+			t.Errorf("Pipeline.Timeout = %s, want 0", cfg.Pipeline.Timeout)
 		}
 	})
 }

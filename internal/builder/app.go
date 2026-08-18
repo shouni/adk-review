@@ -45,7 +45,7 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 	}
 
 	// 3. 進行状況と履歴
-	layout := domain.NewStorageLayout(cfg.GCSBucket)
+	layout := domain.NewStorageLayout(cfg.Storage.GCSBucket)
 	statusStore := buildStatusStore(rio, layout)
 	history := repository.NewHistory(rio.Reader, rio.Writer, statusStore, layout)
 
@@ -59,7 +59,7 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 	}
 
 	// 4. Web 面だけの依存: Task Enqueuer（レビュー依頼の投入口）
-	if cfg.Role.ServesWeb() {
+	if cfg.Server.Role.ServesWeb() {
 		enqueuer, err := buildTaskEnqueuer(ctx, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("TaskEnqueuer の構築に失敗しました: %w", err)
@@ -69,14 +69,14 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 	}
 
 	// 5. Worker 面だけの依存: プロンプト・通知・パイプライン（レビューの実行系）
-	if cfg.Role.ServesWorker() {
+	if cfg.Server.Role.ServesWorker() {
 		promptGen, err := adapters.NewPromptAdapter()
 		if err != nil {
 			return nil, fmt.Errorf("PromptAdapter の構築に失敗しました: %w", err)
 		}
 		appCtx.PromptGen = promptGen
 
-		slack, err := adapters.NewSlackAdapter(httpClient.WithoutRetry(), cfg.SlackWebhookURL)
+		slack, err := adapters.NewSlackAdapter(httpClient.WithoutRetry(), cfg.Notification.SlackWebhookURL)
 		if err != nil {
 			return nil, fmt.Errorf("SlackAdapter の構築に失敗しました: %w", err)
 		}

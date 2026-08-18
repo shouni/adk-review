@@ -63,7 +63,7 @@ func buildHistoryHandler(t *testing.T, history domain.HistoryRepository) *Handle
 	t.Helper()
 
 	h, err := NewHandler(Deps{
-		Config:       &config.Config{ServiceURL: "https://service.example.com"},
+		Config:       &config.Config{Server: config.ServerConfig{ServiceURL: "https://service.example.com"}},
 		TaskEnqueuer: &fakeEnqueuer{},
 		Layout:       domain.NewStorageLayout("bucket-a"),
 		StatusStore:  &fakeStatusStore{},

@@ -39,14 +39,14 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	router := NewRouter(appHandlers)
 
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
+		Addr:    ":" + cfg.Server.Port,
 		Handler: router,
 	}
 
 	// 5. サーバー起動（別ゴルーチン）
 	serverErrors := make(chan error, 1)
 	go func() {
-		slog.Info("🚀 サーバーを起動中...", "port", cfg.Port)
+		slog.Info("🚀 サーバーを起動中...", "port", cfg.Server.Port)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrors <- err
 		}

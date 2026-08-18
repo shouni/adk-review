@@ -85,7 +85,7 @@ func (h *Handler) assignJob(req *domain.ReviewRequest) error {
 		return err
 	}
 
-	detailURL, err := url.JoinPath(h.cfg.ServiceURL, historyBasePath, jobID)
+	detailURL, err := url.JoinPath(h.cfg.Server.ServiceURL, historyBasePath, jobID)
 	if err != nil {
 		return fmt.Errorf("詳細URLの構築に失敗しました: %w", err)
 	}

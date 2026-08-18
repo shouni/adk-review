@@ -127,7 +127,7 @@ func (h *Handler) configuredGeminiModels() []string {
 	if h.cfg == nil {
 		return nil
 	}
-	return h.cfg.GeminiModels
+	return h.cfg.AI.GeminiModels
 }
 
 // validateReviewRequest は入力内容が正しいかまとめてチェックする。

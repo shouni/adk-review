@@ -36,7 +36,7 @@ func TestValidateBranchName(t *testing.T) {
 
 func TestValidateReviewRequest(t *testing.T) {
 	// モデル名の検証は設定された一覧に対して行うため、cfg だけは要ります。
-	h := &Handler{cfg: &config.Config{GeminiModels: []string{"gemini-3.6-flash"}}}
+	h := &Handler{cfg: &config.Config{AI: config.AIConfig{GeminiModels: []string{"gemini-3.6-flash"}}}}
 
 	validRequest := domain.ReviewRequest{
 		RepoURL:       "git@github.com:org/repo.git",
