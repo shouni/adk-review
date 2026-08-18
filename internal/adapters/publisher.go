@@ -42,7 +42,7 @@ func (p *ReportPublisher) Publish(ctx context.Context, req review.Request, repor
 		return fmt.Errorf("レビュー結果のJSON化に失敗しました: %w", err)
 	}
 
-	slog.InfoContext(ctx, "レビュー結果を保存します", "job_id", req.JobID, "uri", req.StorageURI)
+	slog.InfoContext(ctx, "レビュー結果を保存します", "uri", req.StorageURI)
 
 	if err := p.writer.Write(ctx, req.StorageURI, bytes.NewReader(body),
 		remoteio.WithContentType(contentTypeJSON)); err != nil {

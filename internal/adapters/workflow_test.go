@@ -421,3 +421,63 @@ func TestReviewPipeline_打ち切り後も結末を記録する(t *testing.T) {
 		t.Fatalf("打ち切りが記録されていません: %v", states)
 	}
 }
+
+// engines は保存された各状態の Engine を返します。
+func (s *stubStore) engines() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	engines := make([]string, 0, len(s.saved))
+	for _, status := range s.saved {
+		engines = append(engines, status.Engine)
+	}
+	return engines
+}
+
+// 実行に使ったエンジンが進行状況へ記録されること。
+//
+// 記録が消えると、コストの高いエージェント実行が単発として残る（あるいはその逆）ので、
+// 後から「なぜ高かったのか / なぜ浅かったのか」を追えなくなります。
+func TestReviewPipeline_解決したエンジンを記録する(t *testing.T) {
+	t.Parallel()
+
+	store := &stubStore{}
+	core := newTestPipeline(t, stubSource{diff: "diff"}, stubPublisher{})
+
+	req := testDomainRequest()
+	req.Engine = "" // モードの既定に任せる
+	if err := NewReviewPipeline(core, store, 0).Execute(context.Background(), req); err != nil {
+		t.Fatalf("Execute が失敗した: %v", err)
+	}
+
+	engines := store.engines()
+	if len(engines) == 0 {
+		t.Fatal("進行状況が 1 件も記録されていない")
+	}
+	for i, engine := range engines {
+		if engine == "" {
+			t.Errorf("%d 件目の記録に Engine が載っていない: %v", i, engines)
+		}
+	}
+}
+
+// 解決できないエンジン指定は記録に載せないこと。
+//
+// 載せると「存在しないエンジンで実行して失敗した」という、実際には起きていない
+// 記録が履歴に残ります。
+func TestReviewPipeline_不正なエンジン指定は記録しない(t *testing.T) {
+	t.Parallel()
+
+	store := &stubStore{}
+	core := newTestPipeline(t, stubSource{diff: "diff"}, stubPublisher{})
+
+	req := testDomainRequest()
+	req.Engine = "turbo" // 存在しない
+	_ = NewReviewPipeline(core, store, 0).Execute(context.Background(), req)
+
+	for i, engine := range store.engines() {
+		if engine == "turbo" {
+			t.Errorf("%d 件目の記録に不正なエンジンが載っている: %q", i, engine)
+		}
+	}
+}

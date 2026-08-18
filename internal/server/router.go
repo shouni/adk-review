@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/shouni/gcp-kit/cloudlog"
 
 	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/builder"
@@ -21,9 +22,11 @@ const (
 )
 
 // NewRouter は、ミドルウェアとルーティングを統合した http.Handler を構築します。
-func NewRouter(h *builder.AppHandlers) http.Handler {
+//
+// projectID は Cloud Logging のトレース相関にのみ使用し、空なら相関を行いません。
+func NewRouter(h *builder.AppHandlers, projectID string) http.Handler {
 	r := chi.NewRouter()
-	setupCommonMiddleware(r)
+	setupCommonMiddleware(r, projectID)
 	setupStaticRoutes(r)
 	setupRoutes(r, h)
 
@@ -49,7 +52,11 @@ func setupStaticRoutes(r chi.Router) {
 }
 
 // setupCommonMiddleware は、標準的なミドルウェアを構成します。
-func setupCommonMiddleware(r *chi.Mux) {
+func setupCommonMiddleware(r *chi.Mux, projectID string) {
+	// トレース相関はログ出力より先に効かせる必要があるため最初に登録します。
+	// これが無いと Cloud Run のリクエストログとアプリログが親子で紐付かず、
+	// web → Cloud Tasks → worker と 2 サービスにまたがる 1 レビューを追えません。
+	r.Use(cloudlog.TraceMiddleware(projectID))
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.CleanPath)

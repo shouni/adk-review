@@ -7,6 +7,7 @@ import (
 
 	"github.com/shouni/go-job-kit/jobstatus"
 	"github.com/shouni/go-review-kit/review"
+	"github.com/shouni/go-utils/slogctx"
 
 	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/domain"
@@ -55,14 +56,28 @@ func NewReviewPipeline(core coreRunner, store domain.StatusStore, timeout time.D
 //
 // 締切が保存・通知・後始末を巻き込まないことはライブラリ側が保証しています。
 func (p *ReviewPipeline) Execute(ctx context.Context, req domain.ReviewRequest) error {
+	// 以降このジョブから出るログすべてに job_id が載ります。同時に走るレビューの
+	// ログが混ざっても分離できるよう、個々の出力ではなく context に持たせます。
+	ctx = slogctx.With(ctx,
+		slog.String("job_id", req.JobID),
+		slog.String("mode", req.Mode),
+	)
+
 	if p.skipRedelivery(ctx, req.JobID) {
 		return nil
 	}
 
 	// 実行に使うエンジンを最初に確定させ、以降の記録に載せます。既定に任せた依頼でも
-	// 「どちらで走ったか」が履歴に残るようにするためです（解決の失敗は Run が報告します）。
-	if engine, resolveErr := assets.ResolveEngine(req.Mode, req.Engine); resolveErr == nil {
+	// 「どちらで走ったか」が履歴に残るようにするためです。
+	//
+	// 解決できない指定は記録に載せません。載せると「存在しないエンジンで実行して
+	// 失敗した」という嘘の記録が残ります（実行側の Run が改めて解決して報告します）。
+	engine, resolveErr := assets.ResolveEngine(req.Mode, req.Engine)
+	if resolveErr == nil {
 		req.Engine = string(engine)
+		ctx = slogctx.With(ctx, slog.String("engine", req.Engine))
+	} else {
+		req.Engine = ""
 	}
 
 	p.recordRunning(ctx, req)
@@ -138,11 +153,11 @@ func (p *ReviewPipeline) skipRedelivery(ctx context.Context, jobID string) bool 
 	if err != nil {
 		// 読めない場合は未完了として先へ進めます。記録が読めないことを理由に
 		// レビューを止めるより、二重実行のほうがまだ回復可能なためです。
-		slog.WarnContext(ctx, "完了済みかどうかを確認できませんでした", "job_id", jobID, "error", err)
+		slog.WarnContext(ctx, "完了済みかどうかを確認できませんでした", "error", err)
 		return false
 	}
 	if done {
-		slog.InfoContext(ctx, "完了済みのタスクが再配信されたため打ち切ります", "job_id", jobID)
+		slog.InfoContext(ctx, "完了済みのタスクが再配信されたため打ち切ります")
 	}
 	return done
 }
