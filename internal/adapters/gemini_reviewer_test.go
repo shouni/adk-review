@@ -52,7 +52,7 @@ func (f *fakeGenerator) GenerateWithAttachments(
 func newReviewerForTest(t *testing.T, generator *fakeGenerator) *GeminiReviewer {
 	t.Helper()
 
-	reviewer, err := NewReviewer(generator)
+	reviewer, err := NewGeminiReviewer(generator)
 	if err != nil {
 		t.Fatalf("Reviewer の生成に失敗: %v", err)
 	}
@@ -60,7 +60,7 @@ func newReviewerForTest(t *testing.T, generator *fakeGenerator) *GeminiReviewer 
 }
 
 func TestNewReviewerRejectsNil(t *testing.T) {
-	if _, err := NewReviewer(nil); err == nil {
+	if _, err := NewGeminiReviewer(nil); err == nil {
 		t.Fatal("エラーを期待しましたが nil でした")
 	}
 }

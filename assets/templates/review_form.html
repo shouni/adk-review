@@ -76,9 +76,9 @@
         </div>
 
         <div class="mb-4">
-            <label for="gemini_model" class="form-label fw-bold text-secondary">Geminiモデル</label>
-            <select id="gemini_model" name="gemini_model" class="form-select" required>
-                {{range .GeminiModels}}
+            <label for="model_name" class="form-label fw-bold text-secondary">Geminiモデル</label>
+            <select id="model_name" name="model_name" class="form-select" required>
+                {{range .Models}}
                 <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Value}}</option>
                 {{end}}
             </select>

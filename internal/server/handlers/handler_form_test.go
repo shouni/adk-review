@@ -74,7 +74,7 @@ func TestHandleReviewForm_RendersPromptModesWithCodeDefault(t *testing.T) {
 	}
 }
 
-func TestHandleReviewForm_RendersGeminiModelsWithFirstDefault(t *testing.T) {
+func TestHandleReviewForm_RendersModelsWithFirstDefault(t *testing.T) {
 	h, err := NewHandler(Deps{Config: &config.Config{
 		AI: config.AIConfig{GeminiModels: []string{"gemini-3.5-flash", "gemini-3.1-pro-preview"}},
 	}, TaskEnqueuer: &fakeEnqueuer{}})
@@ -91,12 +91,12 @@ func TestHandleReviewForm_RendersGeminiModelsWithFirstDefault(t *testing.T) {
 	}
 	body := html.UnescapeString(w.Body.String())
 	for _, want := range []string{
-		`<select id="gemini_model" name="gemini_model"`,
+		`<select id="model_name" name="model_name"`,
 		`<option value="gemini-3.5-flash" selected>gemini-3.5-flash</option>`,
 		`<option value="gemini-3.1-pro-preview" >gemini-3.1-pro-preview</option>`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("gemini model option not rendered: want %q body=%s", want, body)
+			t.Fatalf("model option not rendered: want %q body=%s", want, body)
 		}
 	}
 }
@@ -108,7 +108,7 @@ func TestHandleReviewForm_RendersCSRFTokenFromContext(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req = req.WithContext(WithCSRFToken(req.Context(), "test-csrf-token"))
+	req = req.WithContext(withCSRFToken(req.Context(), "test-csrf-token"))
 	w := httptest.NewRecorder()
 	h.HandleReviewForm(w, req)
 

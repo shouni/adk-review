@@ -30,7 +30,7 @@ func (h *Handler) HandleReviewSubmit(w http.ResponseWriter, r *http.Request) {
 		BaseBranch:    strings.TrimSpace(r.PostFormValue("base_branch")),
 		FeatureBranch: strings.TrimSpace(r.PostFormValue("feature_branch")),
 		Mode:          r.PostFormValue("review_mode"),
-		ModelName:     r.PostFormValue("gemini_model"),
+		ModelName:     r.PostFormValue("model_name"),
 		Engine:        r.PostFormValue("engine"),
 	}
 
@@ -142,7 +142,7 @@ func reviewFormPageData(req domain.ReviewRequest, data ReviewFormPageData) Revie
 	data.BaseBranch = req.BaseBranch
 	data.FeatureBranch = req.FeatureBranch
 	data.ReviewMode = req.Mode
-	data.GeminiModel = req.ModelName
+	data.ModelName = req.ModelName
 	data.Engine = req.Engine
 	return data
 }

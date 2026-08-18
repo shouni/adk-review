@@ -112,7 +112,7 @@ func validFormBody() string {
 	v.Set("base_branch", "main")
 	v.Set("feature_branch", "feature/new-ui")
 	v.Set("review_mode", "code")
-	v.Set("gemini_model", "gemini-2.5-flash")
+	v.Set("model_name", "gemini-2.5-flash")
 	return v.Encode()
 }
 
@@ -138,7 +138,7 @@ func TestHandleReviewSubmit_ValidationError(t *testing.T) {
 	v.Set("base_branch", "main")
 	v.Set("feature_branch", "feature/new-ui")
 	v.Set("review_mode", "invalid-mode")
-	v.Set("gemini_model", "gemini-2.5-flash")
+	v.Set("model_name", "gemini-2.5-flash")
 
 	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
 
@@ -150,7 +150,7 @@ func TestHandleReviewSubmit_ValidationError(t *testing.T) {
 	}
 }
 
-func TestHandleReviewSubmit_ValidationErrorPreservesSelectedGeminiModel(t *testing.T) {
+func TestHandleReviewSubmit_ValidationErrorPreservesSelectedModelName(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, nil, nil)
 	w := httptest.NewRecorder()
 
@@ -159,7 +159,7 @@ func TestHandleReviewSubmit_ValidationErrorPreservesSelectedGeminiModel(t *testi
 	v.Set("base_branch", "main")
 	v.Set("feature_branch", "feature/new-ui")
 	v.Set("review_mode", "code")
-	v.Set("gemini_model", "gemini-2.5-pro")
+	v.Set("model_name", "gemini-2.5-pro")
 
 	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
 
@@ -184,7 +184,7 @@ func TestHandleReviewSubmit_ValidationErrorPreservesFormValues(t *testing.T) {
 	v.Set("base_branch", "release/2026-04")
 	v.Set("feature_branch", "feature/new-ui")
 	v.Set("review_mode", "novel")
-	v.Set("gemini_model", "gemini-2.5-pro")
+	v.Set("model_name", "gemini-2.5-pro")
 
 	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
 
@@ -212,7 +212,7 @@ func TestHandleReviewSubmit_ValidationErrorPreservesFormValues(t *testing.T) {
 	}
 }
 
-func TestHandleReviewSubmit_InvalidGeminiModel(t *testing.T) {
+func TestHandleReviewSubmit_InvalidModelName(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, nil, nil)
 	w := httptest.NewRecorder()
 
@@ -221,7 +221,7 @@ func TestHandleReviewSubmit_InvalidGeminiModel(t *testing.T) {
 	v.Set("base_branch", "main")
 	v.Set("feature_branch", "feature/new-ui")
 	v.Set("review_mode", "code")
-	v.Set("gemini_model", "gemini-invalid")
+	v.Set("model_name", "gemini-invalid")
 
 	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
 
@@ -334,7 +334,7 @@ func TestHandleReviewSubmit_SuccessPreservesFormValues(t *testing.T) {
 	v.Set("base_branch", "release/2026-04")
 	v.Set("feature_branch", "feature/completion-form")
 	v.Set("review_mode", "article")
-	v.Set("gemini_model", "gemini-2.5-pro")
+	v.Set("model_name", "gemini-2.5-pro")
 
 	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
 
@@ -362,7 +362,7 @@ func TestHandleReviewSubmit_SuccessPreservesFormValues(t *testing.T) {
 	}
 }
 
-func TestHandleReviewSubmit_UsesSelectedGeminiModel(t *testing.T) {
+func TestHandleReviewSubmit_UsesSelectedModelName(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, nil, nil)
 	w := httptest.NewRecorder()
 
@@ -370,7 +370,7 @@ func TestHandleReviewSubmit_UsesSelectedGeminiModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to parse valid form body: %v", err)
 	}
-	v.Set("gemini_model", "gemini-2.5-pro")
+	v.Set("model_name", "gemini-2.5-pro")
 
 	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
 

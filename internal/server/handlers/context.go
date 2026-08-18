@@ -11,9 +11,3 @@ import (
 func CSRFTokenFromContext(ctx context.Context) string {
 	return auth.CSRFTokenFromContext(ctx)
 }
-
-// WithCSRFToken は、コンテキストに CSRF トークンを載せます。
-// 実運用では上記ミドルウェアが行うため、テストから任意の値を載せる用途で使います。
-func WithCSRFToken(ctx context.Context, token string) context.Context {
-	return auth.WithCSRFToken(ctx, token)
-}

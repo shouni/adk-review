@@ -31,7 +31,7 @@ func buildPipeline(ctx context.Context, appCtx *app.Container) (domain.Pipeline,
 	if err != nil {
 		return nil, err
 	}
-	singleReviewer, err := adapters.NewReviewer(client)
+	singleReviewer, err := adapters.NewGeminiReviewer(client)
 	if err != nil {
 		return nil, err
 	}

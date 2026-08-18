@@ -1,0 +1,87 @@
+package handlers
+
+import (
+	"testing"
+
+	"github.com/shouni/go-job-kit/jobstatus"
+	"github.com/shouni/go-review-kit/review"
+)
+
+// 判定ごとの表示が全種類そろっていること。
+//
+// レビューツールとして、ブロッカーが「—」や薄いグレーで出るのはいちばん痛い壊れ方です。
+// 以前は Minor しか踏むテストが無く、他の分岐が壊れても気付けませんでした。
+func TestDecisionBadgeCoversAllDecisions(t *testing.T) {
+	t.Parallel()
+
+	for _, decision := range review.Decisions() {
+		t.Run(string(decision), func(t *testing.T) {
+			t.Parallel()
+
+			b := decisionBadge(decision)
+			if b == unknownDecisionBadge {
+				t.Fatalf("%q の表示が未定義のまま", decision)
+			}
+			if b.label == "" || b.class == "" {
+				t.Fatalf("%q の表示が空: %+v", decision, b)
+			}
+		})
+	}
+
+	if got := decisionBadge("なにかの新しい判定"); got != unknownDecisionBadge {
+		t.Errorf("未知の判定 = %+v, want %+v", got, unknownDecisionBadge)
+	}
+}
+
+// ブロッカーは危険色で出ること。判定の重さが色に出ないと一覧で見落とします。
+func TestDecisionBlockerIsDanger(t *testing.T) {
+	t.Parallel()
+
+	if got := decisionClass(review.DecisionBlocker); got != "text-bg-danger" {
+		t.Errorf("ブロッカーのクラス = %q, want text-bg-danger", got)
+	}
+	if got := decisionLabel(review.DecisionBlocker); got == "—" {
+		t.Error("ブロッカーの表示名が未定義扱いになっている")
+	}
+}
+
+// severityClass は decisionClass へ委譲しますが、型が違うので別関数です。
+// 委譲が外れていないことを確かめます。
+func TestSeverityClassMatchesDecisionClass(t *testing.T) {
+	t.Parallel()
+
+	for _, severity := range review.Severities() {
+		if got, want := severityClass(severity), decisionClass(review.Decision(severity)); got != want {
+			t.Errorf("severityClass(%q) = %q, want %q", severity, got, want)
+		}
+	}
+}
+
+// 進行状況の表示が全状態そろっていること。
+func TestStateBadgeCoversAllStates(t *testing.T) {
+	t.Parallel()
+
+	states := []jobstatus.State{
+		jobstatus.StateQueued,
+		jobstatus.StateRunning,
+		jobstatus.StateFailed,
+		jobstatus.StateSucceeded,
+	}
+	for _, state := range states {
+		b := stateBadge(state, review.StatusSucceeded)
+		if b == unknownStateBadge {
+			t.Errorf("%q の表示が未定義のまま", state)
+		}
+	}
+
+	// スキップは succeeded だが完了とは別扱いにします。
+	skipped := stateBadge(jobstatus.StateSucceeded, review.StatusSkipped)
+	done := stateBadge(jobstatus.StateSucceeded, review.StatusSucceeded)
+	if skipped == done {
+		t.Error("スキップと完了が同じ表示になっている")
+	}
+
+	if got := stateBadge("なにかの新しい状態", review.StatusSucceeded); got != unknownStateBadge {
+		t.Errorf("未知の状態 = %+v, want %+v", got, unknownStateBadge)
+	}
+}
