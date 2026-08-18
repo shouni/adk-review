@@ -16,7 +16,7 @@ import (
 // 投入先は自分自身ではなく worker サービス（WORKER_URL）です。both で動かすローカル
 // 開発では WORKER_URL 未設定 → SERVICE_URL に落ちるため、自己投入になります。
 func buildTaskEnqueuer(ctx context.Context, cfg *config.Config) (*tasks.Enqueuer[domain.ReviewRequest], error) {
-	workerURL, err := url.JoinPath(cfg.Tasks.WorkerURL, "/tasks/execute_review")
+	workerURL, err := url.JoinPath(cfg.Tasks.WorkerURL, domain.TaskExecuteReviewPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build worker URL: %w", err)
 	}

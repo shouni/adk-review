@@ -14,6 +14,7 @@ import (
 
 	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/builder"
+	"github.com/shouni/adk-review/internal/domain"
 )
 
 const (
@@ -127,7 +128,7 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 		r.Use(h.TaskAuth.Middleware)
 
 		if h.Worker != nil {
-			r.Post("/tasks/execute_review", h.Worker.ProcessTask)
+			r.Post(domain.TaskExecuteReviewPath, h.Worker.ProcessTask)
 		}
 	})
 }

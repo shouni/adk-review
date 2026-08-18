@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shouni/go-job-kit/jobstatus"
 	"github.com/shouni/go-remote-io/remoteio"
 
 	"github.com/shouni/adk-review/internal/domain"
@@ -175,5 +176,192 @@ func TestDeletePrefixRefusesUnboundedPrefix(t *testing.T) {
 	}
 	if len(fake.deleted) != 0 {
 		t.Error("拒否したはずのプレフィックスで削除が走っています")
+	}
+}
+
+// --- 読み取り経路 ---
+
+// stubStore は、ジョブ ID ごとに任意の結果を返す進行状況のフェイクです。
+type stubStore struct {
+	statuses map[string]domain.JobStatus
+	errs     map[string]error
+}
+
+func (s stubStore) Get(_ context.Context, jobID string) (domain.JobStatus, error) {
+	if err, ok := s.errs[jobID]; ok {
+		return domain.JobStatus{}, err
+	}
+	if status, ok := s.statuses[jobID]; ok {
+		return status, nil
+	}
+	return domain.JobStatus{}, jobstatus.ErrNotFound
+}
+
+func (stubStore) Save(context.Context, string, domain.JobStatus) error { return nil }
+
+// contentIO は、Open で任意の内容を返す fakeIO です。
+type contentIO struct {
+	*fakeIO
+	contents map[string]string
+	openErr  error
+}
+
+func (c contentIO) Open(_ context.Context, uri string) (io.ReadCloser, error) {
+	if c.openErr != nil {
+		return nil, c.openErr
+	}
+	body, ok := c.contents[uri]
+	if !ok {
+		return nil, errors.New("not found: " + uri)
+	}
+	return io.NopCloser(strings.NewReader(body)), nil
+}
+
+func jobPrefix(jobID string) string {
+	return "gs://" + testBucket + "/reviews/" + jobID + "/"
+}
+
+// 一覧は「疑似ディレクトリ」だけを拾い、ジョブ 1 件を 1 行として返すこと。
+//
+// 区切り指定が効かなくなると配下のオブジェクトが全件返り、末尾スラッシュの
+// フィルタで全部落ちて **履歴一覧が常に空** になります。
+func TestListReturnsOneRowPerJob(t *testing.T) {
+	ids := []string{"20260810-213000-a1b2c3d4", "20260811-090000-b2c3d4e5"}
+	fake := &fakeIO{objects: []string{jobPrefix(ids[0]), jobPrefix(ids[1])}}
+	store := stubStore{statuses: map[string]domain.JobStatus{
+		ids[0]: {Status: jobstatus.Status{JobID: ids[0], State: jobstatus.StateSucceeded}},
+		ids[1]: {Status: jobstatus.Status{JobID: ids[1], State: jobstatus.StateSucceeded}},
+	}}
+
+	h := NewHistory(fake, fake, store, domain.NewStorageLayout(testBucket))
+	page, err := h.List(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("一覧の取得に失敗: %v", err)
+	}
+	if len(page.Items) != len(ids) {
+		t.Fatalf("件数 = %d, want %d (%+v)", len(page.Items), len(ids), page.Items)
+	}
+}
+
+// 一覧はジョブ ID に埋め込まれた時刻で新しい順に並ぶこと。
+// 並び順キーを外すと辞書順へ退行し、採番の接頭辞が変わった瞬間に日付を無視した
+// 並びになります。
+func TestListSortsNewestFirst(t *testing.T) {
+	older := "20260810-213000-a1b2c3d4"
+	newer := "20260811-090000-b2c3d4e5"
+	// 敢えて古い順に返させ、並べ替えが効いていることを見ます。
+	fake := &fakeIO{objects: []string{jobPrefix(older), jobPrefix(newer)}}
+	store := stubStore{statuses: map[string]domain.JobStatus{
+		older: {Status: jobstatus.Status{JobID: older}},
+		newer: {Status: jobstatus.Status{JobID: newer}},
+	}}
+
+	h := NewHistory(fake, fake, store, domain.NewStorageLayout(testBucket))
+	page, err := h.List(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("一覧の取得に失敗: %v", err)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("件数 = %d, want 2", len(page.Items))
+	}
+	if page.Items[0].JobID != newer {
+		t.Errorf("先頭 = %q, want %q（新しい順になっていません）", page.Items[0].JobID, newer)
+	}
+}
+
+// まだ記録が無いジョブも一覧から落とさないこと。
+// 落とすと、投入したはずのレビューを画面から追えなくなります。
+func TestListKeepsJobsWithoutStatus(t *testing.T) {
+	fake := &fakeIO{objects: []string{jobPrefix(testJobID)}}
+	store := stubStore{errs: map[string]error{testJobID: jobstatus.ErrNotFound}}
+
+	h := NewHistory(fake, fake, store, domain.NewStorageLayout(testBucket))
+	page, err := h.List(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("一覧の取得に失敗: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("件数 = %d, want 1（未記録のジョブが落ちています）", len(page.Items))
+	}
+	if page.Items[0].JobID != testJobID {
+		t.Errorf("JobID = %q, want %q", page.Items[0].JobID, testJobID)
+	}
+}
+
+// ★ 読み取り自体の失敗は握り潰さないこと。
+//
+// 未記録と同じ扱いにすると、権限剥奪やストレージ障害が
+// 「ジョブ ID だけの空行が並ぶ 200 OK」として出て、障害が障害に見えなくなります。
+func TestListSurfacesUnavailableStatus(t *testing.T) {
+	fake := &fakeIO{objects: []string{jobPrefix(testJobID)}}
+	store := stubStore{errs: map[string]error{testJobID: jobstatus.ErrUnavailable}}
+
+	h := NewHistory(fake, fake, store, domain.NewStorageLayout(testBucket))
+	if _, err := h.List(context.Background(), 1, 20); err == nil {
+		t.Fatal("読み取り失敗が握り潰されました")
+	}
+}
+
+// 詳細はレポート本文まで読み込むこと。
+func TestGetLoadsReport(t *testing.T) {
+	uri := jobPrefix(testJobID) + "report.json"
+	fake := &fakeIO{}
+	rio := contentIO{
+		fakeIO:   fake,
+		contents: map[string]string{uri: `{"title":"レビュー結果","summary":"要約","verdict":{"decision":"minor"},"findings":[]}`},
+	}
+	store := stubStore{statuses: map[string]domain.JobStatus{
+		testJobID: {
+			Status:    jobstatus.Status{JobID: testJobID, State: jobstatus.StateSucceeded},
+			ReportURI: uri,
+		},
+	}}
+
+	h := NewHistory(rio, fake, store, domain.NewStorageLayout(testBucket))
+	detail, err := h.Get(context.Background(), testJobID)
+	if err != nil {
+		t.Fatalf("詳細の取得に失敗: %v", err)
+	}
+	if detail.Report == nil {
+		t.Fatal("レポートが読み込まれていません")
+	}
+	if detail.Report.Title != "レビュー結果" {
+		t.Errorf("Title = %q", detail.Report.Title)
+	}
+}
+
+// レポートが読めなくても進行状況までは見せること。
+// 404 を返すより、何が起きたかを画面から追えるほうが手掛かりが残ります。
+func TestGetKeepsStatusWhenReportUnreadable(t *testing.T) {
+	fake := &fakeIO{}
+	rio := contentIO{fakeIO: fake, openErr: errors.New("permission denied")}
+	store := stubStore{statuses: map[string]domain.JobStatus{
+		testJobID: {
+			Status:    jobstatus.Status{JobID: testJobID, State: jobstatus.StateSucceeded},
+			ReportURI: jobPrefix(testJobID) + "report.json",
+		},
+	}}
+
+	h := NewHistory(rio, fake, store, domain.NewStorageLayout(testBucket))
+	detail, err := h.Get(context.Background(), testJobID)
+	if err != nil {
+		t.Fatalf("進行状況まで失われました: %v", err)
+	}
+	if detail.Report != nil {
+		t.Error("読めなかったレポートが入っています")
+	}
+	if detail.Status.JobID != testJobID {
+		t.Errorf("JobID = %q, want %q", detail.Status.JobID, testJobID)
+	}
+}
+
+// 未記録は ErrNotFound のまま返すこと。ハンドラーはこれで 404 と 500 を切り分けます。
+func TestGetPreservesNotFound(t *testing.T) {
+	fake := &fakeIO{}
+	h := NewHistory(fake, fake, stubStore{}, domain.NewStorageLayout(testBucket))
+
+	_, err := h.Get(context.Background(), testJobID)
+	if !errors.Is(err, jobstatus.ErrNotFound) {
+		t.Fatalf("err = %v, ErrNotFound として扱えません", err)
 	}
 }
