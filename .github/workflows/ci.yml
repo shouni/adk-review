@@ -69,8 +69,8 @@ jobs:
 
       # golang/govulncheck-action@v1 は使いません。あのアクションは GOTOOLCHAIN=local を
       # 強制するため、go.mod が要求する版がランナーに無いと走査以前にパッケージの読み込みで
-      # 落ちます（go.mod はパッチまで固定しており、setup-go のマニフェスト収録は遅れます）。
-      # 上の setup-go は同じ go.mod から解決できており、他ジョブと同じ形です。
+      # 落ちます。上の setup-go は同じ go.mod から解決でき、check-latest も効くので、
+      # 他ジョブと同じ toolchain で走ります。
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
