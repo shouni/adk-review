@@ -34,7 +34,8 @@
   ツールと構造化出力を併用でき、最終応答としてスキーマに従う JSON が返ります。デコードと
   検証は `go-review-kit` の `ParseReport` / `Validate` をそのまま使います。
 * **暴走はツール呼び出し回数の上限で止めます**: レビュー 1 件は Cloud Tasks の
-  dispatch deadline（10 分）内に収める必要があるため、時間ではなく回数で打ち切ります
+  dispatch deadline（既定 10 分、`TASK_DISPATCH_DEADLINE`）内に収める必要があるため、
+  時間ではなく回数で打ち切ります
   （`AGENT_MAX_TOOL_CALLS`、既定 32）。上限に達したら「調査を切り上げて結論を出せ」と
   モデルへ伝わるので、締切超過ではなくレビューの完了に倒れます。
 * **単発レビュアーも残します**: 差分だけを 1 回投げる `GeminiReviewer`（`internal/adapters`）も
@@ -145,9 +146,19 @@ adk-review/
 ### 1. 必要な環境変数
 
 **未設定だと起動時に落ちる**のは、全役割共通で `SERVER_ROLE`・`SERVICE_URL`（本番は HTTPS
-必須）・`GEMINI_MODELS`、web 面ではさらに `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET`・
-`SESSION_SECRET`・`SESSION_ENCRYPT_KEY`・`ALLOWED_EMAILS` または `ALLOWED_DOMAINS` です。
+必須）・`GEMINI_MODELS`・`GCP_PROJECT_ID`・`GCS_REVIEW_BUCKET`、web 面ではさらに
+`CLOUD_TASKS_QUEUE_ID`・`WORKER_URL`・`TASK_CALLER_SERVICE_ACCOUNT_EMAIL`・
+`GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET`・`SESSION_SECRET`・`SESSION_ENCRYPT_KEY`・
+`ALLOWED_EMAILS` または `ALLOWED_DOMAINS`、worker 面では `TASK_AUDIENCE_URL`（未設定なら
+`SERVICE_URL` へ落ちます）と `ALLOWED_TASK_SERVICE_ACCOUNTS` です。
 worker 面は OAuth 系の設定を要求しません。残りは空でも起動します（機能しないだけです）。
+
+**プロジェクト ID とバケット名に既定値を置かないのは意図的です。** プレースホルダを置くと
+設定漏れのまま起動が成功し、失敗するのは利用者がフォームを送ったあと、しかも Gemini の
+呼び出しを終えた保存の段階になります。いちばんコストを払ったあとで落ちる順序なので、
+起動時に止めます。`SERVICE_URL` も同じ理由で既定値を持ちません（`http://localhost:8080` を
+既定にすると、本番の設定漏れが「開発用ホスト名なので HTTPS 検査を免除」の経路で
+素通りしてしまいます）。
 
 `GEMINI_MODELS` にアプリ側の既定値を置かないのは意図的です。モデル ID が古くなるのは
 Google のリリース周期であってこのリポジトリの都合ではないため、既定値があると
@@ -158,25 +169,30 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 | 環境変数 | 説明 | デフォルト値（例） |
 | :--- | :--- | :--- |
 | `SERVER_ROLE` | このプロセスの役割: `web` / `worker` / `both`（ローカル開発用）。**必須** | `web` |
-| `SERVICE_URL` | このサービス自身のルート URL（末尾スラッシュなし）。**本番では HTTPS 必須** | `https://myapp.run.app` または `http://localhost:8080` |
+| `SERVICE_URL` | このサービス自身のルート URL（末尾スラッシュなし）。**本番では HTTPS 必須。既定値は無く、未設定だと起動時に落ちます** | `https://myapp.run.app`（ローカルは `http://localhost:8080`） |
 | `WORKER_URL` | タスクの投入先（worker サービス）のルート URL。web 面で使用。未設定なら `SERVICE_URL`（both 用） | `https://myapp-worker.run.app` |
 | `AGENT_MAX_TOOL_CALLS` | エージェントレビュー 1 件あたりのツール呼び出し回数上限。0 で既定値（32） | `0` |
 | `PORT` | サーバーがリッスンするポート | `8080` |
-| `GCP_PROJECT_ID` | GCP のプロジェクト ID | `your-gcp-project` |
+| `GCP_PROJECT_ID` | GCP のプロジェクト ID。**既定値は無く、未設定だと起動時に落ちます** | **必須** |
 | `GCP_LOCATION_ID` | Cloud Tasks キューのリージョン | `asia-northeast1` |
 | `CLOUD_TASKS_QUEUE_ID` | 使用する Cloud Tasks のキュー名 | `review-queue` |
 | `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` | 投入するタスクの OIDC に指定する caller SA（web 面のみ） | `adk-review-web-runner@...` |
 | `ALLOWED_TASK_SERVICE_ACCOUNTS` | worker が受け付けるトークンの発行元 SA（カンマ区切り、worker 面のみ）。web 面の SA を並べる | `adk-review-web-runner@...` |
-| `GCS_REVIEW_BUCKET` | レビュー結果と進行状況を保存する GCS バケット名 | `your-review-archive-bucket` |
+| `GCS_REVIEW_BUCKET` | レビュー結果と進行状況を保存する GCS バケット**名**（`gs://` は付けても落とします）。**既定値は無く、未設定だと起動時に落ちます** | **必須** |
 | `GEMINI_MODELS` | 使用する Gemini モデル名。カンマ区切りで複数指定するとフォームで選択可能（先頭がデフォルト）。**アプリ側に既定値は無く、未設定だと起動時に落ちます** | **必須**（Google の最新モデル ID を確認して設定） |
 | `TASK_AUDIENCE_URL` | Cloud Tasks の OIDC トークン検証に使う audience。未設定なら `SERVICE_URL` | `https://myapp.run.app` |
 | `PIPELINE_TIMEOUT` | レビュー 1 件の実行時間の上限（`5m` 形式）。Cloud Tasks の dispatch deadline より短いこと。超えると起動時エラー | `5m` |
-| `SSH_KEY_PATH` | SSH 形式のリポジトリ（`git@github.com:owner/repo.git`）のクローンに使う秘密鍵パス（Secret Manager マウント推奨） | `/secrets/ssh/id_rsa` |
+| `SSH_KEY_PATH` | SSH 形式のリポジトリ（`git@github.com:owner/repo.git`）のクローンに使う秘密鍵パス（Secret Manager マウント推奨。Cloud Run では `/secrets/ssh/id_rsa` を渡します） | `~/.ssh/id_rsa` |
+| `TASK_DISPATCH_DEADLINE` | Cloud Tasks がワーカーの応答を待つ上限（`10m` 形式）。**ワーカーの実行時間の実効上限**で、`PIPELINE_TIMEOUT` より長いこと。Cloud Tasks の HTTP ターゲットは 30 分が上限 | `10m` |
+| `HTTP_TIMEOUT` | Slack 通知など外部 HTTP 呼び出しの上限 | `30s` |
+| `LOG_LEVEL` | ログ出力レベル（`debug` / `info` / `warn` / `error`） | `info` |
 | `SLACK_WEBHOOK_URL` | レビューの結末を通知する Slack Webhook URL。未設定なら通知をスキップ | `https://hooks.slack.com/services/T...` |
 
-> **SSH ホストキー検証を無効化するスイッチはありません。** `Dockerfile` が GitHub の
-> ホストキーを `/etc/ssh/ssh_known_hosts` へ焼き込むため通常は設定不要で、GitHub 以外を
-> 対象にする場合のみ同ファイルへ追記します。
+> **SSH ホストキー検証を無効化するスイッチはありません。** `Dockerfile` がビルド時に
+> GitHub の API からホストキーを取得して `/etc/ssh/ssh_known_hosts` へ焼き込むため
+> 通常は設定不要です。鍵をリポジトリに固定しないのは、ローテートに追従できないと
+> clone が全滅し、しかも気付くのが本番になるためです。参照先は `SSH_KNOWN_HOSTS`
+> （Dockerfile が設定済み）で変えられ、GitHub 以外を対象にする場合は同ファイルへ追記します。
 
 **認証設定 (OAuth):**
 
@@ -197,7 +213,7 @@ web 面が `TASK_CALLER_SERVICE_ACCOUNT_EMAIL`（署名者 = web SA）を指定�
 IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必要な権限は次のとおりです。
 
 - **web 面の SA**: GCS バケットの読み書き（受付記録・履歴表示・削除）、Cloud Tasks キューへの
-  タスク投入と `SERVICE_ACCOUNT_EMAIL` を指定した OIDC トークンの発行（ActAs）
+  タスク投入と `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` を指定した OIDC トークンの発行（ActAs）
 - **worker 面の SA**: GCS バケットの読み書き（結果保存・進行状況）、Vertex AI の呼び出し
   （単発・エージェントの両方がここを通ります）
 - 共通: 使用するシークレットの読み取り
@@ -210,6 +226,48 @@ IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必�
   到達します
 
 設定が不足していると `403 Forbidden` になります。
+
+---
+
+### 3. ローカルでの起動
+
+`SERVER_ROLE=both` で 1 プロセスに両面を持たせます。Vertex AI を呼ぶため、
+事前に ADC（`gcloud auth application-default login`）が要ります。
+
+```bash
+export SERVER_ROLE=both
+export SERVICE_URL=http://localhost:8080
+export GCP_PROJECT_ID=your-project
+export GCS_REVIEW_BUCKET=your-review-bucket
+export GEMINI_MODELS=gemini-2.5-flash,gemini-2.5-pro
+export CLOUD_TASKS_QUEUE_ID=review-queue
+export TASK_CALLER_SERVICE_ACCOUNT_EMAIL=adk-review-web-runner@your-project.iam.gserviceaccount.com
+export ALLOWED_TASK_SERVICE_ACCOUNTS=$TASK_CALLER_SERVICE_ACCOUNT_EMAIL
+export GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...
+export SESSION_SECRET=$(openssl rand -base64 32)
+export SESSION_ENCRYPT_KEY=$(openssl rand -base64 24 | cut -c1-32)
+export ALLOWED_EMAILS=you@example.com
+
+go run .
+```
+
+不足している設定があれば起動時に変数名付きで落ちるので、エラーに出た順に足していけます。
+
+**役割ごとに生えるルート:**
+
+| ルート | メソッド | web | worker | 説明 |
+| :--- | :--- | :---: | :---: | :--- |
+| `/health` | GET | ✅ | ✅ | ヘルスチェック（認証不要） |
+| `/static/*` | GET | ✅ | ✅ | CSS / JS（認証の外側） |
+| `/auth/login`, `/auth/callback` | GET | ✅ | — | Google OAuth |
+| `/` | GET | ✅ | — | レビュー依頼フォーム |
+| `/submit_review` | POST | ✅ | — | 依頼の受付とタスク投入 |
+| `/history` | GET | ✅ | — | 履歴一覧 |
+| `/history/{jobID}` | GET / DELETE | ✅ | — | 詳細表示 / 削除（実行中は 409） |
+| `/tasks/execute_review` | POST | — | ✅ | Cloud Tasks からの実行（OIDC 検証） |
+
+担当しない面のルートは登録しません。役割とハンドラが噛み合わない構成は、
+ルーターが 404 を返す前に起動時に落とします（`builder.AppHandlers.Validate`）。
 
 ---
 
