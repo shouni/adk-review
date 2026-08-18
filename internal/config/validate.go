@@ -116,7 +116,7 @@ func (c *Config) validateWorkerConfig() error {
 // 失敗レポートも Slack 通知も残らない」という、いちばん気付きにくい壊れ方をします。
 //
 // 三段目（Cloud Run の timeout）はアプリからは見えないので、そちらとの関係は
-// ap-infra の precondition が受け持ちます。
+// インフラ管理リポジトリの precondition が受け持ちます。
 func (c *Config) validateTimeouts() error {
 	if c.Tasks.DispatchDeadline <= 0 {
 		return fmt.Errorf("TASK_DISPATCH_DEADLINE は正の値にしてください（現在: %s）", c.Tasks.DispatchDeadline)

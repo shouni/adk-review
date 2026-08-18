@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 このファイルは、このリポジトリで作業するときの前提と、コードを読んだだけでは分からない
-不変条件をまとめたものです。兄弟アプリ（`ap-voice` / `ap-comp` / `ap-mv` / `ap-story` /
-`ap-mcp`）と同じ規約に従います。インフラの定義は別リポジトリ `ap-infra` が正です。
+不変条件をまとめたものです。同じフリートの兄弟アプリと同じ規約に従います。
+インフラの定義は別のインフラ管理リポジトリ（Terraform）が正です。
 
 ## What this is
 
@@ -40,7 +40,7 @@ Slack 通知も残りません。** `review-queue` は `max_attempts = 1` なの
 「レビューが一生終わらない」ように見えます）。
 
 - 上二段の関係は `config.validateTimeouts` が起動時に検査します。
-- 三段目はアプリから見えないため、`ap-infra/app_adk_review.tf` の `precondition` が受け持ちます。
+- 三段目はアプリから見えないため、インフラ管理リポジトリの `precondition` が受け持ちます。
 - **フリートで唯一、三段とも短く取ってあります。** 単発レビューの実測が 10 秒未満で、
   動画生成とは桁が違うためです。上限は「正常系の目標」ではなく「ハングを捕まえる網」です。
 - エージェントレビューはツール呼び出しの回数だけ伸びます。実測が近づいたら
@@ -50,7 +50,7 @@ Slack 通知も残りません。** `review-queue` は `max_attempts = 1` なの
 ### Cloud Tasks の OIDC
 
 発行元と許可リストを 1 つの変数で兼ねません。同じ値でも役割ごとに意味が反転して
-読めなくなるためです（`ap-infra/docs/conventions.md`「Cloud Tasks の OIDC」）。
+読めなくなるためです（インフラ管理リポジトリの規約「Cloud Tasks の OIDC」）。
 
 - `TASK_CALLER_SERVICE_ACCOUNT_EMAIL`: **投入側（web）** が指定する caller SA。
   トークンを生成して付与するのは Cloud Tasks であって、このプロセスではありません。

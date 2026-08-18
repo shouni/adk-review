@@ -42,7 +42,7 @@ type ServerConfig struct {
 	// OAuth のリダイレクト先とタスク投入先だけが静かに localhost を向きます。
 	ServiceURL string `env:"SERVICE_URL"`
 	Port       string `env:"PORT" envDefault:"8080"`
-	// Role はこのプロセスが担う役割（web / worker / both）です。兄弟アプリ（ap-*）と
+	// Role はこのプロセスが担う役割（web / worker / both）です。兄弟アプリと
 	// 同じく明示が必須で、未設定・未知の値は起動時（LoadConfig）にエラーになります。
 	// 面ごとに別サービスとしてデプロイし、both はローカル開発でのみ使います。
 	Role serverrole.Role `env:"SERVER_ROLE"`
@@ -76,7 +76,7 @@ type TasksConfig struct {
 	// AllowedServiceAccounts は、worker が受け付けるトークンの発行元 SA の許可リストです。
 	// web と worker で実行 SA を分けているため、ここには「他人（web 面）の SA」が並びます。
 	// 発行者と許可リストを 1 つの変数で兼ねると、同じ値でも役割ごとに意味が反転して
-	// 読めなくなるため分けています（ap-infra docs/conventions.md「Cloud Tasks の OIDC」）。
+	// 読めなくなるため分けています（インフラ管理リポジトリの規約「Cloud Tasks の OIDC」）。
 	AllowedServiceAccounts []string `env:"ALLOWED_TASK_SERVICE_ACCOUNTS"`
 }
 
@@ -149,7 +149,7 @@ type NotificationConfig struct {
 }
 
 // Config は環境変数からアプリケーション設定を読み込む構造体です。
-// 区分けは兄弟アプリ（ap-voice など）と同じ形に揃えています。
+// 区分けは兄弟アプリと同じ形に揃えています。
 type Config struct {
 	Server       ServerConfig
 	Tasks        TasksConfig
@@ -221,7 +221,7 @@ func (c *Config) normalize() error {
 // **バケット「名」であって URI ではありません。** `gs://review-archive/` のように
 // コンソールから貼った形で渡されると、そのまま使って
 // `gs://gs://review-archive//reviews/...` という URI を組み立ててしまいます。
-// ap-voice / ap-mv の同名の関数と同じ規則です。
+// 兄弟アプリの同名の関数と同じ規則です。
 func normalizeGCSBucket(bucket string) string {
 	bucket = strings.TrimSpace(bucket)
 	bucket = strings.TrimPrefix(bucket, "gs://")

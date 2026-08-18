@@ -25,7 +25,7 @@ func main() {
 	// cloudlog が level を severity へマップします。これが無いと Cloud Logging 上では
 	// 全行が同じ重大度に見え、slog.Error がログベースの通知やメトリクスに乗りません。
 	// slogctx は context に載せた属性（job_id など）を全出力へ付けます。
-	// 組み立てだけをアプリ側で行うのは兄弟アプリ（ap-*）と同じ形です。
+	// 組み立てだけをアプリ側で行うのは兄弟アプリと同じ形です。
 	level := slogctx.ParseLevel(os.Getenv(logLevelEnvKey))
 	base := slog.NewJSONHandler(os.Stdout, cloudlog.HandlerOptions(level))
 	slog.SetDefault(slog.New(slogctx.NewHandler(base)))

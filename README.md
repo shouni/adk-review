@@ -65,7 +65,7 @@ Cloud Tasks 投入     ↘ status.json 記録 / Slack 通知
 * **依存性注入**: `internal/builder` が全コンポーネントを組み立てます。通知先や保存先を
   ロジックに触れずに差し替えられます。
 * **1 イメージ 2 サービス**: 同じイメージを `SERVER_ROLE`（web / worker）で分け、別々の
-  Cloud Run サービスとしてデプロイします（ap-* 兄弟アプリと同じ方式）。Web 面は
+  Cloud Run サービスとしてデプロイします（兄弟アプリと同じ方式）。Web 面は
   `WORKER_URL` の worker サービスへタスクを投入します。ローカル開発は `SERVER_ROLE=both` で
   1 プロセスに両面を持たせます。
 * **エンジンの使い分け**: モードは「何を見るか」を、エンジンは「どこまで調べるか」を決めます。
@@ -206,7 +206,7 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 
 ### 2. 必要なIAMロールの設定
 
-実行 SA は面ごとに分けます（ap-infra の「1 ワークロード 1 SA」規約）。Cloud Tasks の OIDC は
+実行 SA は面ごとに分けます（インフラ管理リポジトリの「1 ワークロード 1 SA」規約）。Cloud Tasks の OIDC は
 web 面が `TASK_CALLER_SERVICE_ACCOUNT_EMAIL`（署名者 = web SA）を指定し、worker 面が
 `ALLOWED_TASK_SERVICE_ACCOUNTS`（許可する発行元 = web SA）で検証します。
 

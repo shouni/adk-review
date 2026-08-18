@@ -124,7 +124,7 @@ func clamp(value, low, high int) int {
 
 // HandleReviewDelete は、レビュー履歴を削除します。
 //
-// メソッドを DELETE にし、応答を本文なしで返すのは ap-comp と揃えるためです
+// メソッドを DELETE にし、応答を本文なしで返すのは兄弟アプリと揃えるためです
 // （ブラウザ側は assets/static/js/app.js の App.deleteResource が呼びます）。
 // 失敗時の本文はそのまま画面のアラートに出るため、内部の詳細は載せません。
 func (h *Handler) HandleReviewDelete(w http.ResponseWriter, r *http.Request) {
