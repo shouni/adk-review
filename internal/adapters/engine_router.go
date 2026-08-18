@@ -22,7 +22,7 @@ type EngineRouter struct {
 	agent  *pipeline.Pipeline
 }
 
-var _ coreRunner = (*EngineRouter)(nil)
+var _ reviewRunner = (*EngineRouter)(nil)
 
 // NewEngineRouter は EngineRouter を構築します。
 func NewEngineRouter(single, agent *pipeline.Pipeline) *EngineRouter {
@@ -39,9 +39,9 @@ func (r *EngineRouter) Run(ctx context.Context, req domain.ReviewRequest) (revie
 		return review.Failed(toReviewRequest(req), 0, err), nil, err
 	}
 
-	core := r.single
+	selected := r.single
 	if engine == assets.EngineAgent {
-		core = r.agent
+		selected = r.agent
 	}
-	return core.Run(ctx, toReviewRequest(req))
+	return selected.Run(ctx, toReviewRequest(req))
 }

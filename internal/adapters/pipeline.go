@@ -16,19 +16,19 @@ import (
 // recordTimeout は、結末の記録に与える上限です。
 const recordTimeout = 30 * time.Second
 
-// coreRunner は、レビュー本体の実行面です。実体は EngineRouter で、依頼ごとに
+// reviewRunner は、レビュー本体の実行面です。実体は EngineRouter で、依頼ごとに
 // go-review-kit のパイプラインを選びます。
 //
 // review.Request ではなく domain.ReviewRequest を受け取るのは、どのエンジンで実行するかが
 // ライブラリの語彙に無い本アプリ固有の情報だからです。変換は選び終えたあとに行います。
-type coreRunner interface {
+type reviewRunner interface {
 	Run(ctx context.Context, req domain.ReviewRequest) (review.Result, *review.Report, error)
 }
 
 // ReviewPipeline は go-review-kit のパイプラインを domain.Pipeline として公開する ACL です。
 // あわせて、ワーカー側でしか分からない進行状況（実行開始・再配信）を記録します。
 type ReviewPipeline struct {
-	core     coreRunner
+	runner   reviewRunner
 	recorder *jobstatus.Recorder[domain.JobStatus]
 	timeout  time.Duration
 }
@@ -38,9 +38,9 @@ var _ domain.Pipeline = (*ReviewPipeline)(nil)
 // NewReviewPipeline は ReviewPipeline を構築します。
 //
 // timeout はレビュー 1 件の実行時間の上限（PIPELINE_TIMEOUT）です。0 以下なら無制限。
-func NewReviewPipeline(core coreRunner, store domain.StatusStore, timeout time.Duration) *ReviewPipeline {
+func NewReviewPipeline(runner reviewRunner, store domain.StatusStore, timeout time.Duration) *ReviewPipeline {
 	return &ReviewPipeline{
-		core:     core,
+		runner:   runner,
 		recorder: jobstatus.NewRecorder(store),
 		timeout:  timeout,
 	}
@@ -91,7 +91,7 @@ func (p *ReviewPipeline) Execute(ctx context.Context, req domain.ReviewRequest) 
 		defer cancel()
 	}
 
-	result, report, err := p.core.Run(runCtx, req)
+	result, report, err := p.runner.Run(runCtx, req)
 	p.recordOutcome(ctx, req, result, report, err)
 
 	return err

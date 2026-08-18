@@ -141,16 +141,16 @@ type errNotRecorded struct{}
 func (errNotRecorded) Error() string { return "not recorded" }
 
 // newTestPipeline は、観察用フックを差し込んだパイプラインを組み立てます。
-// singleCore は、EngineRouter を挟まず 1 本のパイプラインへ流す coreRunner です。
+// singleRunner は、EngineRouter を挟まず 1 本のパイプラインへ流す reviewRunner です。
 // ReviewPipeline（記録・締切・再配信の面倒を見る層）の検証にエンジンの選択を
 // 巻き込まないために使います。ルーティング自体は engine_router_test.go が見ます。
-type singleCore struct{ core *pipeline.Pipeline }
+type singleRunner struct{ inner *pipeline.Pipeline }
 
-func (s singleCore) Run(ctx context.Context, req domain.ReviewRequest) (review.Result, *review.Report, error) {
-	return s.core.Run(ctx, toReviewRequest(req))
+func (s singleRunner) Run(ctx context.Context, req domain.ReviewRequest) (review.Result, *review.Report, error) {
+	return s.inner.Run(ctx, toReviewRequest(req))
 }
 
-func newTestPipeline(t *testing.T, source stubSource, publisher stubPublisher) coreRunner {
+func newTestPipeline(t *testing.T, source stubSource, publisher stubPublisher) reviewRunner {
 	t.Helper()
 	return newTestPipelineWith(t, source, publisher, &stubNotifier{})
 }
@@ -160,7 +160,7 @@ func newTestPipelineWith(
 	source stubSource,
 	publisher stubPublisher,
 	notifier review.Notifier,
-) coreRunner {
+) reviewRunner {
 	t.Helper()
 
 	p, err := pipeline.New(pipeline.Deps{
@@ -173,7 +173,7 @@ func newTestPipelineWith(
 	if err != nil {
 		t.Fatalf("パイプラインの構築に失敗: %v", err)
 	}
-	return singleCore{core: p}
+	return singleRunner{inner: p}
 }
 
 func testDomainRequest() domain.ReviewRequest {
@@ -197,14 +197,14 @@ func TestReviewPipeline_レビューに締切を被せる(t *testing.T) {
 
 	var reviewDeadline time.Time
 	var hasDeadline bool
-	core := newTestPipeline(t,
+	runner := newTestPipeline(t,
 		stubSource{seen: func(ctx context.Context) { reviewDeadline, hasDeadline = ctx.Deadline() }},
 		stubPublisher{},
 	)
 
 	const timeout = 25 * time.Minute
 	before := time.Now()
-	if err := NewReviewPipeline(core, &stubStore{}, timeout).Execute(context.Background(), testDomainRequest()); err != nil {
+	if err := NewReviewPipeline(runner, &stubStore{}, timeout).Execute(context.Background(), testDomainRequest()); err != nil {
 		t.Fatalf("Execute() failed: %v", err)
 	}
 
@@ -221,12 +221,12 @@ func TestReviewPipeline_ゼロなら無制限(t *testing.T) {
 	t.Parallel()
 
 	var hasDeadline bool
-	core := newTestPipeline(t,
+	runner := newTestPipeline(t,
 		stubSource{seen: func(ctx context.Context) { _, hasDeadline = ctx.Deadline() }},
 		stubPublisher{},
 	)
 
-	if err := NewReviewPipeline(core, &stubStore{}, 0).Execute(context.Background(), testDomainRequest()); err != nil {
+	if err := NewReviewPipeline(runner, &stubStore{}, 0).Execute(context.Background(), testDomainRequest()); err != nil {
 		t.Fatalf("Execute() failed: %v", err)
 	}
 	if hasDeadline {
@@ -242,7 +242,7 @@ func TestReviewPipeline_打ち切り後も通知は走る(t *testing.T) {
 	t.Parallel()
 
 	notifier := &stubNotifier{}
-	core := newTestPipelineWith(t,
+	runner := newTestPipelineWith(t,
 		stubSource{seen: func(ctx context.Context) {
 			<-ctx.Done() // 締切まで待つ = レビューが打ち切られた状態を作る
 		}},
@@ -250,7 +250,7 @@ func TestReviewPipeline_打ち切り後も通知は走る(t *testing.T) {
 		notifier,
 	)
 
-	if err := NewReviewPipeline(core, &stubStore{}, 10*time.Millisecond).Execute(context.Background(), testDomainRequest()); err == nil {
+	if err := NewReviewPipeline(runner, &stubStore{}, 10*time.Millisecond).Execute(context.Background(), testDomainRequest()); err == nil {
 		t.Fatal("打ち切りがエラーとして返っていません")
 	}
 
@@ -271,9 +271,9 @@ func TestReviewPipeline_実行開始を記録する(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
-	core := newTestPipeline(t, stubSource{}, stubPublisher{})
+	runner := newTestPipeline(t, stubSource{}, stubPublisher{})
 
-	if err := NewReviewPipeline(core, store, 0).Execute(context.Background(), testDomainRequest()); err != nil {
+	if err := NewReviewPipeline(runner, store, 0).Execute(context.Background(), testDomainRequest()); err != nil {
 		t.Fatalf("Execute() failed: %v", err)
 	}
 
@@ -298,12 +298,12 @@ func TestReviewPipeline_完了済みの再配信は打ち切る(t *testing.T) {
 	}
 
 	reviewed := false
-	core := newTestPipeline(t,
+	runner := newTestPipeline(t,
 		stubSource{seen: func(context.Context) { reviewed = true }},
 		stubPublisher{},
 	)
 
-	if err := NewReviewPipeline(core, store, 0).Execute(context.Background(), req); err != nil {
+	if err := NewReviewPipeline(runner, store, 0).Execute(context.Background(), req); err != nil {
 		t.Fatalf("Execute() failed: %v", err)
 	}
 	if reviewed {
@@ -353,9 +353,9 @@ func TestReviewPipeline_結末を記録する(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &stubStore{}
-			core := newTestPipeline(t, tt.source, tt.publisher)
+			runner := newTestPipeline(t, tt.source, tt.publisher)
 
-			_ = NewReviewPipeline(core, store, 0).Execute(context.Background(), testDomainRequest())
+			_ = NewReviewPipeline(runner, store, 0).Execute(context.Background(), testDomainRequest())
 
 			// 1 件目は running、最後が結末です。
 			if len(store.saved) < 2 {
@@ -384,10 +384,10 @@ func TestReviewPipeline_結末にレビューの中身を載せる(t *testing.T)
 	t.Parallel()
 
 	store := &stubStore{}
-	core := newTestPipeline(t, stubSource{}, stubPublisher{})
+	runner := newTestPipeline(t, stubSource{}, stubPublisher{})
 
 	req := testDomainRequest()
-	if err := NewReviewPipeline(core, store, 0).Execute(context.Background(), req); err != nil {
+	if err := NewReviewPipeline(runner, store, 0).Execute(context.Background(), req); err != nil {
 		t.Fatalf("Execute() failed: %v", err)
 	}
 
@@ -409,12 +409,12 @@ func TestReviewPipeline_打ち切り後も結末を記録する(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
-	core := newTestPipeline(t,
+	runner := newTestPipeline(t,
 		stubSource{seen: func(ctx context.Context) { <-ctx.Done() }},
 		stubPublisher{},
 	)
 
-	_ = NewReviewPipeline(core, store, 10*time.Millisecond).Execute(context.Background(), testDomainRequest())
+	_ = NewReviewPipeline(runner, store, 10*time.Millisecond).Execute(context.Background(), testDomainRequest())
 
 	states := store.states()
 	if len(states) < 2 || states[len(states)-1] != "failed" {
@@ -442,11 +442,11 @@ func TestReviewPipeline_解決したエンジンを記録する(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
-	core := newTestPipeline(t, stubSource{diff: "diff"}, stubPublisher{})
+	runner := newTestPipeline(t, stubSource{diff: "diff"}, stubPublisher{})
 
 	req := testDomainRequest()
 	req.Engine = "" // モードの既定に任せる
-	if err := NewReviewPipeline(core, store, 0).Execute(context.Background(), req); err != nil {
+	if err := NewReviewPipeline(runner, store, 0).Execute(context.Background(), req); err != nil {
 		t.Fatalf("Execute が失敗した: %v", err)
 	}
 
@@ -469,11 +469,11 @@ func TestReviewPipeline_不正なエンジン指定は記録しない(t *testing
 	t.Parallel()
 
 	store := &stubStore{}
-	core := newTestPipeline(t, stubSource{diff: "diff"}, stubPublisher{})
+	runner := newTestPipeline(t, stubSource{diff: "diff"}, stubPublisher{})
 
 	req := testDomainRequest()
 	req.Engine = "turbo" // 存在しない
-	_ = NewReviewPipeline(core, store, 0).Execute(context.Background(), req)
+	_ = NewReviewPipeline(runner, store, 0).Execute(context.Background(), req)
 
 	for i, engine := range store.engines() {
 		if engine == "turbo" {
