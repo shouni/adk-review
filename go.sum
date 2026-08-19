@@ -180,6 +180,8 @@ github.com/shouni/go-review-kit v1.3.0 h1:G1nxbDoFNyEjdhONVmm/m21FSnSntcbpToBrHD
 github.com/shouni/go-review-kit v1.3.0/go.mod h1:6MrIdijq4XbEam98k33mEe3AIdCijYRXJslTE42igPA=
 github.com/shouni/go-review-kit v1.4.0 h1:1QsugGUvcWj+YpKAw+eDBabrqLDgPxTLx4owI2lI2Dg=
 github.com/shouni/go-review-kit v1.4.0/go.mod h1:6MrIdijq4XbEam98k33mEe3AIdCijYRXJslTE42igPA=
+github.com/shouni/go-review-kit v1.5.0 h1:+88JwT2gRja8c6n2+HRTENVRyL2wrKxPiLRl1ozW4I8=
+github.com/shouni/go-review-kit v1.5.0/go.mod h1:6MrIdijq4XbEam98k33mEe3AIdCijYRXJslTE42igPA=
 github.com/shouni/go-utils v1.5.1 h1:bw+YrAbUbtrT9WRbnwWHipwRo9ZY8dyPy2/bBdorDD8=
 github.com/shouni/go-utils v1.5.1/go.mod h1:MRR3X08kWJ+sSS2+KRuvWEikXui5Tixg9vta6r30SnE=
 github.com/shouni/netarmor v1.2.3 h1:JqzhpYcO9vAnaTkbEgnkE/+GHpXAyL98L4LU0TzS1OA=
