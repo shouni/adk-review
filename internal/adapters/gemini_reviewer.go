@@ -1,8 +1,10 @@
 package adapters
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	geminiclient "github.com/shouni/go-gemini-client/gemini"
@@ -59,8 +61,19 @@ func (r *GeminiReviewer) Review(ctx context.Context, model, prompt string) (revi
 		return review.Report{}, review.ErrEmptyResponse
 	}
 
-	report, err := review.ParseReport([]byte(resp.Text))
+	// エージェント側（internal/adkagent）と同じく、補修が要ったかどうかを残します。
+	// ParseReport は壊れた出力を黙って直して成功するため、ここで見ないと気付けません。
+	raw := []byte(resp.Text)
+	cleaned := review.SanitizeJSON(raw)
+	if !bytes.Equal(cleaned, raw) {
+		slog.WarnContext(ctx, "モデルの出力が壊れていたので補修しました",
+			"before_bytes", len(raw), "after_bytes", len(cleaned))
+	}
+
+	report, err := review.ParseReport(cleaned)
 	if err != nil {
+		slog.ErrorContext(ctx, "レビュー結果を解釈できませんでした",
+			"error", err, "response_bytes", len(raw))
 		return review.Report{}, fmt.Errorf("gemini: %w", err)
 	}
 	return report, nil
