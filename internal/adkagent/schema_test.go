@@ -6,7 +6,7 @@ import (
 
 	"google.golang.org/genai"
 
-	"github.com/shouni/adk-review/internal/domain"
+	"github.com/shouni/go-review-kit/review"
 )
 
 // スキーマの列挙値は review パッケージの定義から組み立てます。両者が食い違うと、
@@ -23,7 +23,7 @@ func TestSchemaEnumsMatchDomain(t *testing.T) {
 	if !ok {
 		t.Fatal("スキーマに verdict がありません")
 	}
-	if got, want := verdict.Properties["decision"].Enum, domain.DecisionEnum(); !slices.Equal(got, want) {
+	if got, want := verdict.Properties["decision"].Enum, review.DecisionStrings(); !slices.Equal(got, want) {
 		t.Errorf("decision の列挙 = %v, want %v", got, want)
 	}
 
@@ -31,7 +31,7 @@ func TestSchemaEnumsMatchDomain(t *testing.T) {
 	if !ok {
 		t.Fatal("スキーマに findings がありません")
 	}
-	if got, want := findings.Items.Properties["severity"].Enum, domain.SeverityEnum(); !slices.Equal(got, want) {
+	if got, want := findings.Items.Properties["severity"].Enum, review.SeverityStrings(); !slices.Equal(got, want) {
 		t.Errorf("severity の列挙 = %v, want %v", got, want)
 	}
 }

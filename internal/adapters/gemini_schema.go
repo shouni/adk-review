@@ -3,7 +3,7 @@ package adapters
 import (
 	geminiclient "github.com/shouni/go-gemini-client/gemini"
 
-	"github.com/shouni/adk-review/internal/domain"
+	"github.com/shouni/go-review-kit/review"
 )
 
 // reportSchema は、review.Report に対応する構造化出力スキーマです。
@@ -23,7 +23,7 @@ func reportSchema() *geminiclient.Schema {
 			"verdict": {
 				Type: geminiclient.TypeObject,
 				Properties: map[string]*geminiclient.Schema{
-					"decision": {Type: geminiclient.TypeString, Enum: domain.DecisionEnum()},
+					"decision": {Type: geminiclient.TypeString, Enum: review.DecisionStrings()},
 					"reason":   {Type: geminiclient.TypeString},
 				},
 				Required: []string{"decision", "reason"},
@@ -33,7 +33,7 @@ func reportSchema() *geminiclient.Schema {
 				Items: &geminiclient.Schema{
 					Type: geminiclient.TypeObject,
 					Properties: map[string]*geminiclient.Schema{
-						"severity":   {Type: geminiclient.TypeString, Enum: domain.SeverityEnum()},
+						"severity":   {Type: geminiclient.TypeString, Enum: review.SeverityStrings()},
 						"file":       {Type: geminiclient.TypeString},
 						"line":       {Type: geminiclient.TypeInteger},
 						"excerpt":    {Type: geminiclient.TypeString},

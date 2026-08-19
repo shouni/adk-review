@@ -13,7 +13,7 @@ require (
 	github.com/shouni/go-notify v1.2.4
 	github.com/shouni/go-prompt-kit v1.5.0
 	github.com/shouni/go-remote-io v1.8.2
-	github.com/shouni/go-review-kit v1.3.0
+	github.com/shouni/go-review-kit v1.4.0
 	github.com/shouni/go-utils v1.5.1
 	github.com/shouni/netarmor v1.2.3
 	go.yaml.in/yaml/v3 v3.0.5

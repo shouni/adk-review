@@ -44,25 +44,29 @@ func buildPipeline(ctx context.Context, appCtx *app.Container) (domain.Pipeline,
 		Notifier:  appCtx.Notifier,
 	}
 
-	single, err := newCore(shared, func(d *pipeline.Deps) { d.Reviewer = singleReviewer })
+	// 締切はライブラリに持たせます。自前で context に被せると、公開・通知のための
+	// 切り離しより外側に掛かり、打ち切りと同時に失敗通知まで落ちます。
+	runTimeout := pipeline.WithRunTimeout(appCtx.Config.Pipeline.Timeout)
+
+	single, err := newCore(shared, runTimeout, func(d *pipeline.Deps) { d.Reviewer = singleReviewer })
 	if err != nil {
 		return nil, err
 	}
-	agent, err := newCore(shared, func(d *pipeline.Deps) { d.WorkspaceReviewer = agentReviewer })
+	agent, err := newCore(shared, runTimeout, func(d *pipeline.Deps) { d.WorkspaceReviewer = agentReviewer })
 	if err != nil {
 		return nil, err
 	}
 
 	router := adapters.NewEngineRouter(single, agent)
-	return adapters.NewReviewPipeline(router, appCtx.StatusStore, appCtx.Config.Pipeline.Timeout), nil
+	return adapters.NewReviewPipeline(router, appCtx.StatusStore), nil
 }
 
 // newCore は、共有依存にレビュアーを 1 つ差して pipeline を組み立てます。
-func newCore(shared pipeline.Deps, setReviewer func(*pipeline.Deps)) (*pipeline.Pipeline, error) {
+func newCore(shared pipeline.Deps, opt pipeline.Option, setReviewer func(*pipeline.Deps)) (*pipeline.Pipeline, error) {
 	deps := shared
 	setReviewer(&deps)
 
-	core, err := pipeline.New(deps)
+	core, err := pipeline.New(deps, opt)
 	if err != nil {
 		return nil, fmt.Errorf("パイプラインの構築に失敗しました: %w", err)
 	}
