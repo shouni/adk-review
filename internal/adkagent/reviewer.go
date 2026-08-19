@@ -8,8 +8,10 @@ package adkagent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
@@ -143,9 +145,32 @@ func (r *Reviewer) ReviewWorkspace(ctx context.Context, modelName, prompt string
 
 	report, err := review.ParseReport([]byte(final))
 	if err != nil {
+		// ★ 生の応答を残します。**これが無いと解析失敗は原因不明のまま終わります。**
+		// エージェントレビューは十数分かかるので、失敗のたびに同じ時間を払って
+		// 再現を試みることになります（実際、モデルがエスケープしていない
+		// バックスラッシュを excerpt に入れて落ちた例があります）。
+		slog.ErrorContext(ctx, "レビュー結果を解釈できませんでした",
+			"error", err,
+			"response_bytes", len(final),
+			"response_head", truncateForLog(final, maxLoggedResponse))
 		return review.Report{}, fmt.Errorf("adkagent: %w", err)
 	}
 	return report, nil
+}
+
+// maxLoggedResponse は、解析に失敗した応答をログへ残す上限です。
+// 全文を載せるとレビュー 1 件で数十 KB になり、原因の特定には冒頭で足ります。
+const maxLoggedResponse = 2000
+
+// truncateForLog は、ログへ載せる応答を文字境界で切り詰めます。
+func truncateForLog(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	for limit > 0 && !utf8.RuneStart(s[limit]) {
+		limit--
+	}
+	return s[:limit] + "…(以下略)"
 }
 
 // collectFinalText は、エージェントを実行して最終応答のテキストを取り出します。
