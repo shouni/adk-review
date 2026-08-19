@@ -9,6 +9,10 @@ import (
 	"github.com/shouni/gcp-kit/serverrole"
 )
 
+// testDispatchDeadline は、テストで使う打ち切りです。アプリは既定値を持たないため、
+// 実際のデプロイ設定と同じく明示します。
+const testDispatchDeadline = 10 * time.Minute
+
 // validBase は、検証を通る最小構成を返します。
 // 各テストは 1 項目だけ崩して、そこが検出されることを確かめます。
 func validBase() *Config {
@@ -23,7 +27,7 @@ func validBase() *Config {
 			TaskAudienceURL:           "https://worker.example.com",
 			CallerServiceAccountEmail: "web@example.iam.gserviceaccount.com",
 			AllowedServiceAccounts:    []string{"web@example.iam.gserviceaccount.com"},
-			DispatchDeadline:          DefaultTaskDispatchDeadline,
+			DispatchDeadline:          testDispatchDeadline,
 		},
 		GCP:      GCPConfig{ProjectID: "project-1", LocationID: "asia-northeast1"},
 		AI:       AIConfig{GeminiModels: []string{"gemini-test-flash"}},
@@ -169,11 +173,10 @@ func TestValidateEssentialConfig_WorkerSkipsWebSettings(t *testing.T) {
 func TestValidateTimeouts(t *testing.T) {
 	t.Parallel()
 
-	t.Run("既定値は dispatch deadline より短い", func(t *testing.T) {
+	t.Run("既定の PIPELINE_TIMEOUT は打ち切りより短い", func(t *testing.T) {
 		t.Parallel()
-		if DefaultPipelineTimeout >= DefaultTaskDispatchDeadline {
-			t.Fatalf("既定値 %s が dispatch deadline の既定 %s 以上",
-				DefaultPipelineTimeout, DefaultTaskDispatchDeadline)
+		if DefaultPipelineTimeout >= testDispatchDeadline {
+			t.Fatalf("既定値 %s が打ち切り %s 以上", DefaultPipelineTimeout, testDispatchDeadline)
 		}
 		if err := validBase().ValidateEssentialConfig(); err != nil {
 			t.Errorf("既定値で失敗した: %v", err)
@@ -183,8 +186,8 @@ func TestValidateTimeouts(t *testing.T) {
 	t.Run("dispatch deadline 以上は起動時に落とす", func(t *testing.T) {
 		t.Parallel()
 		for _, d := range []time.Duration{
-			DefaultTaskDispatchDeadline,
-			DefaultTaskDispatchDeadline + time.Minute,
+			testDispatchDeadline,
+			testDispatchDeadline + time.Minute,
 			time.Hour,
 		} {
 			c := validBase()
@@ -299,8 +302,9 @@ func TestDefaultsMatchEnvDefaults(t *testing.T) {
 	if cfg.Pipeline.Timeout != DefaultPipelineTimeout {
 		t.Errorf("PIPELINE_TIMEOUT の既定 = %s, want %s", cfg.Pipeline.Timeout, DefaultPipelineTimeout)
 	}
-	if cfg.Tasks.DispatchDeadline != DefaultTaskDispatchDeadline {
-		t.Errorf("TASK_DISPATCH_DEADLINE の既定 = %s, want %s", cfg.Tasks.DispatchDeadline, DefaultTaskDispatchDeadline)
+	// TASK_DISPATCH_DEADLINE に既定値は持ちません（出どころはデプロイ設定 1 箇所）。
+	if cfg.Tasks.DispatchDeadline != 0 {
+		t.Errorf("TASK_DISPATCH_DEADLINE = %s, 既定値を持たせないでください", cfg.Tasks.DispatchDeadline)
 	}
 	if cfg.HTTP.Timeout != DefaultHTTPTimeout {
 		t.Errorf("HTTP_TIMEOUT の既定 = %s, want %s", cfg.HTTP.Timeout, DefaultHTTPTimeout)
@@ -322,5 +326,42 @@ func TestGCSBucketNormalization(t *testing.T) {
 	}
 	if cfg.Storage.GCSBucket != "review-archive" {
 		t.Errorf("GCSBucket = %q, want %q", cfg.Storage.GCSBucket, "review-archive")
+	}
+}
+
+// 打ち切りは env が無ければ起動時に落ちること。
+//
+// 三段のタイムアウトはデプロイ先の事情で決まるので、出どころは Terraform 1 箇所に
+// 閉じます。アプリが既定値を持つと同じ数字が 2 箇所に現れ、設定漏れが
+// 「誰も選んでいない値」で動いてしまいます。
+func TestDispatchDeadlineIsRequired(t *testing.T) {
+	t.Parallel()
+
+	cfg := validBase()
+	cfg.Tasks.DispatchDeadline = 0
+
+	err := cfg.ValidateEssentialConfig()
+	if err == nil {
+		t.Fatal("未設定が素通りしました")
+	}
+	if !strings.Contains(err.Error(), "TASK_DISPATCH_DEADLINE") {
+		t.Errorf("エラーに変数名がありません: %v", err)
+	}
+}
+
+// Cloud Tasks の上限を超える値は投入時に拒否されるため、起動時に落とします。
+func TestDispatchDeadlineRejectsAbovePlatformMax(t *testing.T) {
+	t.Parallel()
+
+	cfg := validBase()
+	cfg.Tasks.DispatchDeadline = MaxTaskDispatchDeadline + time.Minute
+	cfg.Pipeline.Timeout = time.Minute
+
+	err := cfg.ValidateEssentialConfig()
+	if err == nil {
+		t.Fatal("上限超えが素通りしました")
+	}
+	if !strings.Contains(err.Error(), "上限") {
+		t.Errorf("エラーが上限超えだと分かりません: %v", err)
 	}
 }

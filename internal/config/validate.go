@@ -119,7 +119,12 @@ func (c *Config) validateWorkerConfig() error {
 // インフラ管理リポジトリの precondition が受け持ちます。
 func (c *Config) validateTimeouts() error {
 	if c.Tasks.DispatchDeadline <= 0 {
-		return fmt.Errorf("TASK_DISPATCH_DEADLINE は正の値にしてください（現在: %s）", c.Tasks.DispatchDeadline)
+		return fmt.Errorf("TASK_DISPATCH_DEADLINE が設定されていません（三段のタイムアウトはデプロイ設定が決めます。例: 10m）")
+	}
+	if c.Tasks.DispatchDeadline > MaxTaskDispatchDeadline {
+		return fmt.Errorf(
+			"TASK_DISPATCH_DEADLINE (%s) が Cloud Tasks の上限 (%s) を超えています。投入時に拒否されます",
+			c.Tasks.DispatchDeadline, MaxTaskDispatchDeadline)
 	}
 
 	// 0 以下は無制限。ローカルでの長時間デバッグ用の逃げ道で、本番では既定値が入ります。

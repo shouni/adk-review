@@ -15,12 +15,9 @@ const (
 	// HTTPConfig.Timeout の envDefault と同じ値で、ズレはテストが検知します。
 	DefaultHTTPTimeout = 30 * time.Second
 
-	// DefaultTaskDispatchDeadline は Cloud Tasks がワーカーの応答を待つ上限の既定値です。
-	// Cloud Tasks の HTTP ターゲットは 30 分まで伸ばせますが、単発レビューの実測が
-	// 10 秒未満なので、フリートで唯一この短さに取ってあります（上限は「正常系の目標」
-	// ではなく「ハングを捕まえる網」です）。エージェントレビューはツール呼び出しの
-	// 回数だけ伸びるため、実測が近づいたら env で伸ばせるようにしてあります。
-	DefaultTaskDispatchDeadline = 10 * time.Minute
+	// MaxTaskDispatchDeadline は Cloud Tasks の HTTP ターゲットに指定できる上限です。
+	// プラットフォームの制約なのでアプリが持ちます（デプロイ設定ではありません）。
+	MaxTaskDispatchDeadline = 30 * time.Minute
 
 	// DefaultPipelineTimeout はレビュー 1 件の実行時間の上限の既定値です。
 	// 実測 3.9〜9.2 秒に対する余裕として 5m。他アプリの 25m より短いのは意図的です。
@@ -72,7 +69,11 @@ type TasksConfig struct {
 	// max_attempts = 1 なので再試行も来ません。Cloud Run の timeout をいくら伸ばしても
 	// この上限は動きません。定数ではなく env なのは、エージェントレビューの所要時間が
 	// リポジトリの大きさで変わり、再ビルドなしで伸ばせる必要があるためです。
-	DispatchDeadline time.Duration `env:"TASK_DISPATCH_DEADLINE" envDefault:"10m"`
+	//
+	// **既定値は持ちません。** 三段のタイムアウトはデプロイ先の事情で決まる値なので、
+	// 出どころは Terraform 1 箇所に閉じます。アプリが既定を持つと同じ数字が 2 箇所に
+	// 現れ、設定漏れが「誰も選んでいない値」で動いてしまいます。
+	DispatchDeadline time.Duration `env:"TASK_DISPATCH_DEADLINE"`
 	// AllowedServiceAccounts は、worker が受け付けるトークンの発行元 SA の許可リストです。
 	// web と worker で実行 SA を分けているため、ここには「他人（web 面）の SA」が並びます。
 	// 発行者と許可リストを 1 つの変数で兼ねると、同じ値でも役割ごとに意味が反転して

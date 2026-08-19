@@ -34,7 +34,7 @@
   ツールと構造化出力を併用でき、最終応答としてスキーマに従う JSON が返ります。デコードと
   検証は `go-review-kit` の `ParseReport` / `Validate` をそのまま使います。
 * **暴走はツール呼び出し回数の上限で止めます**: レビュー 1 件は Cloud Tasks の
-  dispatch deadline（既定 10 分、`TASK_DISPATCH_DEADLINE`）内に収める必要があるため、
+  dispatch deadline（`TASK_DISPATCH_DEADLINE`、デプロイでは 10 分）内に収める必要があるため、
   時間ではなく回数で打ち切ります
   （`AGENT_MAX_TOOL_CALLS`、既定 32）。上限に達したら「調査を切り上げて結論を出せ」と
   モデルへ伝わるので、締切超過ではなくレビューの完了に倒れます。
@@ -151,6 +151,7 @@ adk-review/
 `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET`・`SESSION_SECRET`・`SESSION_ENCRYPT_KEY`・
 `ALLOWED_EMAILS` または `ALLOWED_DOMAINS`、worker 面では `TASK_AUDIENCE_URL`（未設定なら
 `SERVICE_URL` へ落ちます）と `ALLOWED_TASK_SERVICE_ACCOUNTS` です。
+`TASK_DISPATCH_DEADLINE` も全役割で必須です（後述）。
 worker 面は OAuth 系の設定を要求しません。残りは空でも起動します（機能しないだけです）。
 
 **プロジェクト ID とバケット名に既定値を置かないのは意図的です。** プレースホルダを置くと
@@ -183,7 +184,7 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 | `TASK_AUDIENCE_URL` | Cloud Tasks の OIDC トークン検証に使う audience。未設定なら `SERVICE_URL` | `https://myapp.run.app` |
 | `PIPELINE_TIMEOUT` | レビュー 1 件の実行時間の上限（`5m` 形式）。Cloud Tasks の dispatch deadline より短いこと。超えると起動時エラー | `5m` |
 | `SSH_KEY_PATH` | SSH 形式のリポジトリ（`git@github.com:owner/repo.git`）のクローンに使う秘密鍵パス（Secret Manager マウント推奨。Cloud Run では `/secrets/ssh/id_rsa` を渡します） | `~/.ssh/id_rsa` |
-| `TASK_DISPATCH_DEADLINE` | Cloud Tasks がワーカーの応答を待つ上限（`10m` 形式）。**ワーカーの実行時間の実効上限**で、`PIPELINE_TIMEOUT` より長いこと。Cloud Tasks の HTTP ターゲットは 30 分が上限 | `10m` |
+| `TASK_DISPATCH_DEADLINE` | Cloud Tasks がワーカーの応答を待つ上限（`10m` 形式）。**ワーカーの実行時間の実効上限**で、`PIPELINE_TIMEOUT` より長いこと。Cloud Tasks の HTTP ターゲットの上限 30 分を超えると起動時エラー。**既定値は無く、未設定だと起動時に落ちます** | **必須** |
 | `HTTP_TIMEOUT` | Slack 通知など外部 HTTP 呼び出しの上限 | `30s` |
 | `LOG_LEVEL` | ログ出力レベル（`debug` / `info` / `warn` / `error`） | `info` |
 | `SLACK_WEBHOOK_URL` | レビューの結末を通知する Slack Webhook URL。未設定なら通知をスキップ | `https://hooks.slack.com/services/T...` |
@@ -237,6 +238,8 @@ IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必�
 ```bash
 export SERVER_ROLE=both
 export SERVICE_URL=http://localhost:8080
+# 三段のタイムアウトはデプロイ設定（Terraform）が唯一の出どころなので、既定値がありません。
+export TASK_DISPATCH_DEADLINE=10m
 export GCP_PROJECT_ID=your-project
 export GCS_REVIEW_BUCKET=your-review-bucket
 export GEMINI_MODELS=gemini-2.5-flash,gemini-2.5-pro
