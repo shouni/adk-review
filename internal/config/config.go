@@ -8,6 +8,8 @@ import (
 
 	"github.com/caarlos0/env/v11"
 	"github.com/shouni/gcp-kit/serverrole"
+	"github.com/shouni/go-remote-io/remoteio"
+	"github.com/shouni/go-utils/strlist"
 )
 
 const (
@@ -43,7 +45,7 @@ type ServerConfig struct {
 // Cloud Tasks に閉じた設定であり、GCP 一般の設定でも HTTP サーバーの設定でもないため、
 // 兄弟アプリと同じくここに集約します。
 type TasksConfig struct {
-	QueueID string `env:"CLOUD_TASKS_QUEUE_ID" envDefault:"review-queue"`
+	QueueID string `env:"CLOUD_TASKS_QUEUE_ID"`
 	// WorkerURL は、タスクの投入先（worker サービス）の URL です。web / worker を
 	// 別サービスに分けたため、投入先は自分自身とは限りません。未設定なら SERVICE_URL
 	// （both で動かすローカル開発の形）へ落ちます。
@@ -80,7 +82,7 @@ type GCPConfig struct {
 	ProjectID string `env:"GCP_PROJECT_ID"`
 	// LocationID は Cloud Tasks のキューが存在するリージョンです。Gemini の
 	// ロケーションとは別物で、そちらは adapters.geminiLocationID に固定してあります。
-	LocationID string `env:"GCP_LOCATION_ID" envDefault:"asia-northeast1"`
+	LocationID string `env:"GCP_LOCATION_ID"`
 }
 
 // AIConfig は AI モデルの設定です。
@@ -193,51 +195,19 @@ func (c *Config) normalize() error {
 		c.Tasks.TaskAudienceURL = c.Server.ServiceURL
 	}
 	c.Tasks.CallerServiceAccountEmail = strings.TrimSpace(c.Tasks.CallerServiceAccountEmail)
-	c.Tasks.AllowedServiceAccounts = normalizeList(c.Tasks.AllowedServiceAccounts)
+	c.Tasks.AllowedServiceAccounts = strlist.Normalize(c.Tasks.AllowedServiceAccounts)
 
 	// env はカンマで分割するだけなので、前後の空白と重複はここで落とします。
-	c.AI.GeminiModels = normalizeList(c.AI.GeminiModels)
+	c.AI.GeminiModels = strlist.Normalize(c.AI.GeminiModels)
 
-	c.Auth.AllowedEmails = normalizeList(c.Auth.AllowedEmails)
-	c.Auth.AllowedDomains = normalizeList(c.Auth.AllowedDomains)
+	c.Auth.AllowedEmails = strlist.Normalize(c.Auth.AllowedEmails)
+	c.Auth.AllowedDomains = strlist.Normalize(c.Auth.AllowedDomains)
 
 	c.GCP.ProjectID = strings.TrimSpace(c.GCP.ProjectID)
 	c.GCP.LocationID = strings.TrimSpace(c.GCP.LocationID)
 	c.Git.SSHKeyPath = strings.TrimSpace(c.Git.SSHKeyPath)
 	c.Notification.SlackWebhookURL = strings.TrimSpace(c.Notification.SlackWebhookURL)
-	c.Storage.GCSBucket = normalizeGCSBucket(c.Storage.GCSBucket)
+	c.Storage.GCSBucket = remoteio.NormalizeBucketName(c.Storage.GCSBucket)
 
 	return nil
-}
-
-// normalizeGCSBucket は、バケット名の表記ゆれを整えます。
-//
-// **バケット「名」であって URI ではありません。** `gs://review-archive/` のように
-// コンソールから貼った形で渡されると、そのまま使って
-// `gs://gs://review-archive//reviews/...` という URI を組み立ててしまいます。
-// 兄弟アプリの同名の関数と同じ規則です。
-func normalizeGCSBucket(bucket string) string {
-	bucket = strings.TrimSpace(bucket)
-	bucket = strings.TrimPrefix(bucket, "gs://")
-	return strings.Trim(bucket, "/")
-}
-
-// normalizeList は env が分割しただけのカンマ区切り値を整えます。
-// 前後の空白を落とし、空要素と重複を捨て、順序は保ちます。
-// 既定値で埋めることはせず、空なら空のまま返します。
-func normalizeList(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	normalized := make([]string, 0, len(values))
-	for _, v := range values {
-		v = strings.TrimSpace(v)
-		if v == "" {
-			continue
-		}
-		if _, ok := seen[v]; ok {
-			continue
-		}
-		seen[v] = struct{}{}
-		normalized = append(normalized, v)
-	}
-	return normalized
 }
