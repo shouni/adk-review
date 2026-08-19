@@ -6,6 +6,7 @@
 package adkagent
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -143,7 +144,18 @@ func (r *Reviewer) ReviewWorkspace(ctx context.Context, modelName, prompt string
 		return review.Report{}, err
 	}
 
-	report, err := review.ParseReport([]byte(final))
+	// 補修が要ったかどうかを残します。ParseReport は壊れた出力を黙って直して成功するので、
+	// ここで見ないと**効いているのか出番が無いのか区別が付きません。**
+	// モデルがどのくらいの頻度で壊すかは運用で追う価値があります。
+	raw := []byte(final)
+	cleaned := review.SanitizeJSON(raw)
+	if !bytes.Equal(cleaned, raw) {
+		slog.WarnContext(ctx, "モデルの出力が壊れていたので補修しました",
+			"before_bytes", len(raw), "after_bytes", len(cleaned),
+			"response_head", truncateForLog(final, repairLogHead))
+	}
+
+	report, err := review.ParseReport(cleaned)
 	if err != nil {
 		// ★ 生の応答を残します。**これが無いと解析失敗は原因不明のまま終わります。**
 		// エージェントレビューは十数分かかるので、失敗のたびに同じ時間を払って
@@ -157,6 +169,11 @@ func (r *Reviewer) ReviewWorkspace(ctx context.Context, modelName, prompt string
 	}
 	return report, nil
 }
+
+// repairLogHead は、補修したときにログへ残す応答の上限です。
+// 失敗時（maxLoggedResponse）より短いのは、補修は成功しているので原因の当たりが付けば
+// 足りるためです。
+const repairLogHead = 300
 
 // maxLoggedResponse は、解析に失敗した応答をログへ残す上限です。
 // 全文を載せるとレビュー 1 件で数十 KB になり、原因の特定には冒頭で足ります。
