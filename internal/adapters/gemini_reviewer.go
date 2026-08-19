@@ -22,9 +22,10 @@ type GeminiReviewer struct {
 // 実装がポートを満たすことをコンパイル時に確認します。
 var _ review.Reviewer = (*GeminiReviewer)(nil)
 
-// NewReviewer は、構築済みのクライアントから単発レビュアーを生成します。
+// NewGeminiReviewer は、構築済みのクライアントから単発レビュアーを生成します。
+// 対になるのは NewAgentReviewer で、こちらは差分だけを 1 回モデルへ渡します。
 // 認証・リトライのポリシーはクライアント側（builder が組む共有クライアント）に集約します。
-func NewReviewer(client geminiclient.Generator) (*GeminiReviewer, error) {
+func NewGeminiReviewer(client geminiclient.Generator) (*GeminiReviewer, error) {
 	if client == nil {
 		return nil, fmt.Errorf("gemini: クライアントが nil です")
 	}

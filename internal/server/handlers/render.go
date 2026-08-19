@@ -93,61 +93,79 @@ func formatTime(t time.Time) string {
 	return t.In(jst.Location()).Format(jst.LayoutTimestamp)
 }
 
-// stateLabel は、進行状況と結末をあわせた表示名を返します。
+// badge は、表示名とバッジのクラスの組です。
 //
+// 表示名とクラスを別々の switch で持つと、状態を増やしたときに片方だけ直す事故が
+// 起きます（どちらも「状態 → 見た目」の同じ対応表です）。1 箇所に束ねます。
+type badge struct {
+	label string
+	class string
+}
+
+// stateBadges は、進行状況の表示定義です。
 // 「差分なしスキップ」はジョブとしては正常終了（succeeded）なので、State だけでは
-// 完了と見分けがつきません。Outcome を併せて見ます。
-func stateLabel(state jobstatus.State, outcome review.Status) string {
-	switch state {
-	case jobstatus.StateQueued:
-		return "⏱ 受付済み"
-	case jobstatus.StateRunning:
-		return "⏳ 実行中"
-	case jobstatus.StateFailed:
-		return "❌ 失敗"
-	case jobstatus.StateSucceeded:
-		if outcome == review.StatusSkipped {
-			return "⏭️ スキップ"
-		}
-		return "✅ 完了"
-	default:
-		return "— 不明"
+// 完了と見分けがつきません。Outcome を併せて見る分だけ stateBadge が補います。
+var stateBadges = map[jobstatus.State]badge{
+	jobstatus.StateQueued:    {"⏱ 受付済み", "text-bg-light"},
+	jobstatus.StateRunning:   {"⏳ 実行中", "text-bg-info"},
+	jobstatus.StateFailed:    {"❌ 失敗", "text-bg-danger"},
+	jobstatus.StateSucceeded: {"✅ 完了", "text-bg-success"},
+}
+
+// skippedBadge は、差分が無くスキップされた場合の表示です。
+var skippedBadge = badge{"⏭️ スキップ", "text-bg-secondary"}
+
+// unknownStateBadge は、未知の状態の表示です。
+var unknownStateBadge = badge{"— 不明", "text-bg-light"}
+
+// decisionBadges は、レビュー判定の表示定義です。
+var decisionBadges = map[review.Decision]badge{
+	review.DecisionNone:    {"✅ 問題なし", "text-bg-success"},
+	review.DecisionMinor:   {"🟡 軽微", "text-bg-warning"},
+	review.DecisionMajor:   {"🟠 要修正", "text-bg-warning"},
+	review.DecisionBlocker: {"🔴 ブロッカー", "text-bg-danger"},
+}
+
+// unknownDecisionBadge は、未知の判定の表示です。
+var unknownDecisionBadge = badge{"—", "text-bg-light"}
+
+// stateBadge は、進行状況と結末に対応する表示を返します。
+func stateBadge(state jobstatus.State, outcome review.Status) badge {
+	if state == jobstatus.StateSucceeded && outcome == review.StatusSkipped {
+		return skippedBadge
 	}
+	if b, ok := stateBadges[state]; ok {
+		return b
+	}
+	return unknownStateBadge
+}
+
+// decisionBadge は、判定に対応する表示を返します。
+func decisionBadge(decision review.Decision) badge {
+	if b, ok := decisionBadges[decision]; ok {
+		return b
+	}
+	return unknownDecisionBadge
+}
+
+// stateLabel は、進行状況と結末をあわせた表示名を返します。
+func stateLabel(state jobstatus.State, outcome review.Status) string {
+	return stateBadge(state, outcome).label
 }
 
 // stateClass は、状態バッジの Bootstrap クラスを返します。
 func stateClass(state jobstatus.State, outcome review.Status) string {
-	switch state {
-	case jobstatus.StateQueued:
-		return "text-bg-light"
-	case jobstatus.StateRunning:
-		return "text-bg-info"
-	case jobstatus.StateFailed:
-		return "text-bg-danger"
-	case jobstatus.StateSucceeded:
-		if outcome == review.StatusSkipped {
-			return "text-bg-secondary"
-		}
-		return "text-bg-success"
-	default:
-		return "text-bg-light"
-	}
+	return stateBadge(state, outcome).class
 }
 
 // decisionLabel は、レビュー判定の表示名を返します。
 func decisionLabel(decision review.Decision) string {
-	switch decision {
-	case review.DecisionNone:
-		return "✅ 問題なし"
-	case review.DecisionMinor:
-		return "🟡 軽微"
-	case review.DecisionMajor:
-		return "🟠 要修正"
-	case review.DecisionBlocker:
-		return "🔴 ブロッカー"
-	default:
-		return "—"
-	}
+	return decisionBadge(decision).label
+}
+
+// decisionClass は、判定バッジの Bootstrap クラスを返します。
+func decisionClass(decision review.Decision) string {
+	return decisionBadge(decision).class
 }
 
 // severityClass は、指摘の重大度バッジの Bootstrap クラスを返します。
@@ -156,20 +174,4 @@ func decisionLabel(decision review.Decision) string {
 // 片方を使い回すと実行時に型不一致で落ちます。
 func severityClass(severity review.Severity) string {
 	return decisionClass(review.Decision(severity))
-}
-
-// decisionClass は、判定バッジの Bootstrap クラスを返します。
-func decisionClass(decision review.Decision) string {
-	switch decision {
-	case review.DecisionNone:
-		return "text-bg-success"
-	case review.DecisionMinor:
-		return "text-bg-warning"
-	case review.DecisionMajor:
-		return "text-bg-warning"
-	case review.DecisionBlocker:
-		return "text-bg-danger"
-	default:
-		return "text-bg-light"
-	}
 }

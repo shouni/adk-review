@@ -1,10 +1,12 @@
 package adkagent
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // newTestWorkspace は、検証用のファイルを敷いた作業ディレクトリを作ります。
@@ -143,5 +145,64 @@ func TestSearchText(t *testing.T) {
 		if !strings.Contains(hit, ":") {
 			t.Errorf("path:line 形式ではありません: %q", hit)
 		}
+	}
+}
+
+// 上限を超える日本語ファイルが、バイナリ扱いで拒否されずに読めること。
+//
+// 切り詰めてから utf8.Valid を見る順序に戻すと、3 バイト文字が境界で割れる 2/3 の
+// 確率で「テキストファイルではありません」になります。長い日本語原稿は novel /
+// article モードの主対象なので、いちばん使う経路でだけ壊れます。
+func TestReadFileTruncatesAtRuneBoundary(t *testing.T) {
+	t.Parallel()
+
+	for pad := 0; pad < 3; pad++ {
+		t.Run(fmt.Sprintf("境界を%dバイトずらす", pad), func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			content := strings.Repeat("x", pad) + strings.Repeat("あ", maxFileBytes)
+			if err := os.WriteFile(filepath.Join(dir, "long.md"), []byte(content), 0o600); err != nil {
+				t.Fatalf("ファイルの作成に失敗: %v", err)
+			}
+			tb, err := newToolbox(dir, 10)
+			if err != nil {
+				t.Fatalf("toolbox の生成に失敗: %v", err)
+			}
+
+			got, err := tb.readFile(nil, readFileArgs{Path: "long.md"})
+			if err != nil {
+				t.Fatalf("readFile が error を返した: %v", err)
+			}
+			if got.Error != "" {
+				t.Fatalf("正常な日本語ファイルが拒否された: %s", got.Error)
+			}
+			if !got.Truncated {
+				t.Error("上限超えなのに Truncated が false")
+			}
+			if !utf8.ValidString(got.Content) {
+				t.Error("切り詰めた内容が壊れた UTF-8 になっている")
+			}
+			if len(got.Content) > maxFileBytes {
+				t.Errorf("上限を超えて返している: %d > %d", len(got.Content), maxFileBytes)
+			}
+		})
+	}
+}
+
+// 上限以下のファイルは切り詰めないこと。
+func TestReadFileKeepsShortFileIntact(t *testing.T) {
+	t.Parallel()
+
+	tb := newTestToolbox(t, 10)
+	got, err := tb.readFile(nil, readFileArgs{Path: "chapter1.md"})
+	if err != nil {
+		t.Fatalf("readFile が error を返した: %v", err)
+	}
+	if got.Truncated {
+		t.Error("短いファイルで Truncated が true")
+	}
+	if !strings.Contains(got.Content, "アキラ") {
+		t.Errorf("内容が読めていない: %q", got.Content)
 	}
 }

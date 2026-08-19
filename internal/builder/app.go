@@ -31,7 +31,7 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 	}()
 
 	// 1. HttpClient
-	httpClient := httpkit.New(config.DefaultHTTPTimeout)
+	httpClient := httpkit.New(cfg.HTTP.Timeout)
 
 	// 2. I/O Infrastructure
 	storage, err := gcs.New(ctx)
@@ -55,7 +55,6 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 		Layout:      layout,
 		StatusStore: statusStore,
 		History:     history,
-		HTTPClient:  httpClient,
 	}
 
 	// 4. Web 面だけの依存: Task Enqueuer（レビュー依頼の投入口）

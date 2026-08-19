@@ -12,7 +12,7 @@ import (
 )
 
 // recordingNotifier は送信された notify.Message を記録するフェイクです。
-// Slack 記法への変換は go-notify 側の責務なので、ここでは git-gemini-web が
+// Slack 記法への変換は go-notify 側の責務なので、ここでは adk-review が
 // 組み立てた見出しと本文だけを検証します。
 type recordingNotifier struct {
 	got []notify.Message

@@ -9,8 +9,6 @@ import (
 
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-review-kit/review"
-
-	"github.com/shouni/adk-review/internal/domain"
 )
 
 const contentTypeJSON = "application/json; charset=utf-8"
@@ -22,17 +20,16 @@ const contentTypeJSON = "application/json; charset=utf-8"
 // 署名付き URL 経由でアプリの認証を迂回して読めてしまいます。
 type ReportPublisher struct {
 	writer remoteio.Writer
-	layout domain.StorageLayout
 }
 
 var _ review.Publisher = (*ReportPublisher)(nil)
 
 // NewReportPublisher は ReportPublisher を構築します。
-func NewReportPublisher(writer remoteio.Writer, layout domain.StorageLayout) (*ReportPublisher, error) {
+func NewReportPublisher(writer remoteio.Writer) (*ReportPublisher, error) {
 	if writer == nil {
 		return nil, fmt.Errorf("writer が nil です")
 	}
-	return &ReportPublisher{writer: writer, layout: layout}, nil
+	return &ReportPublisher{writer: writer}, nil
 }
 
 // Publish は、レビュー結果を report.json として保存します。
@@ -45,7 +42,7 @@ func (p *ReportPublisher) Publish(ctx context.Context, req review.Request, repor
 		return fmt.Errorf("レビュー結果のJSON化に失敗しました: %w", err)
 	}
 
-	slog.InfoContext(ctx, "レビュー結果を保存します", "job_id", req.JobID, "uri", req.StorageURI)
+	slog.InfoContext(ctx, "レビュー結果を保存します", "uri", req.StorageURI)
 
 	if err := p.writer.Write(ctx, req.StorageURI, bytes.NewReader(body),
 		remoteio.WithContentType(contentTypeJSON)); err != nil {

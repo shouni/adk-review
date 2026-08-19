@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/shouni/go-job-kit/cache"
 	"github.com/shouni/go-job-kit/jobstatus"
@@ -65,10 +66,15 @@ func (h *History) List(ctx context.Context, page, perPage int) (domain.HistoryPa
 		return domain.HistoryPage{}, fmt.Errorf("レビュー履歴の一覧取得に失敗しました: %w", err)
 	}
 
+	// LoadPage は個々の load 失敗を「その行を落として続行」で処理します。未記録の
+	// ジョブには妥当ですが、読み取り障害まで同じ扱いだと**ジョブが一覧から消えるだけ**で
+	// 200 が返り、障害が障害に見えません。そこで種類を見分けて拾い直します。
+	var failure loadFailure
+
 	// ID に埋め込まれた時刻で並べます。ID の辞書順に頼らないのは、採番の接頭辞が
 	// 変わったり別サービス採番の ID が混ざったりすると、時刻より先に接頭辞の差が
 	// 効いて日付を無視した並びになるためです。
-	items, meta, err := paging.LoadPage(ctx, jobIDs, page, perPage, h.loadStatus,
+	items, meta, err := paging.LoadPage(ctx, jobIDs, page, perPage, failure.wrap(h.loadStatus),
 		paging.WithSortKey(jobid.SortKey),
 		paging.WithConcurrency(loadConcurrency),
 		paging.WithLogger(h.logger),
@@ -76,15 +82,52 @@ func (h *History) List(ctx context.Context, page, perPage int) (domain.HistoryPa
 	if err != nil {
 		return domain.HistoryPage{}, fmt.Errorf("レビュー履歴の読み込みに失敗しました: %w", err)
 	}
+	if err := failure.err(); err != nil {
+		return domain.HistoryPage{}, fmt.Errorf("レビュー履歴の読み込みに失敗しました: %w", err)
+	}
 
 	return domain.HistoryPage{Items: items, Meta: meta}, nil
+}
+
+// loadFailure は、並列に走る読み込みのうち最初の失敗を保持します。
+//
+// LoadPage は load のエラーを呼び出し元へ返さないため、こちらで捕まえます。
+type loadFailure struct {
+	mu    sync.Mutex
+	first error
+}
+
+// wrap は、load 関数を包んで失敗を記録できるようにします。
+func (f *loadFailure) wrap(
+	load func(context.Context, string) (domain.JobStatus, error),
+) func(context.Context, string) (domain.JobStatus, error) {
+	return func(ctx context.Context, jobID string) (domain.JobStatus, error) {
+		status, err := load(ctx, jobID)
+		if err != nil {
+			f.mu.Lock()
+			if f.first == nil {
+				f.first = err
+			}
+			f.mu.Unlock()
+		}
+		return status, err
+	}
+}
+
+// err は、記録した最初の失敗を返します。
+func (f *loadFailure) err() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.first
 }
 
 // Get は、1 件分の進行状況とレビュー結果全文を返します。
 func (h *History) Get(ctx context.Context, jobID string) (domain.ReviewDetail, error) {
 	status, err := h.store.Get(ctx, jobID)
 	if err != nil {
-		return domain.ReviewDetail{}, err
+		// %w で包みます。呼び出し側は errors.Is で ErrNotFound（404）と
+		// それ以外（500）を切り分けるため、種類は保ったまま文脈だけ足します。
+		return domain.ReviewDetail{}, fmt.Errorf("進行状況の取得に失敗しました (job_id: %s): %w", jobID, err)
 	}
 
 	detail := domain.ReviewDetail{Status: status}
@@ -160,15 +203,24 @@ func (h *History) Invalidate() {
 
 // loadStatus は 1 件分の進行状況を読み取ります。
 //
-// 読めなかった ID も一覧からは落とさず、ジョブ ID だけの行として残します。
+// まだ記録が無い ID は一覧から落とさず、ジョブ ID だけの行として残します。
 // 一覧から消えると、投入したはずのレビューを画面から追えなくなるためです。
+//
+// ★ ただしそれは **ErrNotFound のときだけ** です。読み取り自体が失敗した場合
+// （権限剥奪・ストレージ障害）まで同じ扱いにすると、一覧が「ジョブ ID だけの空行が
+// 並ぶ 200 OK」になり、障害が障害に見えなくなります。store は両者を別のエラーとして
+// 返すので、後者は呼び出し元へ持ち上げます。
 func (h *History) loadStatus(ctx context.Context, jobID string) (domain.JobStatus, error) {
 	status, err := h.store.Get(ctx, jobID)
-	if err != nil {
-		h.logger.WarnContext(ctx, "進行状況の読み込みに失敗しました", "job_id", jobID, "error", err)
+	switch {
+	case err == nil:
+		return status, nil
+	case errors.Is(err, jobstatus.ErrNotFound):
 		return domain.JobStatus{Status: jobstatus.Status{JobID: jobID}}, nil
+	default:
+		h.logger.ErrorContext(ctx, "進行状況の読み込みに失敗しました", "job_id", jobID, "error", err)
+		return domain.JobStatus{}, fmt.Errorf("進行状況を読み込めませんでした (job_id: %s): %w", jobID, err)
 	}
-	return status, nil
 }
 
 // listJobIDs はプレフィックス直下のジョブ ID を集めます。

@@ -92,7 +92,7 @@ func newRouterForTest(t *testing.T) http.Handler {
 		Worker:   workerHandler,
 		TaskAuth: auth.NewTaskVerifier(cfg.Tasks.TaskAudienceURL, cfg.Tasks.AllowedServiceAccounts),
 	}
-	return NewRouter(appHandlers)
+	return NewRouter(appHandlers, "")
 }
 
 func TestNewRouter_RouteReachabilityAndGuards(t *testing.T) {

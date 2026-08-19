@@ -19,10 +19,10 @@ type ReviewFormPageData struct {
 	BaseBranch     string
 	FeatureBranch  string
 	ReviewMode     string
-	GeminiModel    string
+	ModelName      string
 	Engine         string
 	ReviewModes    []ReviewModeOption
-	GeminiModels   []GeminiModelOption
+	Models         []ModelOption
 	Engines        []EngineOption
 	CSRFToken      string
 	CSRFTokenField string
@@ -37,8 +37,8 @@ type ReviewModeOption struct {
 	Selected    bool
 }
 
-// GeminiModelOption はフォームに表示するGeminiモデルの選択肢です。
-type GeminiModelOption struct {
+// ModelOption はフォームに表示するGeminiモデルの選択肢です。
+type ModelOption struct {
 	Value    string
 	Selected bool
 }

@@ -78,8 +78,9 @@ func (h *Handler) HandleReviewDetail(w http.ResponseWriter, r *http.Request) {
 
 	detail, err := h.history.Get(ctx, safeJobID)
 	if err != nil {
-		// 未記録と読み取り失敗はどちらも ErrNotFound で返ります。切り分けられるよう、
-		// 包まれた原因をログへ残してから 404 を返します。
+		// 「まだ記録が無い」だけを 404 にします。読み取り自体が失敗した場合は別のエラーで
+		// 返ってくるので、下の 500 へ落とします。両者を同一視すると、権限剥奪や
+		// ストレージ障害が「そんなレビューはありません」として表示されます。
 		if errors.Is(err, jobstatus.ErrNotFound) {
 			slog.WarnContext(ctx, "レビュー履歴が見つかりません", "job_id", safeJobID, "error", err)
 			h.render(w, r, http.StatusNotFound, reviewDetailTemplate, ReviewDetailPageData{
@@ -123,7 +124,7 @@ func clamp(value, low, high int) int {
 
 // HandleReviewDelete は、レビュー履歴を削除します。
 //
-// メソッドを DELETE にし、応答を本文なしで返すのは ap-comp と揃えるためです
+// メソッドを DELETE にし、応答を本文なしで返すのは兄弟アプリと揃えるためです
 // （ブラウザ側は assets/static/js/app.js の App.deleteResource が呼びます）。
 // 失敗時の本文はそのまま画面のアラートに出るため、内部の詳細は載せません。
 func (h *Handler) HandleReviewDelete(w http.ResponseWriter, r *http.Request) {

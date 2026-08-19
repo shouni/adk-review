@@ -1,4 +1,5 @@
-// git-gemini-web は、Webベースのコードレビュー・オーケストレーターです。
+// adk-review は、Git リポジトリの差分を AI エージェントにレビューさせる
+// Web ベースのオーケストレーターです。
 package main
 
 import (
@@ -8,13 +9,26 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/shouni/gcp-kit/cloudlog"
+	"github.com/shouni/go-utils/slogctx"
+
 	"github.com/shouni/adk-review/internal/config"
 	"github.com/shouni/adk-review/internal/server"
 )
 
+// logLevelEnvKey はログ出力レベルを指定する環境変数名です。
+const logLevelEnvKey = "LOG_LEVEL"
+
 func main() {
-	// 構造化ログの設定
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	// ロガーの設定（LOG_LEVEL 対応・Cloud Logging 互換の構造化ログ）。
+	//
+	// cloudlog が level を severity へマップします。これが無いと Cloud Logging 上では
+	// 全行が同じ重大度に見え、slog.Error がログベースの通知やメトリクスに乗りません。
+	// slogctx は context に載せた属性（job_id など）を全出力へ付けます。
+	// 組み立てだけをアプリ側で行うのは兄弟アプリと同じ形です。
+	level := slogctx.ParseLevel(os.Getenv(logLevelEnvKey))
+	base := slog.NewJSONHandler(os.Stdout, cloudlog.HandlerOptions(level))
+	slog.SetDefault(slog.New(slogctx.NewHandler(base)))
 
 	if err := run(); err != nil {
 		os.Exit(1)

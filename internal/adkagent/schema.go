@@ -3,7 +3,7 @@ package adkagent
 import (
 	"google.golang.org/genai"
 
-	"github.com/shouni/go-review-kit/review"
+	"github.com/shouni/adk-review/internal/domain"
 )
 
 // reportSchema は、review.Report に対応する構造化出力スキーマです。
@@ -21,7 +21,7 @@ func reportSchema() *genai.Schema {
 			"verdict": {
 				Type: genai.TypeObject,
 				Properties: map[string]*genai.Schema{
-					"decision": {Type: genai.TypeString, Enum: decisionEnum()},
+					"decision": {Type: genai.TypeString, Enum: domain.DecisionEnum()},
 					"reason":   {Type: genai.TypeString},
 				},
 				Required: []string{"decision", "reason"},
@@ -31,7 +31,7 @@ func reportSchema() *genai.Schema {
 				Items: &genai.Schema{
 					Type: genai.TypeObject,
 					Properties: map[string]*genai.Schema{
-						"severity":   {Type: genai.TypeString, Enum: severityEnum()},
+						"severity":   {Type: genai.TypeString, Enum: domain.SeverityEnum()},
 						"file":       {Type: genai.TypeString},
 						"line":       {Type: genai.TypeInteger},
 						"excerpt":    {Type: genai.TypeString},
@@ -48,24 +48,4 @@ func reportSchema() *genai.Schema {
 		},
 		Required: []string{"title", "summary", "verdict", "findings"},
 	}
-}
-
-// severityEnum は、findings[].severity が取りうる値を返します。
-func severityEnum() []string {
-	values := review.Severities()
-	enum := make([]string, 0, len(values))
-	for _, v := range values {
-		enum = append(enum, string(v))
-	}
-	return enum
-}
-
-// decisionEnum は、verdict.decision が取りうる値を返します。
-func decisionEnum() []string {
-	values := review.Decisions()
-	enum := make([]string, 0, len(values))
-	for _, v := range values {
-		enum = append(enum, string(v))
-	}
-	return enum
 }

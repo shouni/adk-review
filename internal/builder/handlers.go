@@ -28,6 +28,25 @@ type AppHandlers struct {
 	TaskAuth *auth.TaskVerifier
 }
 
+// Validate は、面ごとのハンドラーが揃っているかを確かめます。
+//
+// 揃っていないまま起動すると、ルーターは該当ルートの登録を飛ばすだけなので
+// **デプロイは成功し、/health も通り、壊れているのは投入経路だけ**になります。
+// Cloud Tasks は 404 を受けて max_attempts = 1 でタスクを捨てるため、レビュー依頼は
+// 静かに失われます。ルーターが 404 を返す前に、起動を失敗させます。
+func (h *AppHandlers) Validate() error {
+	if (h.Auth == nil) != (h.Web == nil) {
+		return fmt.Errorf("web 面のハンドラーが揃っていません (auth: %t, web: %t)", h.Auth != nil, h.Web != nil)
+	}
+	if (h.TaskAuth == nil) != (h.Worker == nil) {
+		return fmt.Errorf("worker 面のハンドラーが揃っていません (task_auth: %t, worker: %t)", h.TaskAuth != nil, h.Worker != nil)
+	}
+	if h.Auth == nil && h.Worker == nil {
+		return fmt.Errorf("担当する面のハンドラーが 1 つも構築されていません")
+	}
+	return nil
+}
+
 // BuildHandlers は依存関係を注入し、役割が担う面のハンドラーだけを生成します。
 func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 	appHandlers := &AppHandlers{}
@@ -63,6 +82,10 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 			return nil, fmt.Errorf("cloud Tasks の OIDC 検証を構成できません: TASK_AUDIENCE_URL と ALLOWED_TASK_SERVICE_ACCOUNTS が必要です")
 		}
 		appHandlers.TaskAuth = taskAuth
+	}
+
+	if err := appHandlers.Validate(); err != nil {
+		return nil, err
 	}
 
 	return appHandlers, nil

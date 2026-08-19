@@ -38,8 +38,8 @@ func (h *Handler) renderForm(w http.ResponseWriter, r *http.Request, status int,
 	if len(data.ReviewModes) == 0 {
 		data.ReviewModes = reviewModeOptions(r.Context(), data.ReviewMode)
 	}
-	if len(data.GeminiModels) == 0 {
-		data.GeminiModels = h.geminiModelOptions(data.GeminiModel)
+	if len(data.Models) == 0 {
+		data.Models = h.modelOptions(data.ModelName)
 	}
 	if len(data.Engines) == 0 {
 		data.Engines = engineOptions(data.Engine)
@@ -103,8 +103,8 @@ func engineOptions(selected string) []EngineOption {
 	return options
 }
 
-func (h *Handler) geminiModelOptions(selectedModel string) []GeminiModelOption {
-	models := h.configuredGeminiModels()
+func (h *Handler) modelOptions(selectedModel string) []ModelOption {
+	models := h.configuredModels()
 	if len(models) == 0 {
 		return nil
 	}
@@ -112,9 +112,9 @@ func (h *Handler) geminiModelOptions(selectedModel string) []GeminiModelOption {
 		selectedModel = models[0]
 	}
 
-	options := make([]GeminiModelOption, 0, len(models))
+	options := make([]ModelOption, 0, len(models))
 	for _, model := range models {
-		options = append(options, GeminiModelOption{
+		options = append(options, ModelOption{
 			Value:    model,
 			Selected: model == selectedModel,
 		})
@@ -122,8 +122,8 @@ func (h *Handler) geminiModelOptions(selectedModel string) []GeminiModelOption {
 	return options
 }
 
-// configuredGeminiModels は GEMINI_MODELS で設定されたモデル一覧を返します。
-func (h *Handler) configuredGeminiModels() []string {
+// configuredModels は GEMINI_MODELS で設定されたモデル一覧を返します。
+func (h *Handler) configuredModels() []string {
 	if h.cfg == nil {
 		return nil
 	}
@@ -147,7 +147,7 @@ func (h *Handler) validateReviewRequest(req domain.ReviewRequest) error {
 		return err
 	}
 
-	if !slices.Contains(h.configuredGeminiModels(), req.ModelName) {
+	if !slices.Contains(h.configuredModels(), req.ModelName) {
 		return fmt.Errorf("不正なGeminiモデルです: %s", req.ModelName)
 	}
 

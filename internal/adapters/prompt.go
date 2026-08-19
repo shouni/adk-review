@@ -59,9 +59,9 @@ func NewPromptAdapter() (*PromptAdapter, error) {
 }
 
 // Generate はレビューのプロンプトを生成します。
-func (pa *PromptAdapter) Generate(mode, codeDiff string) (string, error) {
+func (pa *PromptAdapter) Generate(mode, diff string) (string, error) {
 	data := reviewData{
-		DiffContent:    codeDiff,
+		DiffContent:    diff,
 		FindingsFormat: pa.findingsFormat,
 		VerdictFormat:  pa.verdictFormat,
 	}
