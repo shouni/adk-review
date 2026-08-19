@@ -1,8 +1,10 @@
 package adkagent
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,6 +101,20 @@ func (t *toolbox) spend() bool {
 	return t.remaining.Add(-1) >= 0
 }
 
+// trace は、ツールの呼び出しを 1 行記録します。
+//
+// ★ エージェントループは数分かかることがあり、**その間このアプリは何も出力しません。**
+// 運用側からは実行中とハングの区別が付かないため、進行の唯一の手掛かりとしてここを残します。
+// 残り回数も併せて出すのは、上限に達して調査を打ち切った場合（結果は正常な戻り値として
+// モデルへ返るのでエラーにならない）を後から追えるようにするためです。
+//
+// ctx は agent.Context です。ADK の ReadonlyContext が context.Context を埋め込んでいるため、
+// slogctx が載せた job_id / mode / engine もそのまま付きます。
+func (t *toolbox) trace(ctx context.Context, tool string, attrs ...any) {
+	slog.InfoContext(ctx, "エージェントがツールを呼びました",
+		append([]any{"tool", tool, "remaining", t.remaining.Load()}, attrs...)...)
+}
+
 // resolve は、相対パスを root 配下の絶対パスへ解決します。
 //
 // filepath.Clean だけでは symlink 経由の脱出を防げないため、実体パスまで解決して
@@ -141,13 +157,15 @@ type readFileResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
-func (t *toolbox) readFile(_ agent.Context, args readFileArgs) (readFileResult, error) {
+func (t *toolbox) readFile(toolCtx agent.Context, args readFileArgs) (readFileResult, error) {
 	if !t.spend() {
 		return readFileResult{Error: budgetExhaustedMsg}, nil
 	}
+	t.trace(toolCtx, "read_file", "path", args.Path)
 
 	path, err := t.resolve(args.Path)
 	if err != nil {
+		slog.WarnContext(toolCtx, "ツールがパスを解決できませんでした", "tool", "read_file", "path", args.Path, "error", err)
 		return readFileResult{Error: err.Error()}, nil
 	}
 
@@ -199,7 +217,7 @@ type listFilesResult struct {
 	Error     string   `json:"error,omitempty"`
 }
 
-func (t *toolbox) listFiles(_ agent.Context, args listFilesArgs) (listFilesResult, error) {
+func (t *toolbox) listFiles(toolCtx agent.Context, args listFilesArgs) (listFilesResult, error) {
 	if !t.spend() {
 		return listFilesResult{Error: budgetExhaustedMsg}, nil
 	}
@@ -208,8 +226,11 @@ func (t *toolbox) listFiles(_ agent.Context, args listFilesArgs) (listFilesResul
 	if dir == "" {
 		dir = "."
 	}
+	t.trace(toolCtx, "list_files", "dir", dir)
+
 	base, err := t.resolve(dir)
 	if err != nil {
+		slog.WarnContext(toolCtx, "ツールがパスを解決できませんでした", "tool", "list_files", "dir", dir, "error", err)
 		return listFilesResult{Error: err.Error()}, nil
 	}
 
@@ -255,13 +276,14 @@ type searchTextResult struct {
 	Error     string   `json:"error,omitempty"`
 }
 
-func (t *toolbox) searchText(_ agent.Context, args searchTextArgs) (searchTextResult, error) {
+func (t *toolbox) searchText(toolCtx agent.Context, args searchTextArgs) (searchTextResult, error) {
 	if !t.spend() {
 		return searchTextResult{Error: budgetExhaustedMsg}, nil
 	}
 	if strings.TrimSpace(args.Query) == "" {
 		return searchTextResult{Error: "query が空です"}, nil
 	}
+	t.trace(toolCtx, "search_text", "query", args.Query)
 
 	query := strings.ToLower(args.Query)
 	var hits []string
