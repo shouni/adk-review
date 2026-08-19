@@ -42,8 +42,8 @@ func (c *Config) ValidateEssentialConfig() error {
 		return fmt.Errorf("GCS_REVIEW_BUCKET が設定されていません")
 	}
 
-	if err := c.validateTimeouts(); err != nil {
-		return err
+	if c.Tasks.DispatchDeadline <= 0 {
+		return fmt.Errorf("TASK_DISPATCH_DEADLINE が設定されていません（三段のタイムアウトはデプロイ設定が決めます。例: 10m）")
 	}
 
 	if c.Server.Role.ServesWeb() {
@@ -54,6 +54,9 @@ func (c *Config) ValidateEssentialConfig() error {
 
 	if c.Server.Role.ServesWorker() {
 		if err := c.validateWorkerConfig(); err != nil {
+			return err
+		}
+		if err := c.validateTimeouts(); err != nil {
 			return err
 		}
 	}
@@ -118,13 +121,11 @@ func (c *Config) validateWorkerConfig() error {
 // 三段目（Cloud Run の timeout）はアプリからは見えないので、そちらとの関係は
 // インフラ管理リポジトリの precondition が受け持ちます。
 func (c *Config) validateTimeouts() error {
-	if c.Tasks.DispatchDeadline <= 0 {
-		return fmt.Errorf("TASK_DISPATCH_DEADLINE が設定されていません（三段のタイムアウトはデプロイ設定が決めます。例: 10m）")
-	}
-
-	// 0 以下は無制限。ローカルでの長時間デバッグ用の逃げ道で、本番では既定値が入ります。
+	// 無制限は許しません。Cloud Tasks が先に打ち切ると、失敗レポートも Slack 通知も
+	// 残らないまま review-queue は max_attempts = 1 で再試行しないため、
+	// レビューが queued のまま消えます（兄弟アプリと同じ判断です）。
 	if c.Pipeline.Timeout <= 0 {
-		return nil
+		return fmt.Errorf("PIPELINE_TIMEOUT が設定されていません（worker では無制限にできません。TASK_DISPATCH_DEADLINE より短い値を設定してください）")
 	}
 
 	if c.Pipeline.Timeout >= c.Tasks.DispatchDeadline {

@@ -191,7 +191,7 @@ func testDomainRequest() domain.ReviewRequest {
 // ★ アダプタがレビューに締切を被せていること。
 //
 // これが無いと Cloud Tasks の dispatch deadline が先に来て、プロセスごと SIGTERM になり
-// 失敗の記録も Slack 通知も残らない（config.DefaultPipelineTimeout のコメント参照）。
+// 失敗の記録も Slack 通知も残らない（config.PipelineConfig.Timeout のコメント参照）。
 func TestReviewPipeline_レビューに締切を被せる(t *testing.T) {
 	t.Parallel()
 

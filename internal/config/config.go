@@ -15,11 +15,6 @@ const (
 	// HTTPConfig.Timeout の envDefault と同じ値で、ズレはテストが検知します。
 	DefaultHTTPTimeout = 30 * time.Second
 
-	// DefaultPipelineTimeout はレビュー 1 件の実行時間の上限の既定値です。
-	// 実測 3.9〜9.2 秒に対する余裕として 5m。他アプリの 25m より短いのは意図的です。
-	// PipelineConfig.Timeout の envDefault と同じ値で、ズレはテストが検知します。
-	DefaultPipelineTimeout = 5 * time.Minute
-
 	// DefaultShutdownTimeout は SIGTERM 後にサーバーの停止を待つ上限の既定値です。
 	// Cloud Run が SIGKILL するまでの猶予より長く取っても待ち切れないため、
 	// 兄弟アプリと同じく短めに置きます。
@@ -105,10 +100,12 @@ type GitConfig struct {
 // PipelineConfig はレビュー 1 件の実行に関する設定です。
 type PipelineConfig struct {
 	// Timeout はレビュー 1 件（clone〜AI〜公開）の実行時間の上限です。
-	// 0 以下は無制限を意味します（ローカルでの長時間デバッグ用の逃げ道）。
-	// 未設定と 0 を区別する必要があるため、既定値は normalize ではなく envDefault で
-	// 与えます。書式が不正なら黙って既定値へ落とさず、LoadConfig が起動時に落とします。
-	Timeout time.Duration `env:"PIPELINE_TIMEOUT" envDefault:"5m"`
+	//
+	// **既定値は持ちません。** TASK_DISPATCH_DEADLINE と同じく三段のタイムアウトの一部で、
+	// 出どころはデプロイ設定（Terraform）1 箇所に閉じます。既定を持つと同じ数字が
+	// 2 箇所に現れ、設定漏れが「誰も選んでいない値」で動いてしまいます。
+	// 渡されるのは worker 面だけなので、必須なのも worker 面だけです。
+	Timeout time.Duration `env:"PIPELINE_TIMEOUT"`
 }
 
 // StorageConfig はストレージの設定です。

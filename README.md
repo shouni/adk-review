@@ -151,7 +151,7 @@ adk-review/
 `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET`・`SESSION_SECRET`・`SESSION_ENCRYPT_KEY`・
 `ALLOWED_EMAILS` または `ALLOWED_DOMAINS`、worker 面では `TASK_AUDIENCE_URL`（未設定なら
 `SERVICE_URL` へ落ちます）と `ALLOWED_TASK_SERVICE_ACCOUNTS` です。
-`TASK_DISPATCH_DEADLINE` も全役割で必須です（後述）。
+`TASK_DISPATCH_DEADLINE` も全役割で必須、`PIPELINE_TIMEOUT` は worker 面で必須です（後述）。
 worker 面は OAuth 系の設定を要求しません。残りは空でも起動します（機能しないだけです）。
 
 **プロジェクト ID とバケット名に既定値を置かないのは意図的です。** プレースホルダを置くと
@@ -182,7 +182,7 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 | `GCS_REVIEW_BUCKET` | レビュー結果と進行状況を保存する GCS バケット**名**（`gs://` は付けても落とします）。**既定値は無く、未設定だと起動時に落ちます** | **必須** |
 | `GEMINI_MODELS` | 使用する Gemini モデル名。カンマ区切りで複数指定するとフォームで選択可能（先頭がデフォルト）。**アプリ側に既定値は無く、未設定だと起動時に落ちます** | **必須**（Google の最新モデル ID を確認して設定） |
 | `TASK_AUDIENCE_URL` | Cloud Tasks の OIDC トークン検証に使う audience。未設定なら `SERVICE_URL` | `https://myapp.run.app` |
-| `PIPELINE_TIMEOUT` | レビュー 1 件の実行時間の上限（`5m` 形式）。Cloud Tasks の dispatch deadline より短いこと。超えると起動時エラー | `5m` |
+| `PIPELINE_TIMEOUT` | レビュー 1 件の実行時間の上限（`5m` 形式）。`TASK_DISPATCH_DEADLINE` より短いこと。**既定値は無く、worker 面では未設定だと起動時に落ちます**（無制限は許しません） | **worker 面で必須** |
 | `SSH_KEY_PATH` | SSH 形式のリポジトリ（`git@github.com:owner/repo.git`）のクローンに使う秘密鍵パス（Secret Manager マウント推奨。Cloud Run では `/secrets/ssh/id_rsa` を渡します） | `~/.ssh/id_rsa` |
 | `TASK_DISPATCH_DEADLINE` | Cloud Tasks がワーカーの応答を待つ上限（`10m` 形式）。**ワーカーの実行時間の実効上限**で、`PIPELINE_TIMEOUT` より長いこと。範囲（15 秒〜30 分）の検査は gcp-kit が投入口の構築時に行います。**既定値は無く、未設定だと起動時に落ちます** | **必須** |
 | `HTTP_TIMEOUT` | Slack 通知など外部 HTTP 呼び出しの上限 | `30s` |
@@ -240,6 +240,7 @@ export SERVER_ROLE=both
 export SERVICE_URL=http://localhost:8080
 # 三段のタイムアウトはデプロイ設定（Terraform）が唯一の出どころなので、既定値がありません。
 export TASK_DISPATCH_DEADLINE=10m
+export PIPELINE_TIMEOUT=5m
 export GCP_PROJECT_ID=your-project
 export GCS_REVIEW_BUCKET=your-review-bucket
 export GEMINI_MODELS=gemini-2.5-flash,gemini-2.5-pro

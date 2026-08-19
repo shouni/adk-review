@@ -13,6 +13,10 @@ import (
 // 実際のデプロイ設定と同じく明示します。
 const testDispatchDeadline = 10 * time.Minute
 
+// testPipelineTimeout は、テストで使うレビュー 1 件の上限です。打ち切りと同じく
+// アプリは既定値を持たないため、実際のデプロイ設定と同じく明示します。
+const testPipelineTimeout = 5 * time.Minute
+
 // validBase は、検証を通る最小構成を返します。
 // 各テストは 1 項目だけ崩して、そこが検出されることを確かめます。
 func validBase() *Config {
@@ -31,7 +35,7 @@ func validBase() *Config {
 		},
 		GCP:      GCPConfig{ProjectID: "project-1", LocationID: "asia-northeast1"},
 		AI:       AIConfig{GeminiModels: []string{"gemini-test-flash"}},
-		Pipeline: PipelineConfig{Timeout: DefaultPipelineTimeout},
+		Pipeline: PipelineConfig{Timeout: testPipelineTimeout},
 		Storage:  StorageConfig{GCSBucket: "bucket-a"},
 		Auth: AuthConfig{
 			GoogleClientID:     "client-id",
@@ -175,8 +179,8 @@ func TestValidateTimeouts(t *testing.T) {
 
 	t.Run("既定の PIPELINE_TIMEOUT は打ち切りより短い", func(t *testing.T) {
 		t.Parallel()
-		if DefaultPipelineTimeout >= testDispatchDeadline {
-			t.Fatalf("既定値 %s が打ち切り %s 以上", DefaultPipelineTimeout, testDispatchDeadline)
+		if testPipelineTimeout >= testDispatchDeadline {
+			t.Fatalf("%s が打ち切り %s 以上", testPipelineTimeout, testDispatchDeadline)
 		}
 		if err := validBase().ValidateEssentialConfig(); err != nil {
 			t.Errorf("既定値で失敗した: %v", err)
@@ -215,12 +219,32 @@ func TestValidateTimeouts(t *testing.T) {
 		}
 	})
 
-	t.Run("0 以下は無制限として通す", func(t *testing.T) {
+	// 無制限は許しません。Cloud Tasks が先に打ち切ると、失敗レポートも Slack 通知も
+	// 残らないまま再試行もされず、レビューが queued のまま消えます。
+	t.Run("未設定・無制限は worker で落とす", func(t *testing.T) {
+		t.Parallel()
+		for _, d := range []time.Duration{0, -time.Second} {
+			c := validBase()
+			c.Pipeline.Timeout = d
+			err := c.ValidateEssentialConfig()
+			if err == nil {
+				t.Errorf("Pipeline.Timeout=%s が通ってしまった", d)
+				continue
+			}
+			if !strings.Contains(err.Error(), "PIPELINE_TIMEOUT") {
+				t.Errorf("エラーに変数名が無い: %v", err)
+			}
+		}
+	})
+
+	// 渡されるのは worker 面だけなので、web 面では要求しません。
+	t.Run("web 面では PIPELINE_TIMEOUT を要求しない", func(t *testing.T) {
 		t.Parallel()
 		c := validBase()
+		c.Server.Role = serverrole.Web
 		c.Pipeline.Timeout = 0
 		if err := c.ValidateEssentialConfig(); err != nil {
-			t.Errorf("0（無制限）で失敗した: %v", err)
+			t.Errorf("web 面が PIPELINE_TIMEOUT を要求している: %v", err)
 		}
 	})
 
@@ -268,8 +292,8 @@ func TestPipelineTimeoutFromEnv(t *testing.T) {
 		if err != nil {
 			t.Fatalf("LoadConfig failed: %v", err)
 		}
-		if cfg.Pipeline.Timeout != DefaultPipelineTimeout {
-			t.Errorf("Pipeline.Timeout = %s, want %s", cfg.Pipeline.Timeout, DefaultPipelineTimeout)
+		if cfg.Pipeline.Timeout != 0 {
+			t.Errorf("Pipeline.Timeout = %s, 既定値を持たせないでください", cfg.Pipeline.Timeout)
 		}
 	})
 
@@ -299,8 +323,9 @@ func TestDefaultsMatchEnvDefaults(t *testing.T) {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
-	if cfg.Pipeline.Timeout != DefaultPipelineTimeout {
-		t.Errorf("PIPELINE_TIMEOUT の既定 = %s, want %s", cfg.Pipeline.Timeout, DefaultPipelineTimeout)
+	// PIPELINE_TIMEOUT にも既定値は持たせません（出どころはデプロイ設定 1 箇所）。
+	if cfg.Pipeline.Timeout != 0 {
+		t.Errorf("PIPELINE_TIMEOUT = %s, 既定値を持たせないでください", cfg.Pipeline.Timeout)
 	}
 	// TASK_DISPATCH_DEADLINE に既定値は持ちません（出どころはデプロイ設定 1 箇所）。
 	if cfg.Tasks.DispatchDeadline != 0 {
