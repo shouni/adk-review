@@ -175,8 +175,8 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 | `AGENT_MAX_TOOL_CALLS` | エージェントレビュー 1 件あたりのツール呼び出し回数上限。0 で既定値（32） | `0` |
 | `PORT` | サーバーがリッスンするポート | `8080` |
 | `GCP_PROJECT_ID` | GCP のプロジェクト ID。**既定値は無く、未設定だと起動時に落ちます** | **必須** |
-| `GCP_LOCATION_ID` | Cloud Tasks キューのリージョン | `asia-northeast1` |
-| `CLOUD_TASKS_QUEUE_ID` | 使用する Cloud Tasks のキュー名 | `review-queue` |
+| `GCP_LOCATION_ID` | Cloud Tasks キューのリージョン。Gemini は `global` 固定（`internal/adapters/ai.go`）なので流用しません。**既定値は無く、web 面では未設定だと起動時に落ちます** | **web 面で必須**（例: `asia-northeast1`） |
+| `CLOUD_TASKS_QUEUE_ID` | 使用する Cloud Tasks のキュー名。**既定値は無く、web 面では未設定だと起動時に落ちます** | **web 面で必須**（例: `review-queue`） |
 | `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` | 投入するタスクの OIDC に指定する caller SA（web 面のみ） | `adk-review-web-runner@...` |
 | `ALLOWED_TASK_SERVICE_ACCOUNTS` | worker が受け付けるトークンの発行元 SA（カンマ区切り、worker 面のみ）。web 面の SA を並べる | `adk-review-web-runner@...` |
 | `GCS_REVIEW_BUCKET` | レビュー結果と進行状況を保存する GCS バケット**名**（`gs://` は付けても落とします）。**既定値は無く、未設定だと起動時に落ちます** | **必須** |
@@ -242,6 +242,7 @@ export SERVICE_URL=http://localhost:8080
 export TASK_DISPATCH_DEADLINE=10m
 export PIPELINE_TIMEOUT=5m
 export GCP_PROJECT_ID=your-project
+export GCP_LOCATION_ID=asia-northeast1
 export GCS_REVIEW_BUCKET=your-review-bucket
 export GEMINI_MODELS=gemini-2.5-flash,gemini-2.5-pro
 export CLOUD_TASKS_QUEUE_ID=review-queue

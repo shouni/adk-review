@@ -117,6 +117,13 @@ func TestValidateEssentialConfig(t *testing.T) {
 			wantErr: "WORKER_URL",
 		},
 		{
+			// キューのリージョンも web 面だけの要件です（Gemini は "global" 固定のため
+			// worker 面では使いません）。
+			name:    "missing location id on web",
+			mutate:  func(c *Config) { c.GCP.LocationID = "" },
+			wantErr: "GCP_LOCATION_ID",
+		},
+		{
 			name:    "missing caller sa on web",
 			mutate:  func(c *Config) { c.Tasks.CallerServiceAccountEmail = "" },
 			wantErr: "TASK_CALLER_SERVICE_ACCOUNT_EMAIL",
@@ -168,6 +175,7 @@ func TestValidateEssentialConfig_WorkerSkipsWebSettings(t *testing.T) {
 	cfg.Auth = AuthConfig{}
 	cfg.Tasks.QueueID = ""
 	cfg.Tasks.CallerServiceAccountEmail = ""
+	cfg.GCP.LocationID = ""
 
 	if err := cfg.ValidateEssentialConfig(); err != nil {
 		t.Fatalf("worker 面が web の設定を要求している: %v", err)
@@ -310,11 +318,13 @@ func TestPipelineTimeoutFromEnv(t *testing.T) {
 	})
 }
 
-// 定数と envDefault が同じ値であること。片方だけ動かすと、コードが言う既定値と
-// 実際に入る値が食い違います。
+// LoadConfig が入れる既定値の検証です。HTTP_TIMEOUT は envDefault と定数が同じ値で
+// あること（片方だけ動かすと、コードが言う既定値と実際に入る値が食い違います）、
+// TASK_DISPATCH_DEADLINE は既定値を持たないことを見ます。
+// PIPELINE_TIMEOUT の同じ確認は TestPipelineTimeoutFromEnv が持っています。
 func TestDefaultsMatchEnvDefaults(t *testing.T) {
 	t.Setenv("SERVER_ROLE", "both")
-	for _, key := range []string{"PIPELINE_TIMEOUT", "TASK_DISPATCH_DEADLINE", "HTTP_TIMEOUT"} {
+	for _, key := range []string{"TASK_DISPATCH_DEADLINE", "HTTP_TIMEOUT"} {
 		unsetEnvForTest(t, key)
 	}
 
@@ -323,10 +333,6 @@ func TestDefaultsMatchEnvDefaults(t *testing.T) {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
-	// PIPELINE_TIMEOUT にも既定値は持たせません（出どころはデプロイ設定 1 箇所）。
-	if cfg.Pipeline.Timeout != 0 {
-		t.Errorf("PIPELINE_TIMEOUT = %s, 既定値を持たせないでください", cfg.Pipeline.Timeout)
-	}
 	// TASK_DISPATCH_DEADLINE に既定値は持ちません（出どころはデプロイ設定 1 箇所）。
 	if cfg.Tasks.DispatchDeadline != 0 {
 		t.Errorf("TASK_DISPATCH_DEADLINE = %s, 既定値を持たせないでください", cfg.Tasks.DispatchDeadline)

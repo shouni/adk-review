@@ -73,6 +73,14 @@ func (c *Config) validateWebConfig() error {
 	if c.Tasks.WorkerURL == "" {
 		return fmt.Errorf("WORKER_URL が設定されていません")
 	}
+
+	// LocationID はそのキューが属するリージョンです。使うのは builder/task.go の
+	// タスク投入だけで、Gemini は adapters.geminiLocationID ("global") 固定のため
+	// worker 面では要りません。ap-infra が両ロールへ渡しますが、アプリ側に既定値は
+	// 置きません（プレースホルダで起動が通ると、失敗するのはタスク投入時になります）。
+	if c.GCP.LocationID == "" {
+		return fmt.Errorf("GCP_LOCATION_ID が設定されていません（Cloud Tasks のキューが属するリージョンです。例: asia-northeast1）")
+	}
 	// caller SA はタスクを投入する側＝ Web 面の要件です。worker が受け付ける許可リストは
 	// ALLOWED_TASK_SERVICE_ACCOUNTS で別に指定します。
 	if c.Tasks.CallerServiceAccountEmail == "" {
