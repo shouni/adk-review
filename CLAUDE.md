@@ -97,9 +97,10 @@ SDK の型が違うため別々に組み立てます。**統合しないでく�
 - 差分は `findings[].evidence` の有無だけです。エージェントは作業ディレクトリを実際に
   調べるので「どこを見て判断したか」を自己申告させる意味がありますが、差分しか見ない
   単発レビュアーに出させると**根拠の捏造を促します**。
-- 列挙値だけは `domain.SeverityEnum` / `domain.DecisionEnum` に集約しています。
-  食い違うと、モデルがスキーマ上は正当な値を返してデコードで弾かれ、**全レビューが失敗**します。
-  両パッケージにドリフト検知テストがあります。
+- 列挙値は `review.SeverityStrings` / `review.DecisionStrings`（ライブラリ）を直接使います。
+  **アプリ側で `[]string` へ詰め替え直さないでください。** 写しが増えると、値を足したときに
+  スキーマと検証が食い違い、モデルはスキーマ上正当な値を返すのにデコードで弾かれます
+  （症状は全レビューの失敗）。両パッケージにドリフト検知テストがあります。
 
 ### genai SDK の隔離
 
@@ -122,6 +123,13 @@ Gemini のロケーションは `adapters.geminiLocationID`（`global`）に固�
 `domain.TaskExecuteReviewPath` を投入側（`internal/builder`）と受信側（`internal/server`）の
 両方が使います。リテラルを二重に持つと、片方だけ変えたときに**投入したタスクが全部 404 に
 なり、再試行もされず黙って消えます。**
+
+### レビュー 1 件の締切はライブラリに持たせる
+
+`internal/builder/pipeline.go` が `pipeline.WithRunTimeout` へ `PIPELINE_TIMEOUT` を渡します。
+**`Run` へ渡す context に自前で締切を被せないでください。** ライブラリが公開・通知のために
+行う切り離しより外側に掛かるため、打ち切りと同時に失敗通知まで落ちます
+（ACL 側で `context.WithTimeout` していた頃の形には戻さないこと）。
 
 ### ログは context に載せる
 

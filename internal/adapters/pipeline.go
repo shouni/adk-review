@@ -30,19 +30,20 @@ type reviewRunner interface {
 type ReviewPipeline struct {
 	runner   reviewRunner
 	recorder *jobstatus.Recorder[domain.JobStatus]
-	timeout  time.Duration
 }
 
 var _ domain.Pipeline = (*ReviewPipeline)(nil)
 
 // NewReviewPipeline は ReviewPipeline を構築します。
 //
-// timeout はレビュー 1 件の実行時間の上限（PIPELINE_TIMEOUT）です。0 以下なら無制限。
-func NewReviewPipeline(runner reviewRunner, store domain.StatusStore, timeout time.Duration) *ReviewPipeline {
+// レビュー 1 件の上限（PIPELINE_TIMEOUT）はここでは扱いません。ライブラリの
+// pipeline.WithRunTimeout が持ちます（internal/builder/pipeline.go で渡しています）。
+// 呼び出し側が context に締切を被せると、ライブラリが公開・通知のために行う
+// 切り離しより外側に掛かり、打ち切りと同時に失敗通知まで落ちるためです。
+func NewReviewPipeline(runner reviewRunner, store domain.StatusStore) *ReviewPipeline {
 	return &ReviewPipeline{
 		runner:   runner,
 		recorder: jobstatus.NewRecorder(store),
-		timeout:  timeout,
 	}
 }
 
@@ -82,16 +83,7 @@ func (p *ReviewPipeline) Execute(ctx context.Context, req domain.ReviewRequest) 
 
 	p.recordRunning(ctx, req)
 
-	// 締切はレビューにだけ被せます。ここで ctx を上書きしてしまうと、打ち切られた直後の
-	// 記録まで期限切れの context で行うことになり、いちばん記録が要る場面で残りません。
-	runCtx := ctx
-	if p.timeout > 0 {
-		var cancel context.CancelFunc
-		runCtx, cancel = context.WithTimeout(ctx, p.timeout)
-		defer cancel()
-	}
-
-	result, report, err := p.runner.Run(runCtx, req)
+	result, report, err := p.runner.Run(ctx, req)
 	p.recordOutcome(ctx, req, result, report, err)
 
 	return err

@@ -3,7 +3,7 @@ package adkagent
 import (
 	"google.golang.org/genai"
 
-	"github.com/shouni/adk-review/internal/domain"
+	"github.com/shouni/go-review-kit/review"
 )
 
 // reportSchema は、review.Report に対応する構造化出力スキーマです。
@@ -21,7 +21,7 @@ func reportSchema() *genai.Schema {
 			"verdict": {
 				Type: genai.TypeObject,
 				Properties: map[string]*genai.Schema{
-					"decision": {Type: genai.TypeString, Enum: domain.DecisionEnum()},
+					"decision": {Type: genai.TypeString, Enum: review.DecisionStrings()},
 					"reason":   {Type: genai.TypeString},
 				},
 				Required: []string{"decision", "reason"},
@@ -31,7 +31,7 @@ func reportSchema() *genai.Schema {
 				Items: &genai.Schema{
 					Type: genai.TypeObject,
 					Properties: map[string]*genai.Schema{
-						"severity":   {Type: genai.TypeString, Enum: domain.SeverityEnum()},
+						"severity":   {Type: genai.TypeString, Enum: review.SeverityStrings()},
 						"file":       {Type: genai.TypeString},
 						"line":       {Type: genai.TypeInteger},
 						"excerpt":    {Type: genai.TypeString},
