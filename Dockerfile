@@ -3,13 +3,9 @@ FROM golang:1.26-alpine AS builder
 RUN apk add --no-cache tzdata ca-certificates curl jq
 WORKDIR /app
 
-# SSH のホスト鍵は GitHub の API から取得して焼き込みます。
-#
-# 鍵をリポジトリに置いて COPY しないでください。ローテートに追従できなくなり、
-# clone が全滅するのに気付くのは本番、直すにはデプロイが要ります。
-#
-# このステップは COPY . . より前に置いてください。後ろだとソース変更のたびに
-# レイヤキャッシュが外れ、未認証の API 呼び出しを毎ビルド繰り返します。
+# SSH のホスト鍵。リポジトリに置くとローテートに追従できず、clone が全滅するのに
+# 気付くのは本番になります。COPY . . より前に置くこと（後ろだとソース変更のたびに
+# キャッシュが外れ、毎ビルド API を叩きます）。
 RUN mkdir -p /etc/ssh \
     && curl -fsSL --retry 3 https://api.github.com/meta \
        | jq -er '.ssh_keys[] | "github.com \(.)"' > /etc/ssh/ssh_known_hosts \
