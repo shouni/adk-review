@@ -15,10 +15,6 @@ const (
 	// HTTPConfig.Timeout の envDefault と同じ値で、ズレはテストが検知します。
 	DefaultHTTPTimeout = 30 * time.Second
 
-	// MaxTaskDispatchDeadline は Cloud Tasks の HTTP ターゲットに指定できる上限です。
-	// プラットフォームの制約なのでアプリが持ちます（デプロイ設定ではありません）。
-	MaxTaskDispatchDeadline = 30 * time.Minute
-
 	// DefaultPipelineTimeout はレビュー 1 件の実行時間の上限の既定値です。
 	// 実測 3.9〜9.2 秒に対する余裕として 5m。他アプリの 25m より短いのは意図的です。
 	// PipelineConfig.Timeout の envDefault と同じ値で、ズレはテストが検知します。

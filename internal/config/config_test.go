@@ -348,20 +348,3 @@ func TestDispatchDeadlineIsRequired(t *testing.T) {
 		t.Errorf("エラーに変数名がありません: %v", err)
 	}
 }
-
-// Cloud Tasks の上限を超える値は投入時に拒否されるため、起動時に落とします。
-func TestDispatchDeadlineRejectsAbovePlatformMax(t *testing.T) {
-	t.Parallel()
-
-	cfg := validBase()
-	cfg.Tasks.DispatchDeadline = MaxTaskDispatchDeadline + time.Minute
-	cfg.Pipeline.Timeout = time.Minute
-
-	err := cfg.ValidateEssentialConfig()
-	if err == nil {
-		t.Fatal("上限超えが素通りしました")
-	}
-	if !strings.Contains(err.Error(), "上限") {
-		t.Errorf("エラーが上限超えだと分かりません: %v", err)
-	}
-}
