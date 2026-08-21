@@ -4,27 +4,27 @@ go 1.26.6
 
 require (
 	github.com/caarlos0/env/v11 v11.4.1
-	github.com/go-chi/chi/v5 v5.3.1
+	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/uuid v1.6.0
-	github.com/shouni/gcp-kit v1.10.2
-	github.com/shouni/go-gemini-client v1.17.3
-	github.com/shouni/go-http-kit v1.8.2
+	github.com/shouni/gcp-kit v1.10.3
+	github.com/shouni/go-gemini-client v1.17.5
+	github.com/shouni/go-http-kit v1.8.4
 	github.com/shouni/go-job-kit v1.1.0
 	github.com/shouni/go-notify v1.2.5
-	github.com/shouni/go-prompt-kit v1.5.0
+	github.com/shouni/go-prompt-kit v1.5.1
 	github.com/shouni/go-remote-io v1.9.0
 	github.com/shouni/go-review-kit v1.6.0
 	github.com/shouni/go-utils v1.6.0
-	github.com/shouni/netarmor v1.2.3
+	github.com/shouni/netarmor v1.2.4
 	go.yaml.in/yaml/v3 v3.0.5
 	google.golang.org/adk/v2 v2.2.0
-	google.golang.org/genai v1.68.0
+	google.golang.org/genai v1.69.0
 )
 
 require (
 	cel.dev/expr v0.25.3 // indirect
 	cloud.google.com/go v0.123.0 // indirect
-	cloud.google.com/go/auth v0.23.1 // indirect
+	cloud.google.com/go/auth v0.23.2 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/cloudtasks v1.19.0 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
@@ -58,7 +58,7 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/safehtml v0.1.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.21 // indirect
-	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
+	github.com/googleapis/gax-go/v2 v2.24.0 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/gorilla/sessions v1.4.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
@@ -79,7 +79,8 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0 // indirect
 	go.opentelemetry.io/otel v1.45.0 // indirect
-	// v0.21.0 で log.Value / log.KeyValue が消え、adk v2.2.0（最新）がビルドできません。
+	// v0.21.0 で log.Value / log.KeyValue が消え（attribute.Value / attribute.KeyValue へ
+	// 統合されました）、それを呼ぶ adk v2.2.0（最新）の internal/telemetry がビルドできません。
 	// adk が追従するまで上げられないため、go get -u の後もここは戻してください。
 	go.opentelemetry.io/otel/log v0.20.0 // indirect
 	go.opentelemetry.io/otel/metric v1.45.0 // indirect
