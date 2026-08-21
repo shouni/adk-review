@@ -85,3 +85,67 @@ func TestStateBadgeCoversAllStates(t *testing.T) {
 		t.Errorf("未知の状態 = %+v, want %+v", got, unknownStateBadge)
 	}
 }
+
+// 引用の整形。モデルが付けてくるコードフェンスと前後の空行を落とすこと。
+func TestCodeText(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		in   string
+		want string
+	}{
+		"言語付きフェンスを剥がす": {
+			in:   "```go\nfunc main() {}\n```",
+			want: "func main() {}",
+		},
+		"言語なしフェンスを剥がす": {
+			in:   "```\nhello\n```",
+			want: "hello",
+		},
+		"前後の空行を落とす": {
+			in:   "\n\n    アキラは剣を抜いた。\n\n",
+			want: "    アキラは剣を抜いた。",
+		},
+		"インデントは残す": {
+			in:   "if x {\n\treturn nil\n}",
+			want: "if x {\n\treturn nil\n}",
+		},
+		"閉じていないフェンスは内容として残す": {
+			in:   "```go\nfunc main() {}",
+			want: "```go\nfunc main() {}",
+		},
+		"途中のフェンスは残す": {
+			in:   "見出し\n```go\ncode\n```\n続き",
+			want: "見出し\n```go\ncode\n```\n続き",
+		},
+		"CRLF を LF に揃える": {
+			in:   "a\r\nb",
+			want: "a\nb",
+		},
+		"空文字": {in: "", want: ""},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := codeText(tt.in); got != tt.want {
+				t.Errorf("codeText(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// 引用のクラスはモードで分かれること。判定の出どころはプロンプトの front matter です。
+func TestExcerptClass(t *testing.T) {
+	t.Parallel()
+
+	if got := excerptClass("code"); got != codeBlockClass {
+		t.Errorf("excerptClass(code) = %q, want %q", got, codeBlockClass)
+	}
+	for _, mode := range []string{"novel", "article", "消えたモード", ""} {
+		if got := excerptClass(mode); got != quoteBlockClass {
+			t.Errorf("excerptClass(%q) = %q, want %q", mode, got, quoteBlockClass)
+		}
+	}
+}

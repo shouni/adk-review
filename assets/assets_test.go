@@ -184,3 +184,23 @@ func TestResolveEngine(t *testing.T) {
 		})
 	}
 }
+
+// 引用の見せ方は、プロンプトの front matter が宣言すること。
+func TestExcerptStyleFor(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]ExcerptStyle{
+		"code":  ExcerptCode,
+		"novel": ExcerptProse,
+		// 未知のモードでもエラーにせず、地の文として扱います。履歴には消したモードの
+		// 名前も残るため、ここで落とすと過去のレビューが開けなくなります。
+		"すでに消したモード": ExcerptProse,
+		"":          ExcerptProse,
+	}
+
+	for mode, want := range tests {
+		if got := ExcerptStyleFor(mode); got != want {
+			t.Errorf("ExcerptStyleFor(%q) = %q, want %q", mode, got, want)
+		}
+	}
+}
