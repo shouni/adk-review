@@ -154,8 +154,11 @@ func (r *Reviewer) ReviewWorkspace(ctx context.Context, modelName, prompt string
 		return review.Report{}, err
 	}
 
-	// OutputSchema とツールは併用できます。フレームワークが set_model_response ツールを
-	// 注入し、最終イベントの Text にはそのスキーマに従う JSON が入ります。
+	// OutputSchema とツールは併用できます。ただし経路は 2 通りあり、**Vertex AI の
+	// Gemini 2.0+ では ADK は素通しで、モデルが応答本文としてスキーマ準拠の JSON を書きます**
+	// （set_model_response ツールへ差し替わるのは Gemini API 側だけです）。本番は Vertex
+	// 一択なので、最終イベントの Text はモデルが生で書いた JSON です。**途中で切れることが
+	// あるのはこのためで**、解釈の前に終了理由を確かめます。
 	ag, err := llmagent.New(llmagent.Config{
 		Name:         agentName,
 		Description:  "作業ディレクトリを調査しながら Git 差分をレビューするエージェント",
@@ -173,20 +176,29 @@ func (r *Reviewer) ReviewWorkspace(ctx context.Context, modelName, prompt string
 		return review.Report{}, fmt.Errorf("adkagent: ランナーの構築に失敗しました: %w", err)
 	}
 
-	final, err := r.collectFinalText(ctx, run, prompt)
+	final, err := r.collectFinal(ctx, run, prompt)
 	if err != nil {
+		return review.Report{}, err
+	}
+
+	// ★ 解釈より先に終了理由を見ます。**上限で切り詰められた出力も「正常な最終応答」として
+	// 降ってきます**（ADK の converters は FinishReason を見ずに Content をそのまま通します）。
+	// ここを飛ばすと、出力上限の超過が「JSON として解釈できません」として報告されます。
+	// 症状しか残らないため、次に起きても同じ調査をやり直すことになります。
+	if err := final.finishError(); err != nil {
+		slog.ErrorContext(ctx, "モデルが最後まで出力しませんでした", final.logAttrs()...)
 		return review.Report{}, err
 	}
 
 	// 補修が要ったかどうかを残します。ParseReport は壊れた出力を黙って直して成功するので、
 	// ここで見ないと**効いているのか出番が無いのか区別が付きません。**
 	// モデルがどのくらいの頻度で壊すかは運用で追う価値があります。
-	raw := []byte(final)
+	raw := []byte(final.text)
 	cleaned := review.SanitizeJSON(raw)
 	if !bytes.Equal(cleaned, raw) {
 		slog.WarnContext(ctx, "モデルの出力が壊れていたので補修しました",
 			"before_bytes", len(raw), "after_bytes", len(cleaned),
-			"response_head", truncateForLog(final, repairLogHead))
+			"response_head", headForLog(final.text, repairLogHead))
 	}
 
 	report, err := review.ParseReport(cleaned)
@@ -195,10 +207,12 @@ func (r *Reviewer) ReviewWorkspace(ctx context.Context, modelName, prompt string
 		// エージェントレビューは十数分かかるので、失敗のたびに同じ時間を払って
 		// 再現を試みることになります（実際、モデルがエスケープしていない
 		// バックスラッシュを excerpt に入れて落ちた例があります）。
+		//
+		// **頭と末尾の両方を残すのが要点です。** 頭だけだと、最後まで律儀に書いた末に
+		// 切れたのか、途中から同じ出力を繰り返して膨らんだのかが区別できません
+		// （212 KB の出力を頭 2 KB だけ見て判断できなかった例があります）。
 		slog.ErrorContext(ctx, "レビュー結果を解釈できませんでした",
-			"error", err,
-			"response_bytes", len(final),
-			"response_head", truncateForLog(final, maxLoggedResponse))
+			append([]any{"error", err}, final.logAttrs()...)...)
 		return review.Report{}, fmt.Errorf("adkagent: %w", err)
 	}
 
@@ -214,12 +228,12 @@ func (r *Reviewer) ReviewWorkspace(ctx context.Context, modelName, prompt string
 // 足りるためです。
 const repairLogHead = 300
 
-// maxLoggedResponse は、解析に失敗した応答をログへ残す上限です。
-// 全文を載せるとレビュー 1 件で数十 KB になり、原因の特定には冒頭で足ります。
+// maxLoggedResponse は、解析に失敗した応答をログへ残す上限です（頭・末尾それぞれに掛かります）。
+// 全文を載せるとレビュー 1 件で数百 KB になり、原因の特定には両端で足ります。
 const maxLoggedResponse = 2000
 
-// truncateForLog は、ログへ載せる応答を文字境界で切り詰めます。
-func truncateForLog(s string, limit int) string {
+// headForLog は、ログへ載せる応答の冒頭を文字境界で切り出します。
+func headForLog(s string, limit int) string {
 	if len(s) <= limit {
 		return s
 	}
@@ -229,22 +243,89 @@ func truncateForLog(s string, limit int) string {
 	return s[:limit] + "…(以下略)"
 }
 
-// collectFinalText は、エージェントを実行して最終応答のテキストを取り出します。
+// tailForLog は、ログへ載せる応答の末尾を文字境界で切り出します。
+//
+// 頭だけで全文が載る短い応答では空を返します。**同じ内容を 2 つのキーで二重に載せると、
+// 「末尾が付いている＝切れている」という見た目の手掛かりが消えます。**
+func tailForLog(s string, limit int) string {
+	if len(s) <= limit {
+		return ""
+	}
+	start := len(s) - limit
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return "(前略)…" + s[start:]
+}
+
+// finalResponse は、エージェントの最終応答から解釈に必要なものを取り出したものです。
+//
+// テキストだけでなく終了理由と使用量も持ち帰ります。**テキストだけを見ると、出力上限で
+// 切れた JSON は「モデルが壊れた JSON を返した」としか読めません。** 区別できるのは
+// 終了理由だけで、量の当たりを付けられるのは使用量だけです。
+type finalResponse struct {
+	text         string
+	finishReason genai.FinishReason
+	// usage は最終応答を出した 1 回ぶんの使用量です（ループ全体の合計ではありません）。
+	usage *genai.GenerateContentResponseUsageMetadata
+}
+
+// finishError は、モデルが最後まで出力しなかった場合にその理由を返します。
+//
+// 終了理由が空のときは成功として扱います。最終イベントに載るとは限らず（バックエンドや
+// 経路によって欠けます）、空を失敗にすると**正常なレビューまで落とします。**
+func (f finalResponse) finishError() error {
+	switch f.finishReason {
+	case "", genai.FinishReasonStop:
+		return nil
+	case genai.FinishReasonMaxTokens:
+		// 利用者がそのまま次の手を打てる文言にします。この失敗は Slack にも履歴にも
+		// 1 行しか残らないので、そこに対処が書かれていないと問い合わせになります。
+		return fmt.Errorf("adkagent: 出力が上限に達し、レビュー結果が途中で切れました (finish_reason: %s): 差分が大きすぎます。ブランチを分けるか、範囲を絞って再実行してください", f.finishReason)
+	default:
+		return fmt.Errorf("adkagent: モデルが最後まで出力しませんでした (finish_reason: %s)", f.finishReason)
+	}
+}
+
+// logAttrs は、失敗したときにログへ残す応答の情報です。
+func (f finalResponse) logAttrs() []any {
+	attrs := []any{
+		"finish_reason", string(f.finishReason),
+		"response_bytes", len(f.text),
+		"response_head", headForLog(f.text, maxLoggedResponse),
+	}
+	if tail := tailForLog(f.text, maxLoggedResponse); tail != "" {
+		attrs = append(attrs, "response_tail", tail)
+	}
+	if f.usage != nil {
+		// 出力トークン数は、切れたのが「上限に当たった」からなのかを裏付けます。
+		// 思考ぶんは出力の予算を食うので別に出します。
+		attrs = append(attrs,
+			"prompt_tokens", f.usage.PromptTokenCount,
+			"output_tokens", f.usage.CandidatesTokenCount,
+			"thoughts_tokens", f.usage.ThoughtsTokenCount,
+			"total_tokens", f.usage.TotalTokenCount)
+	}
+	return attrs
+}
+
+// collectFinal は、エージェントを実行して最終応答を取り出します。
 //
 // 複数の最終イベントが出る構成（サブエージェント併用時）に備えて最後の 1 件を採りますが、
 // 本実装はエージェント 1 体なので実質は唯一の最終応答です。
-func (r *Reviewer) collectFinalText(ctx context.Context, run *runner.Runner, prompt string) (string, error) {
+func (r *Reviewer) collectFinal(ctx context.Context, run *runner.Runner, prompt string) (finalResponse, error) {
 	msg := genai.NewContentFromText(prompt, genai.RoleUser)
 
-	var final strings.Builder
+	var final finalResponse
+	var text strings.Builder
 	for event, err := range run.Run(ctx, "reviewer", "review", msg, agent.RunConfig{}) {
 		if err != nil {
-			return "", fmt.Errorf("adkagent: エージェントの実行に失敗しました: %w", err)
+			return finalResponse{}, fmt.Errorf("adkagent: エージェントの実行に失敗しました: %w", err)
 		}
 		if event == nil || !event.IsFinalResponse() || event.Content == nil {
 			continue
 		}
-		final.Reset()
+		text.Reset()
 		for _, part := range event.Content.Parts {
 			// Parts は []*Part なので、要素の nil も event 自体と同じく防ぎます。
 			// ここで panic すると worker のリクエストごと落ち、review-queue は
@@ -252,14 +333,19 @@ func (r *Reviewer) collectFinalText(ctx context.Context, run *runner.Runner, pro
 			if part == nil {
 				continue
 			}
-			final.WriteString(part.Text)
+			text.WriteString(part.Text)
 		}
+		// テキストと同じイベントから採ります。別のイベントの終了理由を混ぜると、
+		// **採用していない応答の理由でレビューを落とすことになります。**
+		final.finishReason = event.FinishReason
+		final.usage = event.UsageMetadata
 	}
+	final.text = text.String()
 
-	if strings.TrimSpace(final.String()) == "" {
-		return "", review.ErrEmptyResponse
+	if strings.TrimSpace(final.text) == "" {
+		return finalResponse{}, review.ErrEmptyResponse
 	}
-	return final.String(), nil
+	return final, nil
 }
 
 // model は、モデル名に対応する model.LLM を返します（キャッシュあり）。
