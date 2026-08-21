@@ -188,3 +188,58 @@ func TestReviewWrapsAPIError(t *testing.T) {
 		t.Errorf("エラーにモデル名が含まれていません: %v", err)
 	}
 }
+
+// モデルが軽い順に並べて返しても、重い順で受け取れること。
+//
+// 画面も Slack も返ってきた順にそのまま出すため、ここで確定させないと
+// Blocker が Minor の後ろに埋もれます。
+func TestReviewOrdersFindingsBySeverity(t *testing.T) {
+	const unsorted = `{
+		"title": "レビュー結果",
+		"summary": "指摘が3件あります。",
+		"verdict": {"decision": "Blocker", "reason": "重大な指摘があります"},
+		"findings": [
+			{"severity": "Minor", "file": "a.go", "excerpt": "x := 1", "message": "軽微"},
+			{"severity": "Blocker", "file": "b.go", "excerpt": "panic()", "message": "重大"},
+			{"severity": "Major", "file": "c.go", "excerpt": "_ = err", "message": "中程度"}
+		]
+	}`
+
+	reviewer := newReviewerForTest(t, &fakeGenerator{text: unsorted})
+
+	report, err := reviewer.Review(context.Background(), "gemini-2.5-pro", "レビューしてください")
+	if err != nil {
+		t.Fatalf("予期しないエラー: %v", err)
+	}
+
+	want := []review.Severity{review.SeverityBlocker, review.SeverityMajor, review.SeverityMinor}
+	if len(report.Findings) != len(want) {
+		t.Fatalf("findings = %d, want %d", len(report.Findings), len(want))
+	}
+	for i, severity := range want {
+		if report.Findings[i].Severity != severity {
+			t.Errorf("findings[%d].Severity = %q, want %q", i, report.Findings[i].Severity, severity)
+		}
+	}
+}
+
+// 引用に生の改行が入っていても、レビューが失われないこと（補修は go-review-kit）。
+// **数分かけたレビューが解析失敗で丸ごと消える形**だったため、配線を固定します。
+func TestReviewRecoversFromRawNewlineInExcerpt(t *testing.T) {
+	const brokenReportJSON = "{\"title\":\"レビュー結果\",\"summary\":\"要約\"," +
+		"\"verdict\":{\"decision\":\"Minor\",\"reason\":\"r\"}," +
+		"\"findings\":[{\"severity\":\"Minor\",\"file\":\"a.md\",\"excerpt\":\"一行目\n二行目\",\"message\":\"m\"}]}"
+
+	reviewer := newReviewerForTest(t, &fakeGenerator{text: brokenReportJSON})
+
+	report, err := reviewer.Review(context.Background(), "gemini-2.5-pro", "レビューしてください")
+	if err != nil {
+		t.Fatalf("生の改行で失敗しました: %v", err)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("findings = %d, want 1", len(report.Findings))
+	}
+	if got := report.Findings[0].Excerpt; got != "一行目\n二行目" {
+		t.Errorf("excerpt = %q, 引用の中身が変わりました", got)
+	}
+}

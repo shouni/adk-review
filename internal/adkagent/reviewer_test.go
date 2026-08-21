@@ -63,3 +63,32 @@ func TestSanitizeDetectsRepairedOutput(t *testing.T) {
 		t.Error("壊れていない出力が補修されています")
 	}
 }
+
+// 行動指針はツール予算を数字で伝えること。**指示の数字が実際の予算とずれると、
+// モデルは残りがあるつもりで調査を続け、打ち切りに不意打ちされます。**
+func TestInstructionForCarriesToolBudget(t *testing.T) {
+	t.Parallel()
+
+	got := instructionFor(32)
+	for _, want := range []string{"32 回", "25 回"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("instructionFor(32) missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "%!") {
+		t.Errorf("書式が埋まっていません:\n%s", got)
+	}
+}
+
+// まとめに入る目安は上限の 8 割。予算が極端に小さくても 0 回にはしません
+// （0 だと「最初の 1 回を呼ぶ前にまとめろ」という指示になります）。
+func TestWrapUpAfter(t *testing.T) {
+	t.Parallel()
+
+	tests := map[int64]int64{32: 25, 10: 8, 5: 4, 1: 1, 0: 1}
+	for in, want := range tests {
+		if got := wrapUpAfter(in); got != want {
+			t.Errorf("wrapUpAfter(%d) = %d, want %d", in, got, want)
+		}
+	}
+}

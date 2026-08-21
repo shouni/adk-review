@@ -76,5 +76,8 @@ func (r *GeminiReviewer) Review(ctx context.Context, model, prompt string) (revi
 			"error", err, "response_bytes", len(raw))
 		return review.Report{}, fmt.Errorf("gemini: %w", err)
 	}
+
+	// エージェント側と同じく、指摘の並びはここで確定させます（理由は adkagent 側のコメント）。
+	report.SortFindings()
 	return report, nil
 }
