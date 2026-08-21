@@ -10,11 +10,13 @@ import (
 
 // reviewData はレビュープロンプトのテンプレートに渡すデータ構造です。
 // FindingsFormat/VerdictFormat は、全モードのプロンプトで共有される、AIの構造化出力
-// (findings配列・verdictオブジェクト)のフォーマット説明です。
+// (findings配列・verdictオブジェクト)のフォーマット説明です。FindingPolicy は、
+// モードによらず同じ指摘の方針です。
 type reviewData struct {
 	DiffContent    string
 	FindingsFormat string
 	VerdictFormat  string
+	FindingPolicy  string
 }
 
 // promptBuilder は、フォーマット済みのプロンプトを作成するためのインターフェース
@@ -27,6 +29,7 @@ type PromptAdapter struct {
 	reviewBuilder  promptBuilder
 	findingsFormat string
 	verdictFormat  string
+	findingPolicy  string
 }
 
 // NewPromptAdapter は動的に読み込んだテンプレートを使用して Builder を構築します。
@@ -51,10 +54,16 @@ func NewPromptAdapter() (*PromptAdapter, error) {
 		return nil, fmt.Errorf("判定フォーマットの読み込みに失敗: %w", err)
 	}
 
+	findingPolicy, err := assets.LoadFindingPolicy()
+	if err != nil {
+		return nil, fmt.Errorf("指摘方針の読み込みに失敗: %w", err)
+	}
+
 	return &PromptAdapter{
 		reviewBuilder:  review,
 		findingsFormat: findingsFormat,
 		verdictFormat:  verdictFormat,
+		findingPolicy:  findingPolicy,
 	}, nil
 }
 
@@ -64,6 +73,7 @@ func (pa *PromptAdapter) Generate(mode, diff string) (string, error) {
 		DiffContent:    diff,
 		FindingsFormat: pa.findingsFormat,
 		VerdictFormat:  pa.verdictFormat,
+		FindingPolicy:  pa.findingPolicy,
 	}
 	prompt, err := pa.reviewBuilder.Build(mode, data)
 	if err != nil {

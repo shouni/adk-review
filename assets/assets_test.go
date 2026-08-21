@@ -112,6 +112,37 @@ func TestLoadVerdictFormat(t *testing.T) {
 	}
 }
 
+func TestLoadFindingPolicy(t *testing.T) {
+	got, err := LoadFindingPolicy()
+	if err != nil {
+		t.Fatalf("LoadFindingPolicy failed: %v", err)
+	}
+	// 行番号の算出と出力言語は、写しを作らずここ 1 箇所に置く決まりです。
+	for _, want := range []string{"hunk", "findings", "日本語"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("LoadFindingPolicy() missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// 共通の方針は partials に 1 つだけ置きます。プロンプト側へ写しが戻ると、
+// 直したつもりが 1 モードだけ古いまま残ります。
+func TestPromptsDoNotDuplicateSharedPolicy(t *testing.T) {
+	prompts, err := LoadPrompts()
+	if err != nil {
+		t.Fatalf("LoadPrompts failed: %v", err)
+	}
+
+	for key, body := range prompts {
+		if !strings.Contains(body, "{{.FindingPolicy}}") {
+			t.Errorf("%s: 共通の指摘方針が展開されていません", key)
+		}
+		if strings.Contains(body, "hunk") {
+			t.Errorf("%s: 行番号の算出規則がプロンプトに写されています", key)
+		}
+	}
+}
+
 func TestEngineFor(t *testing.T) {
 	engine, err := EngineFor("novel")
 	if err != nil {

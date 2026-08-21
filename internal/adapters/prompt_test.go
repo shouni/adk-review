@@ -28,9 +28,10 @@ func TestPromptAdapter_GenerateReview(t *testing.T) {
 				t.Fatalf("GenerateReview(%q) failed: %v", mode.Key, err)
 			}
 
-			// 共有パーシャル(findings_format.md / verdict_format.md)が
+			// 共有パーシャル(findings_format.md / verdict_format.md /
+			// finding_policy.md)が
 			// テンプレート実行時に正しく展開されていること
-			for _, want := range []string{"findings", "verdict", "decision", "reason", "evidence"} {
+			for _, want := range []string{"findings", "verdict", "decision", "reason", "evidence", "hunk", "日本語"} {
 				if !strings.Contains(prompt, want) {
 					t.Errorf("GenerateReview(%q) result missing %q\n--- prompt ---\n%s", mode.Key, want, prompt)
 				}

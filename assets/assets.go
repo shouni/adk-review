@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/shouni/go-prompt-kit/frontmatter"
@@ -202,6 +203,21 @@ func LoadFindingsFormat() (string, error) {
 // 共通テキストを読み込みます。
 func LoadVerdictFormat() (string, error) {
 	return loadPartial("verdict_format.md")
+}
+
+// LoadFindingPolicy は、全レビューモードで共通の指摘の方針を読み込みます。
+//
+// 行番号の算出・軽微な指摘のまとめ方・出力言語は、モードが変わっても同じ決まりです。
+// モードごとのプロンプトに写しを置くと、直したつもりが 1 モードだけ古いまま残ります。
+// モード固有の方針（何を優先するか、何に踏み込まないか）は各プロンプトに残します。
+func LoadFindingPolicy() (string, error) {
+	policy, err := loadPartial("finding_policy.md")
+	if err != nil {
+		return "", err
+	}
+	// 末尾の改行を落とします。この断片は箇条書きの**途中**に差し込まれるので、残すと
+	// 空行が入り、後ろに続くモード固有の方針が別のリストとして分かれて見えます。
+	return strings.TrimRight(policy, "\n"), nil
 }
 
 func loadPartial(name string) (string, error) {
