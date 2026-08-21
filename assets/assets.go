@@ -47,6 +47,20 @@ const (
 	EngineAgent Engine = "agent"
 )
 
+// ExcerptStyle は、指摘の引用（excerpt / suggestion）を画面でどう見せるかです。
+//
+// モードによって引用の中身が別物になります。code なら等幅で読むソースコードですが、
+// novel / article では日本語の地の文です。同じ体裁で出すと、原稿の引用がコードに見えます。
+type ExcerptStyle string
+
+// 引用の見せ方です。
+const (
+	// ExcerptProse は、地の文としての引用です（本文フォント・明るい背景）。
+	ExcerptProse ExcerptStyle = "prose"
+	// ExcerptCode は、ソースコードとしての引用です（等幅・暗い背景）。
+	ExcerptCode ExcerptStyle = "code"
+)
+
 // ModeMetadata は、プロンプト冒頭の front matter に書くモードの説明です。
 // 兄弟アプリと同じ方式で、**説明の置き場をプロンプト自身にします。**
 //
@@ -66,6 +80,15 @@ type ModeMetadata struct {
 	// **どのモードをどう実行するかはプロンプト資産側の宣言です。** 依頼のたびに選ぶ
 	// 性質のものではないため、フォームには出しません。
 	Engine Engine `yaml:"engine"`
+	// Excerpt は、指摘の引用を画面でどう見せるかです。空なら ExcerptProse 扱いです。
+	//
+	// engine と同じく**モードを足す人がプロンプト側で宣言します。** 画面側に
+	// 「code なら等幅」といった一覧を持たせると、モードを足したときに
+	// prompts/<mode>.md を置くだけでは済まなくなります。
+	//
+	// 既定を prose にしているのは、このアプリの主対象が原稿だからです。宣言を忘れた
+	// モードがコード扱いで表示されるより、地の文として出るほうが被害が小さくなります。
+	Excerpt ExcerptStyle `yaml:"excerpt"`
 }
 
 // Mode は、フォームに出す 1 モードです。
@@ -92,6 +115,14 @@ func (m Mode) EngineKind() Engine {
 		return EngineSingle
 	}
 	return m.Engine
+}
+
+// ExcerptKind は、そのモードの引用の見せ方を返します。
+func (m Mode) ExcerptKind() ExcerptStyle {
+	if m.Excerpt == "" {
+		return ExcerptProse
+	}
+	return m.Excerpt
 }
 
 // promptSet は、プロンプトの本文と、front matter から組み立てたモード情報です。
@@ -133,6 +164,14 @@ var loadModes = sync.OnceValues(func() (promptSet, error) {
 		case "", EngineSingle, EngineAgent:
 		default:
 			return promptSet{}, fmt.Errorf("プロンプト %q の engine 指定が不正です: %q（single か agent）", key, meta.Engine)
+		}
+
+		// 綴り違いは engine と同じく起動時に落とします。実行時に既定へ落とすと、
+		// コードとして見せるつもりのモードが黙って地の文で表示され続けます。
+		switch meta.Excerpt {
+		case "", ExcerptProse, ExcerptCode:
+		default:
+			return promptSet{}, fmt.Errorf("プロンプト %q の excerpt 指定が不正です: %q（prose か code）", key, meta.Excerpt)
 		}
 
 		modes[key] = Mode{Key: key, ModeMetadata: meta}
@@ -218,6 +257,24 @@ func ResolveEngine(mode, override string) (Engine, error) {
 		}
 	}
 	return EngineFor(mode)
+}
+
+// ExcerptStyleFor は、モードの引用の見せ方を返します。
+//
+// **未知のモードでもエラーにしません。** 呼ぶのは履歴の詳細ページで、履歴には
+// 過去に実行したモード名がそのまま残ります。プロンプトを消したり改名したりしたあとに
+// 過去のレビューを開けなくなるのは、表示の都合として重すぎます。
+func ExcerptStyleFor(mode string) ExcerptStyle {
+	set, err := loadModes()
+	if err != nil {
+		return ExcerptProse
+	}
+
+	m, ok := set.modes[mode]
+	if !ok {
+		return ExcerptProse
+	}
+	return m.ExcerptKind()
 }
 
 // EngineFor は、モードを実行するレビューエンジンを返します。

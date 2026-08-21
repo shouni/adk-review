@@ -3,6 +3,7 @@ label: "技術記事レビュー"
 direction: "技術記事・ドキュメントの差分を、正確性と読みやすさの観点でレビューします"
 use_when: "公開前の技術記事や README・設計ドキュメントの原稿"
 engine: agent
+excerpt: prose
 ---
 # 役割
 

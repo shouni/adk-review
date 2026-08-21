@@ -16,3 +16,59 @@ body { background-color: #fcfdfb; }
 
 /* フッターの装飾 */
 footer hr { border-top: 1px solid #dee2e6; width: 50%; margin: 2rem auto; }
+
+/* 指摘の引用（excerpt）と修正案。
+   見せ方はモードで分かれます（プロンプトの front matter の excerpt が宣言し、
+   テンプレートの excerptClass がクラスへ写します）。code は等幅の暗い背景、
+   novel / article は地の文としての引用です。**同じ体裁で出すと、原稿の引用が
+   コードに見えます。** このアプリの主対象は原稿なので、そこは分けます。
+
+   どちらも折り返しを既定にします。横スクロールにすると、1 件読むたびにカードの中を
+   左右へ動かすことになります。インデントは残すので、コードでもネストの深さは読めます。 */
+.code-block,
+.quote-block {
+    margin-bottom: 0;
+    padding: 0.85rem 1rem;
+    border-radius: 0.5rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    /* 長い引用でページが埋まらないように、一定の高さで内側スクロールへ切り替えます。 */
+    max-height: 24rem;
+    overflow-y: auto;
+}
+
+/* コードとしての引用。配色はエディタテーマ Tokyo Night に寄せています。
+   ページ全体が明るいので、引用だけを沈ませると「モデルが引いてきた原文」と
+   「モデルが書いた文章」の境目が一目で分かります。 */
+.code-block {
+    background-color: #1a1b26;
+    color: #c0caf5;
+    border: 1px solid #292e42;
+    /* 本文と同じ 16px です。引用はモデルが判断の根拠にした原文で、いちばん確かめたい
+       ところなので、それについて書かれた解説より小さくしません。13px まで落とすと、
+       日本語混じりのコードが解説より読みにくくなり、確認する側の視線が本文へ逃げます。 */
+    font-size: 1rem;
+    line-height: 1.7;
+    /* 既定の 8 は、Go のようにタブで字下げするコードだと画面の半分が余白になります。 */
+    tab-size: 4;
+}
+
+/* 選択範囲も暗い背景に合わせます（既定の淡い青は文字が沈みます）。 */
+.code-block ::selection,
+.code-block::selection {
+    background-color: #33467c;
+    color: #c0caf5;
+}
+
+/* 地の文としての引用。原稿を読む目で読めるように、本文と同じフォント・同じ大きさにし、
+   行間だけ広げます。左の線は、引用であることを一目で示すためのものです。 */
+.quote-block {
+    background-color: #fbfbf8;
+    color: #212529;
+    border: 1px solid #e7e9e3;
+    border-left: 3px solid var(--zunda-green);
+    /* pre の既定は等幅です。地の文には本文のフォントを継がせます。 */
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1.9;
+}

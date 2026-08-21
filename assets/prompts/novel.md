@@ -3,6 +3,7 @@ label: "小説原稿レビュー"
 direction: "小説原稿の差分を、設定の整合性と読者体験の観点でレビューします"
 use_when: "Git で管理している小説・物語の原稿。章を書き足したとき"
 engine: agent
+excerpt: prose
 ---
 # 役割
 

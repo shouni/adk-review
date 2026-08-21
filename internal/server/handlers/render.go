@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/shouni/go-job-kit/jobstatus"
@@ -81,7 +82,59 @@ func templateFuncs() template.FuncMap {
 		"decisionLabel": decisionLabel,
 		"decisionClass": decisionClass,
 		"severityClass": severityClass,
+		"codeText":      codeText,
+		"excerptClass":  excerptClass,
 	}
+}
+
+// 引用ブロックの CSS クラスです。見た目そのものは app.css が持ちます。
+const (
+	codeBlockClass  = "code-block"
+	quoteBlockClass = "quote-block"
+)
+
+// excerptClass は、モードに応じた引用ブロックのクラスを返します。
+//
+// 何をどう見せるかの宣言はプロンプト側（front matter の excerpt）にあります。
+// ここでモード名を条件分岐すると、モードを足すたびに画面側も直すことになり、
+// 「prompts/<mode>.md を置くだけで増える」という仕組みが崩れます。
+func excerptClass(mode string) string {
+	if assets.ExcerptStyleFor(mode) == assets.ExcerptCode {
+		return codeBlockClass
+	}
+	return quoteBlockClass
+}
+
+// codeText は、指摘の引用（excerpt）と修正案を表示用に整えます。
+//
+// ★ モデルは JSON の文字列値にも Markdown の癖を持ち込み、コードフェンスごと
+// excerpt へ入れてくることがあります。<pre> へそのまま流すと ``` が本文として見え、
+// 「モデルの出力の生々しさ」がそのまま画面に出ます。全体が 1 つのフェンスで
+// 囲まれている場合だけ剥がし、中に出てくるフェンスは内容として残します。
+//
+// 前後の空行も落とします。<pre> は空行をそのまま高さにするので、中身の無い帯が
+// 引用の上下に残ります（モデルは引用の前後に改行を付けがちです）。
+func codeText(s string) string {
+	lines := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
+	lines = trimBlankLines(lines)
+
+	if len(lines) >= 2 &&
+		strings.HasPrefix(strings.TrimSpace(lines[0]), "```") &&
+		strings.TrimSpace(lines[len(lines)-1]) == "```" {
+		lines = trimBlankLines(lines[1 : len(lines)-1])
+	}
+	return strings.Join(lines, "\n")
+}
+
+// trimBlankLines は、前後の空白だけの行を落とします。
+func trimBlankLines(lines []string) []string {
+	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }
 
 // formatTime は日本時間で表示します。ゼロ値は空欄にします
