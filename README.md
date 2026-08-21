@@ -202,7 +202,7 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 | `GOOGLE_CLIENT_ID` | OAuth クライアント ID（リダイレクト URI は `<SERVICE_URL>/auth/callback`） | `xxxx.apps.googleusercontent.com` |
 | `GOOGLE_CLIENT_SECRET` | OAuth シークレット | `GOCSPX-xxxx...` |
 | `SESSION_SECRET` | セッションの HMAC 署名用シークレット | `openssl rand -base64 32` |
-| `SESSION_ENCRYPT_KEY` | セッションの AES 暗号化用シークレット（16/24/32 バイト） | `openssl rand -base64 32` |
+| `SESSION_ENCRYPT_KEY` | セッションの AES 暗号化用シークレット（16/24/32 バイト。長さが違うと起動時に落ちます） | `openssl rand -base64 24`（32 文字になります） |
 | `ALLOWED_EMAILS` / `ALLOWED_DOMAINS` | アクセスを許可するメールまたはドメイン。**どちらか一方は必要**（両方空だと誰もログインできません） | `user@example.com,user2@example.com` / `example.com` |
 
 ### 2. 必要なIAMロールの設定
@@ -230,35 +230,12 @@ IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必�
 
 ---
 
-### 3. ローカルでの起動
+### 3. 役割ごとに生えるルート
 
-`SERVER_ROLE=both` で 1 プロセスに両面を持たせます。Vertex AI を呼ぶため、
-事前に ADC（`gcloud auth application-default login`）が要ります。
-
-```bash
-export SERVER_ROLE=both
-export SERVICE_URL=http://localhost:8080
-# 三段のタイムアウトはデプロイ設定（Terraform）が唯一の出どころなので、既定値がありません。
-export TASK_DISPATCH_DEADLINE=10m
-export PIPELINE_TIMEOUT=5m
-export GCP_PROJECT_ID=your-project
-export GCP_LOCATION_ID=asia-northeast1
-export GCS_REVIEW_BUCKET=your-review-bucket
-export GEMINI_MODELS=gemini-2.5-flash,gemini-2.5-pro
-export CLOUD_TASKS_QUEUE_ID=review-queue
-export TASK_CALLER_SERVICE_ACCOUNT_EMAIL=adk-review-web-runner@your-project.iam.gserviceaccount.com
-export ALLOWED_TASK_SERVICE_ACCOUNTS=$TASK_CALLER_SERVICE_ACCOUNT_EMAIL
-export GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...
-export SESSION_SECRET=$(openssl rand -base64 32)
-export SESSION_ENCRYPT_KEY=$(openssl rand -base64 24 | cut -c1-32)
-export ALLOWED_EMAILS=you@example.com
-
-go run .
-```
-
-不足している設定があれば起動時に変数名付きで落ちるので、エラーに出た順に足していけます。
-
-**役割ごとに生えるルート:**
+ローカルで両面を 1 プロセスに持たせる `SERVER_ROLE=both` は残していますが、**起動手順は
+載せません。Cloud Tasks は localhost へ配送できないため、依頼を送ってもレビューは実行されず、
+履歴が queued のまま残ります**（`review-queue` は `max_attempts = 1` で再試行も来ません）。
+ロジックの確認は `go test ./... -race`、画面の確認はテンプレートを直接描くのが早いです。
 
 | ルート | メソッド | web | worker | 説明 |
 | :--- | :--- | :---: | :---: | :--- |

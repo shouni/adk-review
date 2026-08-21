@@ -24,7 +24,10 @@ golangci-lint run ./...
 gofmt -l .              # CI は出力が空であることを要求します
 ```
 
-ローカル起動は README の「3. ローカルでの起動」を参照。`SERVER_ROLE=both` です。
+`SERVER_ROLE=both` でローカルに両面を持たせられますが、**レビューの実行までは通りません。**
+Cloud Tasks は localhost へ配送できず（`buildTaskEnqueuer` にローカル用の抜け道はありません）、
+`max_attempts = 1` なので依頼は queued のまま消えます。README にも起動手順は載せていません。
+確認はテストで行ってください。
 
 ## Key invariants
 
