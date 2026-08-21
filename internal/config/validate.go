@@ -76,7 +76,7 @@ func (c *Config) validateWebConfig() error {
 
 	// LocationID はそのキューが属するリージョンです。使うのは builder/task.go の
 	// タスク投入だけで、Gemini は adapters.geminiLocationID ("global") 固定のため
-	// worker 面では要りません。ap-infra が両ロールへ渡しますが、アプリ側に既定値は
+	// worker 面では要りません。インフラ管理リポジトリが両ロールへ渡しますが、アプリ側に既定値は
 	// 置きません（プレースホルダで起動が通ると、失敗するのはタスク投入時になります）。
 	if c.GCP.LocationID == "" {
 		return fmt.Errorf("GCP_LOCATION_ID が設定されていません（Cloud Tasks のキューが属するリージョンです。例: asia-northeast1）")
