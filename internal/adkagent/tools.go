@@ -24,6 +24,16 @@ const (
 	maxSearchHits    = 100
 	maxSearchByteLen = 1 * 1024 * 1024 // これより大きいファイルは検索対象から外します
 	maxSearchFiles   = 2000            // 1 回の検索で開くファイル数の上限
+
+	// ヒット数だけでは返却量を抑えられません。minify 済みの 1 行が 1 MiB あれば、
+	// 100 ヒットで 100 MiB のツール結果になり、モデルのコンテキストとレイテンシと
+	// API 課金を一度に食い潰します。1 ヒットぶんと全体の両方にバイト上限を置きます。
+	maxHitBytes          = 2 * 1024
+	maxSearchResultBytes = 64 * 1024
+
+	// query の長さの上限です。検索語を決めるのはモデルなので、リポジトリ内の文章に
+	// 引きずられて異常に長い query を作ることがあり得ます。
+	maxQueryBytes = 200
 )
 
 // toolbox は、1 回のレビュー実行に紐付くワークスペース参照ツール一式です。
@@ -54,7 +64,7 @@ func newTools(root string, budget int64) ([]tool.Tool, error) {
 		Name: "read_file",
 		Description: "作業ディレクトリ内のファイルを読みます。パスは作業ディレクトリからの相対パスで指定します。" +
 			"差分に含まれないファイル（前後の章、関連コード）の確認に使ってください。",
-	}, tb.readFile)
+	}, tb.readFileTool)
 	if err != nil {
 		return nil, fmt.Errorf("read_file の構築に失敗しました: %w", err)
 	}
@@ -63,7 +73,7 @@ func newTools(root string, budget int64) ([]tool.Tool, error) {
 		Name: "list_files",
 		Description: "作業ディレクトリ内のファイル一覧を返します。dir を省略するとルートから列挙します。" +
 			"リポジトリの構成を把握するために最初に呼ぶことを推奨します。",
-	}, tb.listFiles)
+	}, tb.listFilesTool)
 	if err != nil {
 		return nil, fmt.Errorf("list_files の構築に失敗しました: %w", err)
 	}
@@ -72,7 +82,7 @@ func newTools(root string, budget int64) ([]tool.Tool, error) {
 		Name: "search_text",
 		Description: "作業ディレクトリ内の全テキストファイルから文字列を検索し、ファイル名・行番号付きで返します。" +
 			"登場人物名・用語・関数名などが他のどこに現れるかの確認に使ってください（大文字小文字は区別しません）。",
-	}, tb.searchText)
+	}, tb.searchTextTool)
 	if err != nil {
 		return nil, fmt.Errorf("search_text の構築に失敗しました: %w", err)
 	}
@@ -113,6 +123,20 @@ func (t *toolbox) spend() bool {
 func (t *toolbox) trace(ctx context.Context, tool string, attrs ...any) {
 	slog.InfoContext(ctx, "エージェントがツールを呼びました",
 		append([]any{"tool", tool, "remaining", t.remaining.Load()}, attrs...)...)
+}
+
+// cancelErr は、走査が終わった理由が context のキャンセル・締切だった場合に、その原因を
+// Go の error として返します。
+//
+// ツールの失敗は基本的に Error フィールドへ載せてモデルに判断させますが（budgetExhaustedMsg
+// の項を参照）、キャンセルだけは例外です。**実行そのものが終わっているのでリカバリーの
+// 余地が無く**、途中まで走った結果を正常な戻り値として返すと「探したが見つからなかった」
+// と区別が付かなくなります。
+func cancelErr(ctx context.Context, tool string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("adkagent: %s を中断しました: %w", tool, err)
+	}
+	return nil
 }
 
 // resolve は、相対パスを root 配下の絶対パスへ解決します。
@@ -157,7 +181,15 @@ type readFileResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
-func (t *toolbox) readFile(toolCtx agent.Context, args readFileArgs) (readFileResult, error) {
+// readFileTool は ADK へ渡すハンドラです。functiontool が要求する引数型は agent.Context
+// ですが、ツール本体が使うのはその context.Context としての側面（キャンセルとログ）だけです。
+// 本体を素の context.Context で受けておくと、テストから agent.Context の実装を用意せずに
+// 呼べます。list_files / search_text も同じ形です。
+func (t *toolbox) readFileTool(toolCtx agent.Context, args readFileArgs) (readFileResult, error) {
+	return t.readFile(toolCtx, args)
+}
+
+func (t *toolbox) readFile(toolCtx context.Context, args readFileArgs) (readFileResult, error) {
 	if !t.spend() {
 		return readFileResult{Error: budgetExhaustedMsg}, nil
 	}
@@ -193,7 +225,10 @@ func (t *toolbox) readFile(toolCtx agent.Context, args readFileArgs) (readFileRe
 
 // truncateAtRune は、limit を超えない範囲で最も後ろの文字境界を返します。
 // content は utf8.Valid 済みであることを前提とします。
-func truncateAtRune(content []byte, limit int) int {
+//
+// []byte（read_file の中身）と string（search_text のヒット行）の両方から呼ぶため型
+// パラメータにしています。どちらも中身はバイト列で、判定に使うのは添字だけです。
+func truncateAtRune[T ~[]byte | ~string](content T, limit int) int {
 	if len(content) <= limit {
 		return len(content)
 	}
@@ -217,7 +252,11 @@ type listFilesResult struct {
 	Error     string   `json:"error,omitempty"`
 }
 
-func (t *toolbox) listFiles(toolCtx agent.Context, args listFilesArgs) (listFilesResult, error) {
+func (t *toolbox) listFilesTool(toolCtx agent.Context, args listFilesArgs) (listFilesResult, error) {
+	return t.listFiles(toolCtx, args)
+}
+
+func (t *toolbox) listFiles(toolCtx context.Context, args listFilesArgs) (listFilesResult, error) {
 	if !t.spend() {
 		return listFilesResult{Error: budgetExhaustedMsg}, nil
 	}
@@ -240,10 +279,20 @@ func (t *toolbox) listFiles(toolCtx agent.Context, args listFilesArgs) (listFile
 		if err != nil {
 			return err
 		}
+		// キャンセルはエントリ単位で見ます。見ないと、レビュー全体の締切が過ぎたあとも
+		// 走査が終わるまで戻りません。
+		if err := toolCtx.Err(); err != nil {
+			return err
+		}
 		if d.IsDir() {
 			if d.Name() == ".git" {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		// 通常ファイル以外は並べません。read_file は root 外を指す symlink を拒否するので、
+		// 一覧に出すと「読めるはずなのに読めないファイル」をモデルに見せることになります。
+		if !d.Type().IsRegular() {
 			return nil
 		}
 		if len(files) >= maxListEntries {
@@ -258,6 +307,9 @@ func (t *toolbox) listFiles(toolCtx agent.Context, args listFilesArgs) (listFile
 		return nil
 	})
 	if err != nil {
+		if cerr := cancelErr(toolCtx, "list_files"); cerr != nil {
+			return listFilesResult{}, cerr
+		}
 		return listFilesResult{Error: fmt.Sprintf("一覧の取得に失敗しました: %v", err)}, nil
 	}
 	return listFilesResult{Files: files, Truncated: truncated}, nil
@@ -276,28 +328,49 @@ type searchTextResult struct {
 	Error     string   `json:"error,omitempty"`
 }
 
-func (t *toolbox) searchText(toolCtx agent.Context, args searchTextArgs) (searchTextResult, error) {
+func (t *toolbox) searchTextTool(toolCtx agent.Context, args searchTextArgs) (searchTextResult, error) {
+	return t.searchText(toolCtx, args)
+}
+
+func (t *toolbox) searchText(toolCtx context.Context, args searchTextArgs) (searchTextResult, error) {
 	if !t.spend() {
 		return searchTextResult{Error: budgetExhaustedMsg}, nil
 	}
-	if strings.TrimSpace(args.Query) == "" {
+	query := strings.TrimSpace(args.Query)
+	if query == "" {
 		return searchTextResult{Error: "query が空です"}, nil
 	}
-	t.trace(toolCtx, "search_text", "query", args.Query)
+	if len(query) > maxQueryBytes {
+		return searchTextResult{Error: fmt.Sprintf("query が長すぎます（%d バイト、上限 %d バイト）", len(query), maxQueryBytes)}, nil
+	}
+	t.trace(toolCtx, "search_text", "query", query)
 
-	query := strings.ToLower(args.Query)
+	lowered := strings.ToLower(query)
 	var hits []string
 	truncated := false
 	scanned := 0
+	resultBytes := 0
 
 	err := filepath.WalkDir(t.root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			return err
+		}
+		// キャンセルはファイル単位で見ます。1 ファイルは maxSearchByteLen で頭打ちなので、
+		// 1 回のコールバックが締切を大きく踏み越えることはありません。
+		if err := toolCtx.Err(); err != nil {
 			return err
 		}
 		if d.IsDir() {
 			if d.Name() == ".git" {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		// ★ 通常ファイル以外（symlink・FIFO・デバイス）は開きません。**os.ReadFile は
+		// symlink を辿るため、ここを通すと root 外のファイルの中身がモデルの入力に入ります。**
+		// d.Info() が返すのはリンク自身の情報なので、下のサイズ検査も素通りします
+		// （read_file は resolve で塞いでいますが、こちらは WalkDir のパスを直接開きます）。
+		if !d.Type().IsRegular() {
 			return nil
 		}
 		// 走査したファイル数でも打ち切ります。ヒットが 1 件も無いとヒット上限が効かず、
@@ -312,8 +385,8 @@ func (t *toolbox) searchText(toolCtx agent.Context, args searchTextArgs) (search
 		if err != nil || info.Size() > maxSearchByteLen {
 			return nil
 		}
-		// path は WalkDir が t.root 配下から渡す実在パスです。
-		content, err := os.ReadFile(path) //nolint:gosec // 走査元が root 配下に限定済み
+		// path は WalkDir が t.root 配下から渡す通常ファイルのパスです。
+		content, err := os.ReadFile(path) //nolint:gosec // 走査元が root 配下の通常ファイルに限定済み
 		if err != nil || !utf8.Valid(content) {
 			return nil
 		}
@@ -327,20 +400,44 @@ func (t *toolbox) searchText(toolCtx agent.Context, args searchTextArgs) (search
 		lineNo := 0
 		for line := range strings.Lines(string(content)) {
 			lineNo++
-			line = strings.TrimRight(line, "\n")
-			if !strings.Contains(strings.ToLower(line), query) {
+			// 落とすのは改行だけです。TrimSpace までやるとインデントが消え、
+			// モデルから見て行の位置関係（ネストの深さ、箇条書きの階層）が読めなくなります。
+			line = strings.TrimRight(line, "\r\n")
+			if !strings.Contains(strings.ToLower(line), lowered) {
 				continue
 			}
 			if len(hits) >= maxSearchHits {
 				truncated = true
 				return filepath.SkipAll
 			}
-			hits = append(hits, fmt.Sprintf("%s:%d: %s", filepath.ToSlash(rel), lineNo, strings.TrimSpace(line)))
+			hit, cut := formatHit(filepath.ToSlash(rel), lineNo, line)
+			if cut {
+				truncated = true
+			}
+			// 総量の上限に当たったら、その 1 件は載せずに打ち切ります。
+			if resultBytes+len(hit) > maxSearchResultBytes {
+				truncated = true
+				return filepath.SkipAll
+			}
+			resultBytes += len(hit)
+			hits = append(hits, hit)
 		}
 		return nil
 	})
 	if err != nil {
+		if cerr := cancelErr(toolCtx, "search_text"); cerr != nil {
+			return searchTextResult{}, cerr
+		}
 		return searchTextResult{Error: fmt.Sprintf("検索に失敗しました: %v", err)}, nil
 	}
 	return searchTextResult{Hits: hits, Truncated: truncated}, nil
+}
+
+// formatHit は "path:line: 行の内容" 形式のヒットを組み立て、行を切り詰めたかを返します。
+// 切り詰めは文字境界で行い、切ったことが分かるよう末尾に省略記号を付けます。
+func formatHit(rel string, lineNo int, line string) (string, bool) {
+	if len(line) <= maxHitBytes {
+		return fmt.Sprintf("%s:%d: %s", rel, lineNo, line), false
+	}
+	return fmt.Sprintf("%s:%d: %s…", rel, lineNo, line[:truncateAtRune(line, maxHitBytes)]), true
 }
