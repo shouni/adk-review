@@ -44,8 +44,8 @@ Slack 通知も残りません。** `review-queue` は `max_attempts = 1` なの
 
 - 上二段の関係は `config.validateTimeouts` が起動時に検査します。
 - 三段目はアプリから見えないため、インフラ管理リポジトリの `precondition` が受け持ちます。
-- **フリートで唯一、三段とも短く取ってあります。** 単発レビューの実測が 10 秒未満で、
-  動画生成とは桁が違うためです。上限は「正常系の目標」ではなく「ハングを捕まえる網」です。
+- **フリートで唯一、三段とも短く取ってあります。** レビュー 1 件の実測が動画生成とは
+  桁違いに短いためです。上限は「正常系の目標」ではなく「ハングを捕まえる網」です。
 - エージェントレビューはツール呼び出しの回数だけ伸びます。実測が近づいたら
   `TASK_DISPATCH_DEADLINE` を伸ばしてください（**env なので再ビルドは不要です**。
   範囲の検査は gcp-kit が持っています）。
@@ -81,47 +81,33 @@ Slack 通知も残りません。** `review-queue` は `max_attempts = 1` なの
   という、いちばん気付きにくい形になります。
 - Duration や整数の書式エラーは既定値へ黙って落とさず、`LoadConfig` がエラーにします。
 
-### エンジンは 2 種類あり、既定はモードが宣言する
+### 出力スキーマはアプリ側で組み立てる
 
-モードは「何を見るか」、エンジンは「どこまで調べるか」を決めます。既定は
-`assets/prompts/*.md` の front matter の `engine`（現在は全モード `agent`）で、依頼ごとに
-フォームから上書きできます。
+`internal/adkagent/schema.go` が構造化出力のスキーマを持ちます。
 
-- 解決は `assets.ResolveEngine` の 1 箇所で、受付時（`validateReviewRequest`）と
-  実行時（`EngineRouter.Run`）の両方が同じ関数を通ります。
-- **解決できない指定は進行状況に記録しません。** 記録すると「存在しないエンジンで実行して
-  失敗した」という、実際には起きていない記録が履歴に残ります。
-
-### 出力スキーマは 2 つあり、意図的に別物
-
-`internal/adapters/gemini_schema.go`（単発）と `internal/adkagent/schema.go`（エージェント）は
-SDK の型が違うため別々に組み立てます。**統合しないでください。**
-
-- 差分は `findings[].evidence` の有無だけです。エージェントは作業ディレクトリを実際に
-  調べるので「どこを見て判断したか」を自己申告させる意味がありますが、差分しか見ない
-  単発レビュアーに出させると**根拠の捏造を促します**。
-- **プロンプトも同じ理由でエンジンごとに出し分けます。** `reviewData.Agent` が false のとき、
-  ツール（`read_file` / `list_files` / `search_text`）の指示と `evidence` の項目は
-  テンプレートから消えます。差分しか読めないレビュアーに「差分の外を確認した根拠」を
-  書かせると、**確認しようのない事柄について根拠を捏造させることになります。**
-  - 生成器は `adapters.PromptAdapter.For(engine)` が配ります。`review.PromptGenerator` の
-    `Generate` はモードと差分しか受け取らないため、**違いは生成器そのものを分けて表します。**
-  - そのため `pipeline.Deps.Prompts` は shared に置かず、`buildPipeline` が 2 本それぞれへ
-    設定します。shared へ戻すと、単発のパイプラインがエージェント用のプロンプトで走ります。
-  - 共有断片（`assets/partials/*.md`）は文字列として流し込まず、`_` 付きのテンプレート名で
-    本文と同じ集合に入れて `{{template "_finding_policy" .}}` で参照します。断片の側でも
-    `{{if .Agent}}` を書けるようにするためです。末尾改行は `prompts.WithTrimPartials` が
-    落とします（自前で `TrimRight` しないこと。断片は箇条書きの途中に入ります）。
 - 列挙値は `review.SeverityStrings` / `review.DecisionStrings`（ライブラリ）を直接使います。
   **アプリ側で `[]string` へ詰め替え直さないでください。** 写しが増えると、値を足したときに
   スキーマと検証が食い違い、モデルはスキーマ上正当な値を返すのにデコードで弾かれます
-  （症状は全レビューの失敗）。両パッケージにドリフト検知テストがあります。
+  （症状は全レビューの失敗）。ドリフト検知テストがあります。
+- `findings[].evidence` は、エージェントが作業ディレクトリを実際に調べるため
+  「どこを見て判断したか」を自己申告させるものです。**差分しか見ないレビュアーに
+  同じ項目を出させないでください。** 確認手段が無いまま根拠を求めると捏造を促します
+  （かつて単発エンジンを併設していた頃、プロンプトが実際にそれを要求していました）。
+
+### 共有断片は prompt-kit の partial として持つ
+
+`assets/partials/*.md` は文字列として流し込まず、`_` 付きのテンプレート名で本文と同じ
+集合に入れて `{{template "_finding_policy" .}}` で参照します（`assets.PromptTemplates`）。
+末尾改行は `prompts.WithTrimPartials` が落とします。**自前で `TrimRight` しないでください。**
+断片は箇条書きの途中に差し込まれるので、末尾改行が残るとそこだけリストが分かれます。
 
 ### genai SDK の隔離
 
 「genai SDK は `go-gemini-client` の外に出さない」というエコシステムの規約に対し、
 **ADK が `google.golang.org/genai` を直接要求するため例外が要ります。**
-その例外は `internal/adkagent` に閉じ込めてください。`go-review-kit` 自体は AI SDK を知りません。
+その例外は `internal/adkagent` に閉じ込めてください（`internal/adapters/ai.go` が
+`genai.ClientConfig` を組み立てる 1 箇所だけが窓口です）。`go-review-kit` 自体は
+AI SDK を知りません。
 
 ### AI は Vertex AI 経由のみ
 
@@ -162,7 +148,7 @@ Gemini のロケーションは `adapters.geminiLocationID`（`global`）に固�
 ```text
 internal/
   adkagent/   ADK エージェント（llmagent + ツール + 出力スキーマ）※ genai 直接依存はここだけ
-  adapters/   単発レビュアー / Git / Slack / 保存 / EngineRouter / パイプライン ACL
+  adapters/   Git / Slack / 保存 / プロンプト / パイプライン ACL
   app/        Container（依存の保持とライフサイクル）
   builder/    SERVER_ROLE に応じた組み立て
   config/     環境変数・既定値・起動時検証

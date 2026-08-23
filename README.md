@@ -38,12 +38,10 @@
   時間ではなく回数で打ち切ります
   （`AGENT_MAX_TOOL_CALLS`、既定 32）。上限に達したら「調査を切り上げて結論を出せ」と
   モデルへ伝わるので、締切超過ではなくレビューの完了に倒れます。
-* **単発レビュアーも残します**: 差分だけを 1 回投げる `GeminiReviewer`（`internal/adapters`）も
-  配線してあります。ADK は新しい依存なので、エージェント側が壊れてもデプロイなしで
-  UI から切り替えられる逃げ道を残す意味もあります。
 * **依存の隔離**: ADK は `google.golang.org/genai` を直接使うため、
   「genai SDK は `go-gemini-client` の外に出さない」というエコシステムの規約の
-  例外は `internal/adkagent` に閉じ込めます。`go-review-kit` 自体は AI SDK を知りません。
+  例外は `internal/adkagent` に閉じ込めます（窓口は `internal/adapters/ai.go` の 1 箇所）。
+  `go-review-kit` 自体は AI SDK を知りません。
 
 ---
 
@@ -68,11 +66,9 @@ Cloud Tasks 投入     ↘ status.json 記録 / Slack 通知
   Cloud Run サービスとしてデプロイします（兄弟アプリと同じ方式）。Web 面は
   `WORKER_URL` の worker サービスへタスクを投入します。ローカル開発は `SERVER_ROLE=both` で
   1 プロセスに両面を持たせます。
-* **エンジンの使い分け**: モードは「何を見るか」を、エンジンは「どこまで調べるか」を決めます。
-  既定はプロンプト冒頭の front matter に書く `engine`（`agent` / `single`。現在は全モード
-  `agent`）で、依頼ごとにフォームから上書きできます。急ぎの確認だけ単発へ倒す、
-  プロンプト調整時に同じ差分を両方で試す、といった使い方を想定しています。
-  実際にどちらで実行したかは `status.json` に残り、履歴の詳細画面に出ます。
+* **調査の深さは回数で決めます**: レビューは常にエージェントループで走ります。どこまで
+  調べるかは `AGENT_MAX_TOOL_CALLS`（ツール呼び出しの上限）で決まり、上限の 8 割を使うと
+  まとめに入るようエージェントへ伝えます。速く浅く済ませたい場合はこの数を下げます。
 
 ### 成果物の置き場所
 
@@ -109,7 +105,7 @@ adk-review/
 │   └── assets.go      #   - embed.FS の定義と front matter の解析
 ├── internal/
 │   ├── adkagent/      # 【頭脳】ADK エージェント（llmagent + ツール + 出力スキーマ）
-│   ├── adapters/      # 【接続】単発レビュアー / Git / Slack / 結果保存 / EngineRouter / パイプライン ACL
+│   ├── adapters/      # 【接続】Git / Slack / 結果保存 / プロンプト / パイプライン ACL
 │   ├── app/           # 【基盤】Container による依存の保持とライフサイクル管理
 │   ├── builder/       # 【構築】役割（SERVER_ROLE）に応じた初期化と組み立て
 │   ├── config/        # 【設定】環境変数・定数・バリデーション
@@ -129,15 +125,14 @@ adk-review/
 | 言語 | Go |
 | エージェント | [ADK for Go](https://github.com/google/adk-go)（`google.golang.org/adk/v2`） |
 | レビュードメイン・パイプライン・Git 差分 | [`go-review-kit`](https://github.com/shouni/go-review-kit) |
-| Gemini クライアント（単発レビュアー） | [`go-gemini-client`](https://github.com/shouni/go-gemini-client) |
 | プロンプトテンプレート | [`go-prompt-kit`](https://github.com/shouni/go-prompt-kit) |
 | ジョブ状態・履歴ページング | [`go-job-kit`](https://github.com/shouni/go-job-kit) |
 | 実行基盤 | Cloud Run / Cloud Tasks |
 | 認証・セッション | OAuth 2.0（[`gcp-kit`](https://github.com/shouni/gcp-kit)） |
 | I/O 抽象化 | [`go-remote-io`](https://github.com/shouni/go-remote-io)（GCS 操作） |
 
-**AI は Vertex AI 経由で呼びます。** エージェント（ADK のモデル層）も単発レビュアー
-（go-gemini-client）も `GCP_PROJECT_ID` ベースの認証で、API キー経路は配線していません。
+**AI は Vertex AI 経由で呼びます。** ADK のモデル層は `GCP_PROJECT_ID` ベースの認証で、
+API キー経路は配線していません。
 
 ---
 
@@ -216,7 +211,6 @@ IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必�
 - **web 面の SA**: GCS バケットの読み書き（受付記録・履歴表示・削除）、Cloud Tasks キューへの
   タスク投入と `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` を指定した OIDC トークンの発行（ActAs）
 - **worker 面の SA**: GCS バケットの読み書き（結果保存・進行状況）、Vertex AI の呼び出し
-  （単発・エージェントの両方がここを通ります）
 - 共通: 使用するシークレットの読み取り
 
 **ロール名を列挙していないのは、粒度が環境によって変わるためです。** 決め方だけ挙げておきます。
