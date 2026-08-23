@@ -11,9 +11,6 @@ import (
 
 // スキーマの列挙値は review パッケージの定義から組み立てます。両者が食い違うと、
 // モデルがスキーマ上は正当な値を返したのにデコードで弾かれる、という状態になります。
-//
-// ★ こちらは全モードの既定エンジン（assets/prompts/*.md の engine: agent）なので、
-// 単発レビュアー側（internal/adapters）と同じ検査をこちらにも置きます。
 func TestSchemaEnumsMatchDomain(t *testing.T) {
 	t.Parallel()
 

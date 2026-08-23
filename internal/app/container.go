@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"io"
 	"log/slog"
 
 	"github.com/shouni/go-remote-io/remoteio"
@@ -28,6 +29,10 @@ type Container struct {
 	// External Adapters
 	Notifier  review.Notifier
 	PromptGen review.PromptGenerator
+	// Closers は、組み立て時に開いた資源です。Container.Close がまとめて閉じます。
+	// Close が個々のフィールドを見ないのは、資源が増えたときに builder が append
+	// するだけで済ませるためです。
+	Closers []io.Closer
 }
 
 // TaskEnqueuer は、レビュー要求を非同期タスクとしてキューへ投入する役割です。
@@ -37,33 +42,24 @@ type TaskEnqueuer interface {
 }
 
 // RemoteIO は外部ストレージ操作に関するコンポーネントをまとめます。
-type RemoteIO struct {
-	Factory remoteio.IOFactory
-	Reader  remoteio.InputReader
-	Writer  remoteio.OutputWriter
-}
-
-// Close は、RemoteIO が保持する Factory などの内部リソースを解放します。
-func (r *RemoteIO) Close() error {
-	if r.Factory != nil {
-		return r.Factory.Close()
-	}
-	return nil
-}
+//
+// 実体は go-remote-io が持つ remoteio.Bundle です。同じ構造体と組み立て関数を
+// 各アプリが個別に持っていたものをライブラリへ引き取ったため、ここはアプリ内での
+// 呼び名を保つための別名だけになっています（rio.Reader などの参照はそのまま使えます）。
+type RemoteIO = remoteio.Bundle
 
 // Close は、Container が保持するすべての外部接続リソースを安全に解放します。
+//
+// エラーを返さないのは、呼び出し元が server.Run の defer 1 箇所きりで、返したところで
+// slog.Error 以外の行き先が無いためです。ここで必ず記録しておけば、cloudlog が
+// level を severity へマップするのでアラートにも乗ります。
 func (c *Container) Close() {
-	// RemoteIO のリソース解放を委譲
-	if c.RemoteIO != nil {
-		if err := c.RemoteIO.Close(); err != nil {
-			slog.Error("failed to close RemoteIO", "error", err)
+	for _, closer := range c.Closers {
+		if closer == nil {
+			continue
 		}
-	}
-
-	// TaskEnqueuer のリソース解放
-	if c.TaskEnqueuer != nil {
-		if err := c.TaskEnqueuer.Close(); err != nil {
-			slog.Error("failed to close task enqueuer", "error", err)
+		if err := closer.Close(); err != nil {
+			slog.Error("failed to close resource", "error", err)
 		}
 	}
 }

@@ -41,9 +41,6 @@ func (h *Handler) renderForm(w http.ResponseWriter, r *http.Request, status int,
 	if len(data.Models) == 0 {
 		data.Models = h.modelOptions(data.ModelName)
 	}
-	if len(data.Engines) == 0 {
-		data.Engines = engineOptions(data.Engine)
-	}
 	if data.CSRFToken == "" {
 		data.CSRFToken = CSRFTokenFromContext(r.Context())
 	}
@@ -87,22 +84,6 @@ func reviewModeOptions(ctx context.Context, selectedMode string) []ReviewModeOpt
 	return options
 }
 
-// engineOptions は、レビューエンジンの選択肢を返します。
-//
-// 既定（空値）を先頭に置くのは、モードが front matter で宣言した深さが通常は妥当で、
-// 上書きは例外だからです。選択肢に出しておくと、急ぎの確認や比較のときだけ倒せます。
-func engineOptions(selected string) []EngineOption {
-	options := []EngineOption{
-		{Value: "", Label: "モードの既定", Description: "モードごとに適した方法で実行します"},
-		{Value: string(assets.EngineAgent), Label: "エージェント", Description: "差分の外も調べます。深いが時間がかかります"},
-		{Value: string(assets.EngineSingle), Label: "単発", Description: "差分だけを見ます。速いが文脈は見ません"},
-	}
-	for i := range options {
-		options[i].Selected = options[i].Value == selected
-	}
-	return options
-}
-
 func (h *Handler) modelOptions(selectedModel string) []ModelOption {
 	models := h.configuredModels()
 	if len(models) == 0 {
@@ -139,12 +120,6 @@ func (h *Handler) validateReviewRequest(req domain.ReviewRequest) error {
 	// レビューモードの動的バリデーション
 	if !assets.IsValidMode(req.Mode) {
 		return fmt.Errorf("不正なレビューモードです: %s", req.Mode)
-	}
-
-	// エンジンの上書き指定は、実行時と同じ関数で受付時にも確かめます。
-	// 不正な値をタスクに載せると、ワーカーまで運ばれてから失敗します。
-	if _, err := assets.ResolveEngine(req.Mode, req.Engine); err != nil {
-		return err
 	}
 
 	if !slices.Contains(h.configuredModels(), req.ModelName) {

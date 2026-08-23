@@ -7,13 +7,12 @@ require (
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/uuid v1.6.0
 	github.com/shouni/gcp-kit v1.10.3
-	github.com/shouni/go-gemini-client v1.17.5
 	github.com/shouni/go-http-kit v1.8.4
 	github.com/shouni/go-job-kit v1.1.0
 	github.com/shouni/go-notify v1.2.5
-	github.com/shouni/go-prompt-kit v1.5.1
+	github.com/shouni/go-prompt-kit v1.5.2
 	github.com/shouni/go-remote-io v1.9.0
-	github.com/shouni/go-review-kit v1.6.0
+	github.com/shouni/go-review-kit v1.6.1
 	github.com/shouni/go-utils v1.6.0
 	github.com/shouni/netarmor v1.2.4
 	go.yaml.in/yaml/v3 v3.0.5
@@ -32,9 +31,9 @@ require (
 	cloud.google.com/go/monitoring v1.30.0 // indirect
 	cloud.google.com/go/storage v1.65.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
-	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.35.0 // indirect
-	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.59.0 // indirect
-	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.59.0 // indirect
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.36.0 // indirect
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.60.0 // indirect
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.60.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

@@ -20,10 +20,8 @@ type ReviewFormPageData struct {
 	FeatureBranch  string
 	ReviewMode     string
 	ModelName      string
-	Engine         string
 	ReviewModes    []ReviewModeOption
 	Models         []ModelOption
-	Engines        []EngineOption
 	CSRFToken      string
 	CSRFTokenField string
 	RepoURLPattern string
@@ -41,14 +39,6 @@ type ReviewModeOption struct {
 type ModelOption struct {
 	Value    string
 	Selected bool
-}
-
-// EngineOption はフォームに表示するレビューエンジンの選択肢です。
-type EngineOption struct {
-	Value       string
-	Label       string
-	Description string
-	Selected    bool
 }
 
 type reviewTaskEnqueuer interface {

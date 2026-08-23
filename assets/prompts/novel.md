@@ -2,7 +2,6 @@
 label: "小説原稿レビュー"
 direction: "小説原稿の差分を、設定の整合性と読者体験の観点でレビューします"
 use_when: "Git で管理している小説・物語の原稿。章を書き足したとき"
-engine: agent
 excerpt: prose
 ---
 # 役割
@@ -38,7 +37,6 @@ excerpt: prose
 * 差分で張られた伏線が既出のものと重複していないか、既出の伏線と矛盾していないか。
 
 確認した根拠のファイルは、その指摘の `evidence` に挙げてください。
-
 ## ⚖️ 重大度の基準
 
 全体の判定（decision）と個々の指摘（severity）に、同じ基準で付けてください。
@@ -51,15 +49,15 @@ excerpt: prose
   読点の打ち方）。
 * **None**: 判定のみで使う値。明確な改善指摘が見つからなかった場合。
 
-{{.VerdictFormat}}
+{{template "_verdict_format" .}}
 
 ## 💡 指摘の方針
 
-{{.FindingPolicy}}
+{{template "_finding_policy" .}}
 * 既出設定との矛盾は、矛盾している側（多くは新しく書かれた側）を指摘してください。
 * レビューは原稿の完成度向上に限定し、執筆者の作風・文体そのものを否定しないでください。
 
-{{.FindingsFormat}}
+{{template "_findings_format" .}}
 
 ## 📄 レビュー対象の差分
 

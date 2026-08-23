@@ -15,7 +15,14 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const promptDir = "prompts"
+const (
+	promptDir  = "prompts"
+	partialDir = "partials"
+
+	// partialPrefix は、共有断片をテンプレート名として登録するときの接頭辞です。
+	// go-prompt-kit の既定と同じ値で、この接頭辞が付いたものはモードとして公開されません。
+	partialPrefix = "_"
+)
 
 var (
 	// promptFiles はプロンプトテンプレートです。ディレクトリ内は現在プロンプトのみのため、
@@ -35,17 +42,6 @@ var (
 	// StaticFiles は、ブラウザへ配信するJavaScriptなどの静的ファイルを保持します。
 	//go:embed static
 	StaticFiles embed.FS
-)
-
-// Engine は、レビューモードが使うレビューエンジンです。
-type Engine string
-
-// レビューエンジンの種別です。
-const (
-	// EngineSingle は、差分だけを見る単発のレビューです。
-	EngineSingle Engine = "single"
-	// EngineAgent は、作業ディレクトリをツールで調べるエージェント型のレビューです。
-	EngineAgent Engine = "agent"
 )
 
 // ExcerptStyle は、指摘の引用（excerpt / suggestion）を画面でどう見せるかです。
@@ -76,14 +72,9 @@ type ModeMetadata struct {
 	Direction string `yaml:"direction"`
 	// UseWhen は、どういう対象のときに選ぶかです。
 	UseWhen string `yaml:"use_when"`
-	// Engine は、そのモードを実行するレビューエンジンです。空なら EngineSingle 扱いです。
-	//
-	// **どのモードをどう実行するかはプロンプト資産側の宣言です。** 依頼のたびに選ぶ
-	// 性質のものではないため、フォームには出しません。
-	Engine Engine `yaml:"engine"`
 	// Excerpt は、指摘の引用を画面でどう見せるかです。空なら ExcerptProse 扱いです。
 	//
-	// engine と同じく**モードを足す人がプロンプト側で宣言します。** 画面側に
+	// **モードを足す人がプロンプト側で宣言します。** 画面側に
 	// 「code なら等幅」といった一覧を持たせると、モードを足したときに
 	// prompts/<mode>.md を置くだけでは済まなくなります。
 	//
@@ -110,14 +101,6 @@ func (m Mode) DisplayName() string {
 	return m.Key
 }
 
-// EngineKind は、そのモードを実行するエンジンを返します。
-func (m Mode) EngineKind() Engine {
-	if m.Engine == "" {
-		return EngineSingle
-	}
-	return m.Engine
-}
-
 // ExcerptKind は、そのモードの引用の見せ方を返します。
 func (m Mode) ExcerptKind() ExcerptStyle {
 	if m.Excerpt == "" {
@@ -133,10 +116,10 @@ type promptSet struct {
 }
 
 // loadModes は、埋め込みプロンプトの本文と front matter の解析を最初の呼び出しで
-// 1度だけ行います。本文（LoadPrompts）とモード情報（AvailableModes / EngineFor）は
+// 1度だけ行います。本文（LoadPrompts）とモード情報（AvailableModes）は
 // 別の入口ですが、出どころは同じディレクトリです。
 //
-// 失敗するとすれば front matter の書式や engine の値のように毎回同じ結果になるものだけ
+// 失敗するとすれば front matter の書式や excerpt の値のように毎回同じ結果になるものだけ
 // なので、エラーごとキャッシュして再試行しません。
 //
 // 返すマップは呼び出し側で共有されます。書き換えないでください。
@@ -159,15 +142,7 @@ var loadModes = sync.OnceValues(func() (promptSet, error) {
 	for key := range bodies {
 		meta := metas[key]
 
-		// engine の綴り違いは起動時に落とします。実行時に既定へ落とすと、
-		// エージェントで動かすつもりのモードが黙って単発で動き続けます。
-		switch meta.Engine {
-		case "", EngineSingle, EngineAgent:
-		default:
-			return promptSet{}, fmt.Errorf("プロンプト %q の engine 指定が不正です: %q（single か agent）", key, meta.Engine)
-		}
-
-		// 綴り違いは engine と同じく起動時に落とします。実行時に既定へ落とすと、
+		// 綴り違いは起動時に落とします。実行時に既定へ落とすと、
 		// コードとして見せるつもりのモードが黙って地の文で表示され続けます。
 		switch meta.Excerpt {
 		case "", ExcerptProse, ExcerptCode:
@@ -192,40 +167,34 @@ func LoadPrompts() (map[string]string, error) {
 	return maps.Clone(set.bodies), nil
 }
 
-// LoadFindingsFormat は、レビュー指摘のJSONフォーマットを説明する共通テキストを読み込みます。
-// 全レビューモードのプロンプトで共有され、AIの構造化出力(findings配列)のスキーマに
-// 対応する項目を説明します。
-func LoadFindingsFormat() (string, error) {
-	return loadPartial("findings_format.md")
-}
-
-// LoadVerdictFormat は、判定結果のJSONフォーマット(verdictオブジェクト)を説明する
-// 共通テキストを読み込みます。
-func LoadVerdictFormat() (string, error) {
-	return loadPartial("verdict_format.md")
-}
-
-// LoadFindingPolicy は、全レビューモードで共通の指摘の方針を読み込みます。
+// PromptTemplates は、モードのプロンプト本文と共有断片を 1 つのテンプレート集として返します。
 //
-// 行番号の算出・軽微な指摘のまとめ方・出力言語は、モードが変わっても同じ決まりです。
-// モードごとのプロンプトに写しを置くと、直したつもりが 1 モードだけ古いまま残ります。
-// モード固有の方針（何を優先するか、何に踏み込まないか）は各プロンプトに残します。
-func LoadFindingPolicy() (string, error) {
-	policy, err := loadPartial("finding_policy.md")
+// 断片を "_" 付きのテンプレート名で同じ集合に入れるのは、本文から
+// {{template "_finding_policy" .}} で参照させるためです。**文字列として流し込むのをやめた
+// 理由は、末尾改行の始末をライブラリ（prompts.WithTrimPartials）へ渡すためです。** 断片は
+// 箇条書きの途中に差し込まれるので、末尾改行が残るとそこだけリストが分かれます。
+// テンプレートとして参照していれば、断片の側でも条件分岐やデータの参照を書けます。
+//
+// 断片は go-prompt-kit の partial として扱われるため、AvailableModes の一覧には出ません。
+func PromptTemplates() (map[string]string, error) {
+	bodies, err := LoadPrompts()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	// 末尾の改行を落とします。この断片は箇条書きの**途中**に差し込まれるので、残すと
-	// 空行が入り、後ろに続くモード固有の方針が別のリストとして分かれて見えます。
-	return strings.TrimRight(policy, "\n"), nil
-}
 
-func loadPartial(name string) (string, error) {
-	b, err := partialFiles.ReadFile("partials/" + name)
+	entries, err := partialFiles.ReadDir(partialDir)
 	if err != nil {
-		return "", fmt.Errorf("共有テンプレート '%s' の読み込みに失敗: %w", name, err)
+		return nil, fmt.Errorf("共有テンプレートの列挙に失敗: %w", err)
 	}
-	return string(b), nil
+	for _, e := range entries {
+		name := e.Name()
+		b, err := partialFiles.ReadFile(partialDir + "/" + name)
+		if err != nil {
+			return nil, fmt.Errorf("共有テンプレート '%s' の読み込みに失敗: %w", name, err)
+		}
+		bodies[partialPrefix+strings.TrimSuffix(name, ".md")] = string(b)
+	}
+	return bodies, nil
 }
 
 // AvailableModes は、埋め込まれたレビュープロンプトから利用可能なモードをキー順に返します。
@@ -259,22 +228,6 @@ func IsValidMode(mode string) bool {
 	return ok
 }
 
-// ResolveEngine は、モードの既定と依頼ごとの上書き指定から、実行するエンジンを決めます。
-//
-// 受付時（フォーム）と実行時（ワーカー）の両方から呼びます。判定を 2 か所に書くと、
-// 画面に出した内容と実際に走るエンジンが食い違う余地が生まれるためです。
-func ResolveEngine(mode, override string) (Engine, error) {
-	if override != "" {
-		switch Engine(override) {
-		case EngineSingle, EngineAgent:
-			return Engine(override), nil
-		default:
-			return "", fmt.Errorf("未知のレビューエンジンです: %q（single か agent）", override)
-		}
-	}
-	return EngineFor(mode)
-}
-
 // ExcerptStyleFor は、モードの引用の見せ方を返します。
 //
 // **未知のモードでもエラーにしません。** 呼ぶのは履歴の詳細ページで、履歴には
@@ -291,18 +244,4 @@ func ExcerptStyleFor(mode string) ExcerptStyle {
 		return ExcerptProse
 	}
 	return m.ExcerptKind()
-}
-
-// EngineFor は、モードを実行するレビューエンジンを返します。
-func EngineFor(mode string) (Engine, error) {
-	set, err := loadModes()
-	if err != nil {
-		return "", err
-	}
-
-	m, ok := set.modes[mode]
-	if !ok {
-		return "", fmt.Errorf("未知のレビューモードです: %q", mode)
-	}
-	return m.EngineKind(), nil
 }

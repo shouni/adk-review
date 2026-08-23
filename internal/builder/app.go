@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/shouni/go-http-kit/httpkit"
+	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-remote-io/remoteio/gcs"
 
 	"github.com/shouni/adk-review/internal/adapters"
@@ -39,7 +40,7 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 		return nil, fmt.Errorf("GCSストレージの生成に失敗しました: %w", err)
 	}
 	resources = append(resources, storage)
-	rio, err := buildRemoteIO(storage)
+	rio, err := remoteio.NewBundle(storage)
 	if err != nil {
 		return nil, fmt.Errorf("I/Oコンポーネントの初期化に失敗しました: %w", err)
 	}
@@ -55,6 +56,10 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 		Layout:      layout,
 		StatusStore: statusStore,
 		History:     history,
+		// rio は成功後の storage の所有者です（Bundle.Close が factory を閉じます）。
+		// 組み立てに失敗したときは resources 側が storage を直接閉じるため、
+		// Closers は成功して返ったあとの解放だけを受け持ちます。
+		Closers: []io.Closer{rio},
 	}
 
 	// 4. Web 面だけの依存: Task Enqueuer（レビュー依頼の投入口）
@@ -63,7 +68,12 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 		if err != nil {
 			return nil, fmt.Errorf("TaskEnqueuer の構築に失敗しました: %w", err)
 		}
+		// nil のポインタを app.TaskEnqueuer へ代入すると「非 nil のインターフェースが
+		// nil を保持する」状態になり、Closers の nil チェックをすり抜けて nil レシーバーで
+		// Close が呼ばれます。組み立てたときにだけ両方へ入れるのはそれを避けるためです。
+		// resources だけに入れると、成功して返ったあとに誰も閉じません。
 		resources = append(resources, enqueuer)
+		appCtx.Closers = append(appCtx.Closers, enqueuer)
 		appCtx.TaskEnqueuer = enqueuer
 	}
 

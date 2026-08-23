@@ -11,12 +11,7 @@ type ReviewRequest struct {
 	FeatureBranch string `json:"feature_branch"`
 	Mode          string `json:"mode"`
 	ModelName     string `json:"model_name"`
-	// Engine は、この依頼だけレビューエンジンを上書きする指定です。
 	//
-	// 空ならモードが front matter で宣言した既定に従います。モードは「何を見るか」を、
-	// エンジンは「どこまで調べるか」を決めるので、後者は依頼ごとに変わりえます
-	// （急ぎの確認は単発、腰を据えた確認はエージェント）。
-	Engine     string `json:"engine,omitempty"`
 	StorageURI string `json:"storage_uri"`
 	PublicURL  string `json:"public_url"`
 }

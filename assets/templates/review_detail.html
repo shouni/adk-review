@@ -38,11 +38,6 @@
                 <dt class="col-sm-3 text-muted">モード / モデル</dt>
                 <dd class="col-sm-9">{{.Mode}} / <span class="font-monospace">{{.ModelName}}</span></dd>
 
-                {{if .Engine}}
-                <dt class="col-sm-3 text-muted">レビューの深さ</dt>
-                <dd class="col-sm-9">{{.Engine}}</dd>
-                {{end}}
-
                 <dt class="col-sm-3 text-muted">受付</dt>
                 <dd class="col-sm-9">{{formatTime .QueuedAt}}</dd>
 

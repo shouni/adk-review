@@ -2,7 +2,6 @@
 label: "コード品質レビュー"
 direction: "ソースコードの差分を、バグ・セキュリティ・保守性の観点でレビューします"
 use_when: "アプリやライブラリの実装変更。マージ前の確認に使います"
-engine: agent
 excerpt: code
 ---
 # 役割
@@ -38,7 +37,6 @@ excerpt: code
   書かれていないか。
 
 確認した根拠のファイルは、その指摘の `evidence` に挙げてください。
-
 ## ⚖️ 重大度の基準
 
 全体の判定（decision）と個々の指摘（severity）に、同じ基準で付けてください。
@@ -48,14 +46,14 @@ excerpt: code
 * **Minor**: 修正が望ましい問題（可読性、命名規則、ドキュメンテーションの不備）。
 * **None**: 判定のみで使う値。クリティカルな問題も明確な改善指摘も見つからなかった場合。
 
-{{.VerdictFormat}}
+{{template "_verdict_format" .}}
 
 ## 💡 指摘の方針
 
-{{.FindingPolicy}}
+{{template "_finding_policy" .}}
 * レビューは技術的な側面に限定してください。
 
-{{.FindingsFormat}}
+{{template "_findings_format" .}}
 
 ## 📄 レビュー対象の差分
 

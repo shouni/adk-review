@@ -141,15 +141,6 @@ type errNotRecorded struct{}
 func (errNotRecorded) Error() string { return "not recorded" }
 
 // newTestPipeline は、観察用フックを差し込んだパイプラインを組み立てます。
-// singleRunner は、EngineRouter を挟まず 1 本のパイプラインへ流す reviewRunner です。
-// ReviewPipeline（記録・締切・再配信の面倒を見る層）の検証にエンジンの選択を
-// 巻き込まないために使います。ルーティング自体は engine_router_test.go が見ます。
-type singleRunner struct{ inner *pipeline.Pipeline }
-
-func (s singleRunner) Run(ctx context.Context, req domain.ReviewRequest) (review.Result, *review.Report, error) {
-	return s.inner.Run(ctx, toReviewRequest(req))
-}
-
 func newTestPipeline(t *testing.T, source stubSource, publisher stubPublisher, opts ...pipeline.Option) reviewRunner {
 	t.Helper()
 	return newTestPipelineWith(t, source, publisher, &stubNotifier{}, opts...)
@@ -174,7 +165,7 @@ func newTestPipelineWith(
 	if err != nil {
 		t.Fatalf("パイプラインの構築に失敗: %v", err)
 	}
-	return singleRunner{inner: p}
+	return p
 }
 
 func testDomainRequest() domain.ReviewRequest {
@@ -424,65 +415,5 @@ func TestReviewPipeline_打ち切り後も結末を記録する(t *testing.T) {
 	states := store.states()
 	if len(states) < 2 || states[len(states)-1] != "failed" {
 		t.Fatalf("打ち切りが記録されていません: %v", states)
-	}
-}
-
-// engines は保存された各状態の Engine を返します。
-func (s *stubStore) engines() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	engines := make([]string, 0, len(s.saved))
-	for _, status := range s.saved {
-		engines = append(engines, status.Engine)
-	}
-	return engines
-}
-
-// 実行に使ったエンジンが進行状況へ記録されること。
-//
-// 記録が消えると、コストの高いエージェント実行が単発として残る（あるいはその逆）ので、
-// 後から「なぜ高かったのか / なぜ浅かったのか」を追えなくなります。
-func TestReviewPipeline_解決したエンジンを記録する(t *testing.T) {
-	t.Parallel()
-
-	store := &stubStore{}
-	runner := newTestPipeline(t, stubSource{diff: "diff"}, stubPublisher{})
-
-	req := testDomainRequest()
-	req.Engine = "" // モードの既定に任せる
-	if err := NewReviewPipeline(runner, store).Execute(context.Background(), req); err != nil {
-		t.Fatalf("Execute が失敗した: %v", err)
-	}
-
-	engines := store.engines()
-	if len(engines) == 0 {
-		t.Fatal("進行状況が 1 件も記録されていない")
-	}
-	for i, engine := range engines {
-		if engine == "" {
-			t.Errorf("%d 件目の記録に Engine が載っていない: %v", i, engines)
-		}
-	}
-}
-
-// 解決できないエンジン指定は記録に載せないこと。
-//
-// 載せると「存在しないエンジンで実行して失敗した」という、実際には起きていない
-// 記録が履歴に残ります。
-func TestReviewPipeline_不正なエンジン指定は記録しない(t *testing.T) {
-	t.Parallel()
-
-	store := &stubStore{}
-	runner := newTestPipeline(t, stubSource{diff: "diff"}, stubPublisher{})
-
-	req := testDomainRequest()
-	req.Engine = "turbo" // 存在しない
-	_ = NewReviewPipeline(runner, store).Execute(context.Background(), req)
-
-	for i, engine := range store.engines() {
-		if engine == "turbo" {
-			t.Errorf("%d 件目の記録に不正なエンジンが載っている: %q", i, engine)
-		}
 	}
 }

@@ -2,7 +2,6 @@
 label: "技術記事レビュー"
 direction: "技術記事・ドキュメントの差分を、正確性と読みやすさの観点でレビューします"
 use_when: "公開前の技術記事や README・設計ドキュメントの原稿"
-engine: agent
 excerpt: prose
 ---
 # 役割
@@ -46,7 +45,6 @@ excerpt: prose
 * 記事が前提としている手順や設定が、差分の外にある章で実際に説明済みか。
 
 確認した根拠のファイルは、その指摘の `evidence` に挙げてください。
-
 ## ⚖️ 重大度の基準
 
 全体の判定（decision）と個々の指摘（severity）に、同じ基準で付けてください。
@@ -59,14 +57,14 @@ excerpt: prose
   修飾関係のねじれ、Markdown フォーマットの乱れ、可読性を高める代替表現の提案）。
 * **None**: 判定のみで使う値。公開を妨げる問題も明確な改善指摘も見つからなかった場合。
 
-{{.VerdictFormat}}
+{{template "_verdict_format" .}}
 
 ## 💡 指摘の方針
 
-{{.FindingPolicy}}
+{{template "_finding_policy" .}}
 * レビューは内容の品質向上に限定し、執筆者を尊重するトーンでお願いします。
 
-{{.FindingsFormat}}
+{{template "_findings_format" .}}
 
 ## 📄 レビュー対象の差分
 
