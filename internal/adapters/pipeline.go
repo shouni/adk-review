@@ -9,20 +9,16 @@ import (
 	"github.com/shouni/go-review-kit/review"
 	"github.com/shouni/go-utils/slogctx"
 
-	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/domain"
 )
 
 // recordTimeout は、結末の記録に与える上限です。
 const recordTimeout = 30 * time.Second
 
-// reviewRunner は、レビュー本体の実行面です。実体は EngineRouter で、依頼ごとに
-// go-review-kit のパイプラインを選びます。
-//
-// review.Request ではなく domain.ReviewRequest を受け取るのは、どのエンジンで実行するかが
-// ライブラリの語彙に無い本アプリ固有の情報だからです。変換は選び終えたあとに行います。
+// reviewRunner は、レビュー本体の実行面です。実体は go-review-kit のパイプラインで、
+// テストから差し替えられるようにインターフェースで受けます。
 type reviewRunner interface {
-	Run(ctx context.Context, req domain.ReviewRequest) (review.Result, *review.Report, error)
+	Run(ctx context.Context, req review.Request) (review.Result, *review.Report, error)
 }
 
 // ReviewPipeline は go-review-kit のパイプラインを domain.Pipeline として公開する ACL です。
@@ -68,22 +64,9 @@ func (p *ReviewPipeline) Execute(ctx context.Context, req domain.ReviewRequest) 
 		return nil
 	}
 
-	// 実行に使うエンジンを最初に確定させ、以降の記録に載せます。既定に任せた依頼でも
-	// 「どちらで走ったか」が履歴に残るようにするためです。
-	//
-	// 解決できない指定は記録に載せません。載せると「存在しないエンジンで実行して
-	// 失敗した」という嘘の記録が残ります（実行側の Run が改めて解決して報告します）。
-	engine, resolveErr := assets.ResolveEngine(req.Mode, req.Engine)
-	if resolveErr == nil {
-		req.Engine = string(engine)
-		ctx = slogctx.With(ctx, slog.String("engine", req.Engine))
-	} else {
-		req.Engine = ""
-	}
-
 	p.recordRunning(ctx, req)
 
-	result, report, err := p.runner.Run(ctx, req)
+	result, report, err := p.runner.Run(ctx, toReviewRequest(req))
 	p.recordOutcome(ctx, req, result, report, err)
 
 	return err

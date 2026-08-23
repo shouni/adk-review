@@ -44,17 +44,6 @@ var (
 	StaticFiles embed.FS
 )
 
-// Engine は、レビューモードが使うレビューエンジンです。
-type Engine string
-
-// レビューエンジンの種別です。
-const (
-	// EngineSingle は、差分だけを見る単発のレビューです。
-	EngineSingle Engine = "single"
-	// EngineAgent は、作業ディレクトリをツールで調べるエージェント型のレビューです。
-	EngineAgent Engine = "agent"
-)
-
 // ExcerptStyle は、指摘の引用（excerpt / suggestion）を画面でどう見せるかです。
 //
 // モードによって引用の中身が別物になります。code なら等幅で読むソースコードですが、
@@ -83,14 +72,9 @@ type ModeMetadata struct {
 	Direction string `yaml:"direction"`
 	// UseWhen は、どういう対象のときに選ぶかです。
 	UseWhen string `yaml:"use_when"`
-	// Engine は、そのモードを実行するレビューエンジンです。空なら EngineSingle 扱いです。
-	//
-	// **どのモードをどう実行するかはプロンプト資産側の宣言です。** 依頼のたびに選ぶ
-	// 性質のものではないため、フォームには出しません。
-	Engine Engine `yaml:"engine"`
 	// Excerpt は、指摘の引用を画面でどう見せるかです。空なら ExcerptProse 扱いです。
 	//
-	// engine と同じく**モードを足す人がプロンプト側で宣言します。** 画面側に
+	// **モードを足す人がプロンプト側で宣言します。** 画面側に
 	// 「code なら等幅」といった一覧を持たせると、モードを足したときに
 	// prompts/<mode>.md を置くだけでは済まなくなります。
 	//
@@ -117,14 +101,6 @@ func (m Mode) DisplayName() string {
 	return m.Key
 }
 
-// EngineKind は、そのモードを実行するエンジンを返します。
-func (m Mode) EngineKind() Engine {
-	if m.Engine == "" {
-		return EngineSingle
-	}
-	return m.Engine
-}
-
 // ExcerptKind は、そのモードの引用の見せ方を返します。
 func (m Mode) ExcerptKind() ExcerptStyle {
 	if m.Excerpt == "" {
@@ -140,10 +116,10 @@ type promptSet struct {
 }
 
 // loadModes は、埋め込みプロンプトの本文と front matter の解析を最初の呼び出しで
-// 1度だけ行います。本文（LoadPrompts）とモード情報（AvailableModes / EngineFor）は
+// 1度だけ行います。本文（LoadPrompts）とモード情報（AvailableModes）は
 // 別の入口ですが、出どころは同じディレクトリです。
 //
-// 失敗するとすれば front matter の書式や engine の値のように毎回同じ結果になるものだけ
+// 失敗するとすれば front matter の書式や excerpt の値のように毎回同じ結果になるものだけ
 // なので、エラーごとキャッシュして再試行しません。
 //
 // 返すマップは呼び出し側で共有されます。書き換えないでください。
@@ -166,15 +142,7 @@ var loadModes = sync.OnceValues(func() (promptSet, error) {
 	for key := range bodies {
 		meta := metas[key]
 
-		// engine の綴り違いは起動時に落とします。実行時に既定へ落とすと、
-		// エージェントで動かすつもりのモードが黙って単発で動き続けます。
-		switch meta.Engine {
-		case "", EngineSingle, EngineAgent:
-		default:
-			return promptSet{}, fmt.Errorf("プロンプト %q の engine 指定が不正です: %q（single か agent）", key, meta.Engine)
-		}
-
-		// 綴り違いは engine と同じく起動時に落とします。実行時に既定へ落とすと、
+		// 綴り違いは起動時に落とします。実行時に既定へ落とすと、
 		// コードとして見せるつもりのモードが黙って地の文で表示され続けます。
 		switch meta.Excerpt {
 		case "", ExcerptProse, ExcerptCode:
@@ -259,22 +227,6 @@ func IsValidMode(mode string) bool {
 	return ok
 }
 
-// ResolveEngine は、モードの既定と依頼ごとの上書き指定から、実行するエンジンを決めます。
-//
-// 受付時（フォーム）と実行時（ワーカー）の両方から呼びます。判定を 2 か所に書くと、
-// 画面に出した内容と実際に走るエンジンが食い違う余地が生まれるためです。
-func ResolveEngine(mode, override string) (Engine, error) {
-	if override != "" {
-		switch Engine(override) {
-		case EngineSingle, EngineAgent:
-			return Engine(override), nil
-		default:
-			return "", fmt.Errorf("未知のレビューエンジンです: %q（single か agent）", override)
-		}
-	}
-	return EngineFor(mode)
-}
-
 // ExcerptStyleFor は、モードの引用の見せ方を返します。
 //
 // **未知のモードでもエラーにしません。** 呼ぶのは履歴の詳細ページで、履歴には
@@ -291,18 +243,4 @@ func ExcerptStyleFor(mode string) ExcerptStyle {
 		return ExcerptProse
 	}
 	return m.ExcerptKind()
-}
-
-// EngineFor は、モードを実行するレビューエンジンを返します。
-func EngineFor(mode string) (Engine, error) {
-	set, err := loadModes()
-	if err != nil {
-		return "", err
-	}
-
-	m, ok := set.modes[mode]
-	if !ok {
-		return "", fmt.Errorf("未知のレビューモードです: %q", mode)
-	}
-	return m.EngineKind(), nil
 }

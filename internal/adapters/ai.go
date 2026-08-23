@@ -3,10 +3,6 @@
 package adapters
 
 import (
-	"context"
-	"fmt"
-
-	geminiclient "github.com/shouni/go-gemini-client/gemini"
 	"github.com/shouni/go-review-kit/review"
 	"google.golang.org/genai"
 
@@ -20,25 +16,9 @@ import (
 // キューのリージョンが別の都合で決まるためです。
 const geminiLocationID = "global"
 
-// NewGeminiClient は、モデル呼び出しの共有クライアントを構築します。
-//
-// 単発レビュアーはこのクライアント 1 個に相乗りし、リトライ・認証のポリシーをここへ
-// 集約します（AI は Vertex AI 経由で呼びます。設計は README の技術スタックを参照）。
-func NewGeminiClient(ctx context.Context, cfg *config.Config) (geminiclient.Generator, error) {
-	client, err := geminiclient.NewClient(ctx, geminiclient.Config{
-		ProjectID:  cfg.GCP.ProjectID,
-		LocationID: geminiLocationID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("gemini クライアントの構築に失敗しました: %w", err)
-	}
-	return client, nil
-}
-
 // NewAgentReviewer は、ADK エージェントの review.WorkspaceReviewer を構築します。
 //
-// ADK のモデル層は genai SDK を直接要求するため、go-gemini-client には相乗りできません。
-// 認証は単発側と同じ Vertex AI（ProjectID）に揃えます。
+// 認証は Vertex AI（実行 SA の roles/aiplatform.user）です。API キー経路は配線していません。
 func NewAgentReviewer(cfg *config.Config) review.WorkspaceReviewer {
 	return adkagent.New(adkagent.Config{
 		ClientConfig: genai.ClientConfig{

@@ -31,7 +31,6 @@ func (h *Handler) HandleReviewSubmit(w http.ResponseWriter, r *http.Request) {
 		FeatureBranch: strings.TrimSpace(r.PostFormValue("feature_branch")),
 		Mode:          r.PostFormValue("review_mode"),
 		ModelName:     r.PostFormValue("model_name"),
-		Engine:        r.PostFormValue("engine"),
 	}
 
 	// 2. 入力バリデーション
@@ -143,6 +142,5 @@ func reviewFormPageData(req domain.ReviewRequest, data ReviewFormPageData) Revie
 	data.FeatureBranch = req.FeatureBranch
 	data.ReviewMode = req.Mode
 	data.ModelName = req.ModelName
-	data.Engine = req.Engine
 	return data
 }

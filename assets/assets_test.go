@@ -34,24 +34,6 @@ func TestAvailableModesReadsFrontMatter(t *testing.T) {
 	}
 }
 
-// 現在の全モードはエージェント実行です。単発へ戻すのは設計判断なので、
-// 意図しない差し戻しに気付けるようテストで固定します。
-func TestAllModesUseAgentEngine(t *testing.T) {
-	modes, err := AvailableModes()
-	if err != nil {
-		t.Fatalf("AvailableModes failed: %v", err)
-	}
-	if len(modes) == 0 {
-		t.Fatal("モードが 1 つもありません")
-	}
-
-	for _, mode := range modes {
-		if mode.EngineKind() != EngineAgent {
-			t.Errorf("%s のエンジン = %q, want %q", mode.Key, mode.EngineKind(), EngineAgent)
-		}
-	}
-}
-
 func TestLoadPromptsStripsFrontMatter(t *testing.T) {
 	prompts, err := LoadPrompts()
 	if err != nil {
@@ -62,7 +44,7 @@ func TestLoadPromptsStripsFrontMatter(t *testing.T) {
 	if !ok {
 		t.Fatal("code のプロンプトがありません")
 	}
-	for _, key := range []string{"label:", "direction:", "use_when:", "engine:"} {
+	for _, key := range []string{"label:", "direction:", "use_when:", "excerpt:"} {
 		if strings.Contains(code, key) {
 			t.Errorf("front matter が本文に残っています: %q", key)
 		}
@@ -139,33 +121,12 @@ func TestPromptsDoNotDuplicateSharedPolicy(t *testing.T) {
 	}
 }
 
-func TestEngineFor(t *testing.T) {
-	engine, err := EngineFor("novel")
-	if err != nil {
-		t.Fatalf("EngineFor failed: %v", err)
-	}
-	if engine != EngineAgent {
-		t.Fatalf("novel は agent のはずです: got %q", engine)
-	}
-
-	if _, err := EngineFor("no-such-mode"); err == nil {
-		t.Fatal("未知のモードがエラーになりません")
-	}
-}
-
 func TestIsValidMode(t *testing.T) {
 	if !IsValidMode("code") {
 		t.Error("code が有効と判定されません")
 	}
 	if IsValidMode("no-such-mode") {
 		t.Error("未知のモードが有効と判定されました")
-	}
-}
-
-// EngineKind は front matter に engine が無いモードを単発として扱います。
-func TestEngineKindDefaultsToSingle(t *testing.T) {
-	if got := (Mode{Key: "x"}).EngineKind(); got != EngineSingle {
-		t.Errorf("EngineKind() = %q, want %q", got, EngineSingle)
 	}
 }
 
@@ -176,43 +137,6 @@ func TestDisplayNameFallsBackToKey(t *testing.T) {
 	}
 }
 
-func TestResolveEngine(t *testing.T) {
-	tests := []struct {
-		name     string
-		mode     string
-		override string
-		want     Engine
-		wantErr  bool
-	}{
-		{name: "既定はモードの宣言に従う", mode: "code", want: EngineAgent},
-		{name: "単発へ上書き", mode: "code", override: "single", want: EngineSingle},
-		{name: "エージェントへ上書き", mode: "code", override: "agent", want: EngineAgent},
-		{name: "未知のエンジンは拒否", mode: "code", override: "turbo", wantErr: true},
-		{name: "未知のモードは拒否", mode: "no-such-mode", wantErr: true},
-		// 上書きがあるときはモードを見ません。存在しないモードでも指定どおりに解決します。
-		{name: "上書きはモードより優先", mode: "no-such-mode", override: "single", want: EngineSingle},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := ResolveEngine(tt.mode, tt.override)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("エラーを期待しましたが nil でした")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("予期しないエラー: %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("ResolveEngine() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-// 引用の見せ方は、プロンプトの front matter が宣言すること。
 func TestExcerptStyleFor(t *testing.T) {
 	t.Parallel()
 
