@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/shouni/adk-review/internal/domain"
@@ -50,29 +51,17 @@ func (f *fakeFactory) URLSigner() (remoteio.URLSigner, error) {
 	return nil, nil
 }
 
-func TestRemoteIOClose(t *testing.T) {
-	r := &RemoteIO{}
-	if err := r.Close(); err != nil {
-		t.Fatalf("nil factory should not error: %v", err)
-	}
-
-	ff := &fakeFactory{}
-	r.Factory = ff
-	if err := r.Close(); err != nil {
-		t.Fatalf("unexpected close error: %v", err)
-	}
-	if !ff.closed {
-		t.Fatal("factory close should be called")
-	}
-}
-
-func TestContainerClose_AlwaysClosesTaskEnqueuer(t *testing.T) {
+func TestContainerClose_ClosesEveryResource(t *testing.T) {
+	// 片方が失敗しても残りを閉じ切ることを見ます。Close はエラーを返さないので、
+	// ここが崩れると資源の閉じ漏れがログにしか出ません。
 	ff := &fakeFactory{closeErr: errors.New("remote close failed")}
 	te := &fakeTaskEnqueuer{closeErr: errors.New("task close failed")}
+	rio := &RemoteIO{Factory: ff}
 
 	c := &Container{
-		RemoteIO:     &RemoteIO{Factory: ff},
+		RemoteIO:     rio,
 		TaskEnqueuer: te,
+		Closers:      []io.Closer{rio, te},
 	}
 
 	c.Close()
@@ -87,9 +76,11 @@ func TestContainerClose_AlwaysClosesTaskEnqueuer(t *testing.T) {
 
 func TestContainerClose_NilSafe(_ *testing.T) {
 	// アサーションは不要。パニックなく終了すること（nil-safe）を検証する。
+	// 3 つ目は typed-nil で、スライスの nil チェックをすり抜けて nil レシーバーの
+	// Close が呼ばれる経路です（remoteio.Bundle.Close がこれを許容します）。
 	c := &Container{}
 	c.Close()
 
-	c = &Container{RemoteIO: &RemoteIO{}}
+	c = &Container{Closers: []io.Closer{nil, &RemoteIO{}, (*RemoteIO)(nil)}}
 	c.Close()
 }
