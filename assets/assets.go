@@ -171,8 +171,9 @@ func LoadPrompts() (map[string]string, error) {
 //
 // 断片を "_" 付きのテンプレート名で同じ集合に入れるのは、本文から
 // {{template "_finding_policy" .}} で参照させるためです。**文字列として流し込むのをやめた
-// 理由は、断片の側でもテンプレートの条件分岐を書けるようにするためです。** 例えば
-// evidence の説明は、作業ディレクトリを調べるエンジンのときにだけ出す必要があります。
+// 理由は、末尾改行の始末をライブラリ（prompts.WithTrimPartials）へ渡すためです。** 断片は
+// 箇条書きの途中に差し込まれるので、末尾改行が残るとそこだけリストが分かれます。
+// テンプレートとして参照していれば、断片の側でも条件分岐やデータの参照を書けます。
 //
 // 断片は go-prompt-kit の partial として扱われるため、AvailableModes の一覧には出ません。
 func PromptTemplates() (map[string]string, error) {

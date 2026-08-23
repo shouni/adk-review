@@ -98,7 +98,7 @@ gs://{GCS_REVIEW_BUCKET}/reviews/{jobID}/
 ```text
 adk-review/
 ├── assets/            # 【資産】静的リソース（embed でバイナリに埋め込み）
-│   ├── prompts/       #   - レビュー指示書（ファイル名がモード名。front matter に説明と engine）
+│   ├── prompts/       #   - レビュー指示書（ファイル名がモード名。front matter に説明と excerpt）
 │   ├── partials/      #   - 全モード共通の出力フォーマット説明（verdict / findings）
 │   ├── templates/     #   - HTML テンプレート
 │   ├── static/        #   - ブラウザへ配信する CSS / JS（/static/ で公開）

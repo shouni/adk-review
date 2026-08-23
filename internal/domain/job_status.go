@@ -72,8 +72,6 @@ func (s *JobStatus) carryOverFrom(prev *JobStatus) {
 	if s.Outcome == "" {
 		s.Outcome = prev.Outcome
 	}
-	// 依頼が既定に任せていた場合、解決後のエンジンはワーカーだけが知っています。
-	// 記録済みの値を後続の状態でも保ちます。
 }
 
 // CarryOverExtras は、jobstatus.Recorder.Record へ渡す引き継ぎ関数です。

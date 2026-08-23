@@ -134,7 +134,7 @@ Gemini のロケーションは `adapters.geminiLocationID`（`global`）に固�
 
 ### ログは context に載せる
 
-`slogctx` を通しているので、`Execute` の冒頭で載せた `job_id` / `mode` / `engine` が
+`slogctx` を通しているので、`Execute` の冒頭で載せた `job_id` / `mode` が
 以降のすべての出力に付きます。個々の呼び出しで `"job_id", req.JobID` を書き足さないでください
 （重複キーになります）。`cloudlog` が level を Cloud Logging の `severity` へマップするため、
 ロガーの組み立て（`main.go`）を素の `slog.NewJSONHandler` に戻すと

@@ -119,7 +119,7 @@ func (t *toolbox) spend() bool {
 // モデルへ返るのでエラーにならない）を後から追えるようにするためです。
 //
 // ctx は agent.Context です。ADK の ReadonlyContext が context.Context を埋め込んでいるため、
-// slogctx が載せた job_id / mode / engine もそのまま付きます。
+// slogctx が載せた job_id / mode もそのまま付きます。
 func (t *toolbox) trace(ctx context.Context, tool string, attrs ...any) {
 	slog.InfoContext(ctx, "エージェントがツールを呼びました",
 		append([]any{"tool", tool, "remaining", t.remaining.Load()}, attrs...)...)
