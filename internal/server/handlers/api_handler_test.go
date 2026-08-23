@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 
@@ -194,7 +195,24 @@ func TestHandleHistory_ReturnsJSON(t *testing.T) {
 		t.Errorf("Content-Type = %q", ct)
 	}
 
-	got := decodeJSON[domain.HistoryPage](t, rec)
+	// 項目名は snake_case です。同じ構造体で往復すると綴りの誤りに気付けないため、
+	// 生のキーで確かめます（本文は 1 度しか読めないのでバイト列から 2 通りに解きます）。
+	body := rec.Body.Bytes()
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("JSON をデコードできません: %v\n%s", err, body)
+	}
+	for _, key := range []string{"items", "meta"} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("%q が応答にありません: %v", key, mapKeys(raw))
+		}
+	}
+
+	var got domain.HistoryPage
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("HistoryPage をデコードできません: %v", err)
+	}
 	if len(got.Items) != 1 || got.Items[0].Mode != "code" {
 		t.Errorf("items が期待と違います: %+v", got.Items)
 	}
@@ -411,6 +429,16 @@ func TestHandleReviewSubmit_FormStillRendersHTML(t *testing.T) {
 }
 
 // --- helpers ---
+
+// mapKeys は、エラーメッセージ用にキーだけを並べます。
+func mapKeys(m map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
 
 func buildJobStatusHandler(t *testing.T, store domain.StatusStore) *Handler {
 	t.Helper()
