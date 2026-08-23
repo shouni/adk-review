@@ -1,8 +1,9 @@
 // Package adkagent は、ADK for Go のエージェントループによる review.WorkspaceReviewer 実装です。
 //
-// エコシステムの「genai SDK は go-gemini-client の外に出さない」規約の例外は、この
-// パッケージ（と schema.go / tools.go）に閉じています。ADK のモデル層が genai を直接
-// 要求するためで、go-review-kit 本体はこのパッケージを知りません。
+// genai SDK を直接 import するのは、このファイルと schema.go、それに
+// internal/adapters/ai.go だけです。ADK のモデル層が genai を直接要求するためで、
+// 他の場所へ広げないでください（理由は CLAUDE.md）。go-review-kit 本体は
+// このパッケージを知りません。
 package adkagent
 
 import (

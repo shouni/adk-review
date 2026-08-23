@@ -101,13 +101,19 @@ Slack 通知も残りません。** `review-queue` は `max_attempts = 1` なの
 末尾改行は `prompts.WithTrimPartials` が落とします。**自前で `TrimRight` しないでください。**
 断片は箇条書きの途中に差し込まれるので、末尾改行が残るとそこだけリストが分かれます。
 
-### genai SDK の隔離
+### genai を import してよい場所は 3 ファイルだけ
 
-「genai SDK は `go-gemini-client` の外に出さない」というエコシステムの規約に対し、
-**ADK が `google.golang.org/genai` を直接要求するため例外が要ります。**
-その例外は `internal/adkagent` に閉じ込めてください（`internal/adapters/ai.go` が
-`genai.ClientConfig` を組み立てる 1 箇所だけが窓口です）。`go-review-kit` 自体は
-AI SDK を知りません。
+`google.golang.org/genai` を直接使ってよいのは次だけです。**増やさないでください。**
+
+- `internal/adkagent/reviewer.go` — ADK のモデル層へ渡すクライアント設定
+- `internal/adkagent/schema.go` — 構造化出力スキーマ
+- `internal/adapters/ai.go` — `genai.ClientConfig` の組み立て（Vertex AI の投入口）
+
+フリートの他のアプリは AI SDK を直接触らず `go-gemini-client` 経由で呼びます
+（エコシステムの規約「genai SDK は `go-gemini-client` の外に出さない」）。
+**このリポジトリが例外なのは ADK が genai を直接要求するからで、規約を捨てたからでは
+ありません。** ADK が要求しない場所へ genai を持ち出さないでください。
+`go-review-kit` 自体は AI SDK を知りません。
 
 ### AI は Vertex AI 経由のみ
 

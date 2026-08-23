@@ -38,10 +38,9 @@
   時間ではなく回数で打ち切ります
   （`AGENT_MAX_TOOL_CALLS`、既定 32）。上限に達したら「調査を切り上げて結論を出せ」と
   モデルへ伝わるので、締切超過ではなくレビューの完了に倒れます。
-* **依存の隔離**: ADK は `google.golang.org/genai` を直接使うため、
-  「genai SDK は `go-gemini-client` の外に出さない」というエコシステムの規約の
-  例外は `internal/adkagent` に閉じ込めます（窓口は `internal/adapters/ai.go` の 1 箇所）。
-  `go-review-kit` 自体は AI SDK を知りません。
+* **依存の隔離**: ADK が `google.golang.org/genai` を直接要求するため、genai を import するのは
+  `internal/adkagent`（レビュアーと出力スキーマ）と `internal/adapters/ai.go`（クライアント設定）
+  だけに留めます。`go-review-kit` 自体は AI SDK を知りません。
 
 ---
 
