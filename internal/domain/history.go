@@ -12,9 +12,13 @@ import (
 type PageMeta = paging.PageMeta
 
 // HistoryPage は、履歴一覧の 1 ページ分です。
+//
+// JSON タグを明示しているのは、この型がそのまま API のレスポンスになるためです。
+// 省くと Go のフィールド名（Items / Meta）が大文字のまま出て、他が snake_case の中で
+// ここだけ表記が変わります。
 type HistoryPage struct {
-	Items []JobStatus
-	Meta  PageMeta
+	Items []JobStatus `json:"items"`
+	Meta  PageMeta    `json:"meta"`
 }
 
 // ReviewDetail は、履歴の 1 件を詳細表示するために必要な一式です。

@@ -58,8 +58,8 @@
         </div>
 
         <div class="mb-4">
-            <label for="review_mode" class="form-label fw-bold text-secondary">レビューモード</label>
-            <select id="review_mode" name="review_mode" class="form-select" required>
+            <label for="mode" class="form-label fw-bold text-secondary">レビューモード</label>
+            <select id="mode" name="mode" class="form-select" required>
                 {{range .ReviewModes}}
                 <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Value}} ({{.Description}})</option>
                 {{end}}

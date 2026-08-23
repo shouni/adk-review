@@ -100,17 +100,23 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 			return
 		}
 
-		r.Use(h.Auth.Middleware)
+		// ブラウザはセッション + CSRF、他サービス（ap-mcp）は OIDC Bearer で通ります。
+		// 合成をライブラリに任せるのは、経路ごとに自前で組むと片方だけ強化されて
+		// ドリフトするためです。Bearer 経路が CSRF を通らないのは、CSRF が
+		// クッキーの自動送出を悪用する攻撃への対策で、明示的にトークンを付ける
+		// サーバー間呼び出しには当てはまらないからです（絞りは許可リストが担います）。
+		//
+		// セッション経路へのフォールバックには CSRFContextMiddleware も含まれます。
+		r.Use(h.Auth.ProtectedMiddleware(h.M2M))
 
-		// GET でセッションに CSRF トークンが無ければ自動生成し、context へ載せます。
-		// POST では生成しません（生成すると、トークンを持たないリクエストに正当な
-		// トークンを与えることになり、CSRF 検証が意味をなさなくなります）。
-		r.Use(h.Auth.CSRFContextMiddleware)
-
+		// ヘッダーを持たないリクエスト（Sec-Fetch-Site も Origin も無い）は
+		// 非ブラウザとみなされて通ります。M2M クライアントはここを素通りします。
 		r.Use(crossOriginProtection.Handler)
 
 		r.Get("/", h.Web.HandleReviewForm)
 		r.Post("/submit_review", h.Web.HandleReviewSubmit)
+		r.Get("/modes", h.Web.HandleModes)
+		r.Get("/jobs/{jobID}", h.Web.HandleJobStatus)
 		r.Get("/history", h.Web.HandleHistory)
 		r.Get("/history/{jobID}", h.Web.HandleReviewDetail)
 		r.Delete("/history/{jobID}", h.Web.HandleReviewDelete)
