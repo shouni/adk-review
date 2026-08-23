@@ -11,7 +11,7 @@ type ReviewRequest struct {
 	FeatureBranch string `json:"feature_branch"`
 	Mode          string `json:"mode"`
 	ModelName     string `json:"model_name"`
-	//
+
 	StorageURI string `json:"storage_uri"`
 	PublicURL  string `json:"public_url"`
 }

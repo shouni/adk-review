@@ -111,7 +111,7 @@ func validFormBody() string {
 	v.Set("repo_url", "git@github.com:org/repo.git")
 	v.Set("base_branch", "main")
 	v.Set("feature_branch", "feature/new-ui")
-	v.Set("review_mode", "code")
+	v.Set("mode", "code")
 	v.Set("model_name", "gemini-2.5-flash")
 	return v.Encode()
 }
@@ -137,7 +137,7 @@ func TestHandleReviewSubmit_ValidationError(t *testing.T) {
 	v.Set("repo_url", "git@github.com:org/repo.git")
 	v.Set("base_branch", "main")
 	v.Set("feature_branch", "feature/new-ui")
-	v.Set("review_mode", "invalid-mode")
+	v.Set("mode", "invalid-mode")
 	v.Set("model_name", "gemini-2.5-flash")
 
 	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
@@ -158,7 +158,7 @@ func TestHandleReviewSubmit_ValidationErrorPreservesSelectedModelName(t *testing
 	v.Set("repo_url", "invalid-url")
 	v.Set("base_branch", "main")
 	v.Set("feature_branch", "feature/new-ui")
-	v.Set("review_mode", "code")
+	v.Set("mode", "code")
 	v.Set("model_name", "gemini-2.5-pro")
 
 	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
@@ -183,7 +183,7 @@ func TestHandleReviewSubmit_ValidationErrorPreservesFormValues(t *testing.T) {
 	v.Set("repo_url", "invalid-url")
 	v.Set("base_branch", "release/2026-04")
 	v.Set("feature_branch", "feature/new-ui")
-	v.Set("review_mode", "novel")
+	v.Set("mode", "novel")
 	v.Set("model_name", "gemini-2.5-pro")
 
 	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
@@ -220,7 +220,7 @@ func TestHandleReviewSubmit_InvalidModelName(t *testing.T) {
 	v.Set("repo_url", "git@github.com:org/repo.git")
 	v.Set("base_branch", "main")
 	v.Set("feature_branch", "feature/new-ui")
-	v.Set("review_mode", "code")
+	v.Set("mode", "code")
 	v.Set("model_name", "gemini-invalid")
 
 	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
@@ -333,7 +333,7 @@ func TestHandleReviewSubmit_SuccessPreservesFormValues(t *testing.T) {
 	v.Set("repo_url", "git@github.com:org/repo.git")
 	v.Set("base_branch", "release/2026-04")
 	v.Set("feature_branch", "feature/completion-form")
-	v.Set("review_mode", "article")
+	v.Set("mode", "article")
 	v.Set("model_name", "gemini-2.5-pro")
 
 	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))

@@ -29,7 +29,7 @@ func (h *Handler) HandleReviewSubmit(w http.ResponseWriter, r *http.Request) {
 		RepoURL:       strings.TrimSpace(r.PostFormValue("repo_url")),
 		BaseBranch:    strings.TrimSpace(r.PostFormValue("base_branch")),
 		FeatureBranch: strings.TrimSpace(r.PostFormValue("feature_branch")),
-		Mode:          r.PostFormValue("review_mode"),
+		Mode:          r.PostFormValue("mode"),
 		ModelName:     r.PostFormValue("model_name"),
 	}
 
