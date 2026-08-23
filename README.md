@@ -173,6 +173,7 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 | `CLOUD_TASKS_QUEUE_ID` | 使用する Cloud Tasks のキュー名。**既定値は無く、web 面では未設定だと起動時に落ちます** | **web 面で必須**（例: `review-queue`） |
 | `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` | 投入するタスクの OIDC に指定する caller SA（web 面のみ） | `adk-review-web-runner@...` |
 | `ALLOWED_TASK_SERVICE_ACCOUNTS` | worker が受け付けるトークンの発行元 SA（カンマ区切り、worker 面のみ）。web 面の SA を並べる | `adk-review-web-runner@...` |
+| `ALLOWED_M2M_SERVICE_ACCOUNTS` | web の JSON API をサーバー間で呼べる SA（カンマ区切り、web 面のみ）。空なら M2M 無効 | `ap-mcp-runner@...` |
 | `GCS_REVIEW_BUCKET` | レビュー結果と進行状況を保存する GCS バケット**名**（`gs://` は付けても落とします）。**既定値は無く、未設定だと起動時に落ちます** | **必須** |
 | `GEMINI_MODELS` | 使用する Gemini モデル名。カンマ区切りで複数指定するとフォームで選択可能（先頭がデフォルト）。**アプリ側に既定値は無く、未設定だと起動時に落ちます** | **必須**（Google の最新モデル ID を確認して設定） |
 | `TASK_AUDIENCE_URL` | Cloud Tasks の OIDC トークン検証に使う audience。未設定なら `SERVICE_URL` | `https://myapp.run.app` |
@@ -237,12 +238,25 @@ IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必�
 | `/auth/login`, `/auth/callback` | GET | ✅ | — | Google OAuth |
 | `/` | GET | ✅ | — | レビュー依頼フォーム |
 | `/submit_review` | POST | ✅ | — | 依頼の受付とタスク投入 |
+| `/modes` | GET | ✅ | — | 選べるレビューモード一覧（JSON のみ） |
+| `/jobs/{jobID}` | GET | ✅ | — | 進行状況だけを返す（JSON のみ。完了検知用） |
 | `/history` | GET | ✅ | — | 履歴一覧 |
 | `/history/{jobID}` | GET / DELETE | ✅ | — | 詳細表示 / 削除（実行中は 409） |
 | `/tasks/execute_review` | POST | — | ✅ | Cloud Tasks からの実行（OIDC 検証） |
 
 担当しない面のルートは登録しません。役割とハンドラが噛み合わない構成は、
 ルーターが 404 を返す前に起動時に落とします（`builder.AppHandlers.Validate`）。
+
+**web 面のルートは、ブラウザと機械の両方から使えます。** `Accept: application/json` を
+付けると同じルートが JSON を返し、`POST /submit_review` は JSON body も受け付けます
+（項目名はフォームと同じで、`domain.ReviewRequest` の json タグに揃えてあります）。
+別ルートを立てないのは、同じ取得処理を 2 本持つと画面と API が食い違うためです。
+
+サーバー間から呼ぶ場合は OIDC Bearer トークンを付けます。許可する呼び出し元は
+`ALLOWED_M2M_SERVICE_ACCOUNTS` で、**空なら M2M は無効**です（web 面は画面が使えれば
+成立するため、worker 面のように必須にはしません）。Bearer 経路はセッションと CSRF を
+バイパスします。CSRF はクッキーの自動送出を悪用する攻撃への対策であり、明示的に
+トークンを付けるサーバー間呼び出しには当てはまらないためです。
 
 ---
 

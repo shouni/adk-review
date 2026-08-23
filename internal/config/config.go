@@ -137,6 +137,14 @@ type AuthConfig struct {
 	SessionEncryptKey string   `env:"SESSION_ENCRYPT_KEY"`
 	AllowedEmails     []string `env:"ALLOWED_EMAILS"`
 	AllowedDomains    []string `env:"ALLOWED_DOMAINS"`
+	// AllowedM2MServiceAccounts は、JSON API をサーバー間通信（OIDC Bearer）で呼べる
+	// サービスアカウントです。**空なら M2M は無効**で、web 面は人間の OAuth だけで動きます
+	// （web 面は画面が使えれば成立するため、ワーカー面のように必須にはしません）。
+	//
+	// Cloud Tasks の ALLOWED_TASK_SERVICE_ACCOUNTS とは別の変数です。役割が
+	// 「他サービスからの呼び出し元」と「タスクの発行元」で反転するため、
+	// 同じ値になる場合でも兼ねさせません。
+	AllowedM2MServiceAccounts []string `env:"ALLOWED_M2M_SERVICE_ACCOUNTS"`
 }
 
 // NotificationConfig は通知の設定です。
@@ -202,6 +210,7 @@ func (c *Config) normalize() error {
 
 	c.Auth.AllowedEmails = strlist.Normalize(c.Auth.AllowedEmails)
 	c.Auth.AllowedDomains = strlist.Normalize(c.Auth.AllowedDomains)
+	c.Auth.AllowedM2MServiceAccounts = strlist.Normalize(c.Auth.AllowedM2MServiceAccounts)
 
 	c.GCP.ProjectID = strings.TrimSpace(c.GCP.ProjectID)
 	c.GCP.LocationID = strings.TrimSpace(c.GCP.LocationID)

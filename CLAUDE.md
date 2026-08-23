@@ -55,11 +55,35 @@ Slack 通知も残りません。** `review-queue` は `max_attempts = 1` なの
   アプリ側へ写さないでください。** gcp-kit の `tasks.NewEnqueuer` が構築時に見ており、
   写すと同じ制約が 2 箇所に現れます（実際、写した側は下限が抜けていました）。
 
+### web 面の JSON API は Accept で切り替える
+
+画面と機械で**ルートを分けません。** `Accept: application/json` を見て同じハンドラが
+JSON を返します（`handlers.wantsJSON`）。分けると同じ取得処理が 2 本になり、片方だけ
+直したときに画面の表示と機械可読な結果が食い違います。
+
+- `POST /submit_review` は JSON body も受け付けますが、**`domain.ReviewRequest` を直接
+  デコードしません**（`submitInput` を挟みます）。呼び出し元に `StorageURI` を決めさせると、
+  成果物をバケット内の任意のパスへ書かせられます。知らない項目は黙って捨てず
+  エラーにします（捨てると、送った側が効いたと思い込みます）。
+- **`jobstatus.ErrNotFound` は 404、`ErrUnavailable` は 502 です**（`recordErrorStatus`）。
+  同一視すると、権限剥奪やストレージ障害が「そんなレビューはありません」として返り、
+  呼び出し元は再試行すべき場面で諦めます。
+- `GET /jobs/{jobID}` と `GET /history/{jobID}` を分けているのは、後者が指摘の全文を
+  含むためです。完了検知のたびに全文を返すのは重すぎます。
+- 認証は `Auth.ProtectedMiddleware(M2M)` で、ブラウザはセッション + CSRF、サーバー間は
+  OIDC Bearer です。**`CrossOriginProtection` はヘッダーを持たない呼び出しを素通しします**
+  （Go の仕様。`Sec-Fetch-Site` も `Origin` も無ければ非ブラウザとみなす）。ここが変わると
+  ap-mcp からの投入だけが 403 になり、画面は動いたままなので気付きにくいため、
+  `TestCrossOriginProtection_AllowsHeaderlessPost` で固定しています。
+
 ### Cloud Tasks の OIDC
 
 発行元と許可リストを 1 つの変数で兼ねません。同じ値でも役割ごとに意味が反転して
 読めなくなるためです（インフラ管理リポジトリの規約「Cloud Tasks の OIDC」）。
 
+- `ALLOWED_M2M_SERVICE_ACCOUNTS`: **web 面の JSON API** を呼べる SA（ap-mcp）。
+  発行元でも投入先でもなく「他サービスからの呼び出し元」なので、上の 2 つと兼ねません。
+  空なら M2M 無効です（web 面は画面が使えれば成立するため、fail-closed にしません）。
 - `TASK_CALLER_SERVICE_ACCOUNT_EMAIL`: **投入側（web）** が指定する caller SA。
   トークンを生成して付与するのは Cloud Tasks であって、このプロセスではありません。
 - `ALLOWED_TASK_SERVICE_ACCOUNTS`: **受信側（worker）** が受け付ける発行元の許可リスト。

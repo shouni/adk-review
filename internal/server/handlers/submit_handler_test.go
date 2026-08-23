@@ -19,10 +19,20 @@ import (
 type fakeStatusStore struct {
 	err   error
 	saved []domain.JobStatus
+
+	// getStatus / getErr は Get の応答です。getErr が nil のときだけ getStatus を返します。
+	getStatus domain.JobStatus
+	getErr    error
 }
 
 func (f *fakeStatusStore) Get(_ context.Context, _ string) (domain.JobStatus, error) {
-	return domain.JobStatus{}, errors.New("not recorded")
+	if f.getErr != nil {
+		return domain.JobStatus{}, f.getErr
+	}
+	if f.getStatus.JobID == "" {
+		return domain.JobStatus{}, errors.New("not recorded")
+	}
+	return f.getStatus, nil
 }
 
 func (f *fakeStatusStore) Save(_ context.Context, jobID string, status domain.JobStatus) error {

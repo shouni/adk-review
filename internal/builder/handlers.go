@@ -26,6 +26,9 @@ type AppHandlers struct {
 	// TaskAuth は Cloud Tasks からの OIDC を検証します。Auth と違い OAuth 設定を
 	// 必要としないため、検証だけを担う独立した部品として持ちます。
 	TaskAuth *auth.TaskVerifier
+	// M2M は、他サービス（ap-mcp）からの OIDC Bearer を検証します。nil でも成立し、
+	// その場合 web 面はブラウザセッションだけで守られます。
+	M2M *auth.M2MVerifier
 }
 
 // Validate は、面ごとのハンドラーが揃っているかを確かめます。
@@ -70,6 +73,12 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 			return nil, fmt.Errorf("WebHandlerの初期化失敗: %w", err)
 		}
 		appHandlers.Web = webHandler
+
+		// 許可リストが空なら nil のままにします。ProtectedMiddleware は nil を
+		// 「M2M は試みられなかった」として扱い、セッション認証へ落とします。
+		if m2m := auth.NewM2MVerifier(appCtx.Config.Server.ServiceURL, appCtx.Config.Auth.AllowedM2MServiceAccounts); m2m.Configured() {
+			appHandlers.M2M = m2m
+		}
 	}
 
 	if role.ServesWorker() {
