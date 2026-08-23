@@ -15,7 +15,14 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const promptDir = "prompts"
+const (
+	promptDir  = "prompts"
+	partialDir = "partials"
+
+	// partialPrefix は、共有断片をテンプレート名として登録するときの接頭辞です。
+	// go-prompt-kit の既定と同じ値で、この接頭辞が付いたものはモードとして公開されません。
+	partialPrefix = "_"
+)
 
 var (
 	// promptFiles はプロンプトテンプレートです。ディレクトリ内は現在プロンプトのみのため、
@@ -192,40 +199,33 @@ func LoadPrompts() (map[string]string, error) {
 	return maps.Clone(set.bodies), nil
 }
 
-// LoadFindingsFormat は、レビュー指摘のJSONフォーマットを説明する共通テキストを読み込みます。
-// 全レビューモードのプロンプトで共有され、AIの構造化出力(findings配列)のスキーマに
-// 対応する項目を説明します。
-func LoadFindingsFormat() (string, error) {
-	return loadPartial("findings_format.md")
-}
-
-// LoadVerdictFormat は、判定結果のJSONフォーマット(verdictオブジェクト)を説明する
-// 共通テキストを読み込みます。
-func LoadVerdictFormat() (string, error) {
-	return loadPartial("verdict_format.md")
-}
-
-// LoadFindingPolicy は、全レビューモードで共通の指摘の方針を読み込みます。
+// PromptTemplates は、モードのプロンプト本文と共有断片を 1 つのテンプレート集として返します。
 //
-// 行番号の算出・軽微な指摘のまとめ方・出力言語は、モードが変わっても同じ決まりです。
-// モードごとのプロンプトに写しを置くと、直したつもりが 1 モードだけ古いまま残ります。
-// モード固有の方針（何を優先するか、何に踏み込まないか）は各プロンプトに残します。
-func LoadFindingPolicy() (string, error) {
-	policy, err := loadPartial("finding_policy.md")
+// 断片を "_" 付きのテンプレート名で同じ集合に入れるのは、本文から
+// {{template "_finding_policy" .}} で参照させるためです。**文字列として流し込むのをやめた
+// 理由は、断片の側でもテンプレートの条件分岐を書けるようにするためです。** 例えば
+// evidence の説明は、作業ディレクトリを調べるエンジンのときにだけ出す必要があります。
+//
+// 断片は go-prompt-kit の partial として扱われるため、AvailableModes の一覧には出ません。
+func PromptTemplates() (map[string]string, error) {
+	bodies, err := LoadPrompts()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	// 末尾の改行を落とします。この断片は箇条書きの**途中**に差し込まれるので、残すと
-	// 空行が入り、後ろに続くモード固有の方針が別のリストとして分かれて見えます。
-	return strings.TrimRight(policy, "\n"), nil
-}
 
-func loadPartial(name string) (string, error) {
-	b, err := partialFiles.ReadFile("partials/" + name)
+	entries, err := partialFiles.ReadDir(partialDir)
 	if err != nil {
-		return "", fmt.Errorf("共有テンプレート '%s' の読み込みに失敗: %w", name, err)
+		return nil, fmt.Errorf("共有テンプレートの列挙に失敗: %w", err)
 	}
-	return string(b), nil
+	for _, e := range entries {
+		name := e.Name()
+		b, err := partialFiles.ReadFile(partialDir + "/" + name)
+		if err != nil {
+			return nil, fmt.Errorf("共有テンプレート '%s' の読み込みに失敗: %w", name, err)
+		}
+		bodies[partialPrefix+strings.TrimSuffix(name, ".md")] = string(b)
+	}
+	return bodies, nil
 }
 
 // AvailableModes は、埋め込まれたレビュープロンプトから利用可能なモードをキー順に返します。

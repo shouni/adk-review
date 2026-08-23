@@ -9,6 +9,7 @@ import (
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-review-kit/review"
 
+	"github.com/shouni/adk-review/internal/adapters"
 	"github.com/shouni/adk-review/internal/config"
 	"github.com/shouni/adk-review/internal/domain"
 )
@@ -27,8 +28,11 @@ type Container struct {
 	// Business Logic
 	Pipeline domain.Pipeline
 	// External Adapters
-	Notifier  review.Notifier
-	PromptGen review.PromptGenerator
+	Notifier review.Notifier
+	// PromptGen は、エンジンごとのプロンプト生成器を配るアダプターです。
+	// ポートではなく具象を持つのは、**エンジンの違いを生成器の違いで表しているため**で、
+	// review.PromptGenerator 1 つでは単発とエージェントを区別できません。
+	PromptGen *adapters.PromptAdapter
 	// Closers は、組み立て時に開いた資源です。Container.Close がまとめて閉じます。
 	// Close が個々のフィールドを見ないのは、資源が増えたときに builder が append
 	// するだけで済ませるためです。

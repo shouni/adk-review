@@ -6,6 +6,7 @@ import (
 
 	"github.com/shouni/go-review-kit/pipeline"
 
+	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/adapters"
 	"github.com/shouni/adk-review/internal/app"
 	"github.com/shouni/adk-review/internal/domain"
@@ -37,9 +38,11 @@ func buildPipeline(ctx context.Context, appCtx *app.Container) (domain.Pipeline,
 	}
 	agentReviewer := adapters.NewAgentReviewer(appCtx.Config)
 
+	// Prompts は shared に置きません。**プロンプトはエンジンごとに別物です。**
+	// 単発のレビュアーに「ツールで確認しろ」「evidence を挙げろ」と書いたプロンプトを
+	// 渡すと、確認しようのない事柄について根拠を捏造させることになります。
 	shared := pipeline.Deps{
 		Sources:   sources,
-		Prompts:   appCtx.PromptGen,
 		Publisher: publisher,
 		Notifier:  appCtx.Notifier,
 	}
@@ -48,11 +51,17 @@ func buildPipeline(ctx context.Context, appCtx *app.Container) (domain.Pipeline,
 	// 切り離しより外側に掛かり、打ち切りと同時に失敗通知まで落ちます。
 	runTimeout := pipeline.WithRunTimeout(appCtx.Config.Pipeline.Timeout)
 
-	single, err := newCore(shared, runTimeout, func(d *pipeline.Deps) { d.Reviewer = singleReviewer })
+	single, err := newCore(shared, runTimeout, func(d *pipeline.Deps) {
+		d.Reviewer = singleReviewer
+		d.Prompts = appCtx.PromptGen.For(assets.EngineSingle)
+	})
 	if err != nil {
 		return nil, err
 	}
-	agent, err := newCore(shared, runTimeout, func(d *pipeline.Deps) { d.WorkspaceReviewer = agentReviewer })
+	agent, err := newCore(shared, runTimeout, func(d *pipeline.Deps) {
+		d.WorkspaceReviewer = agentReviewer
+		d.Prompts = appCtx.PromptGen.For(assets.EngineAgent)
+	})
 	if err != nil {
 		return nil, err
 	}

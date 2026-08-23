@@ -88,40 +88,36 @@ func TestLoadPromptsReturnsCopy(t *testing.T) {
 	}
 }
 
-func TestLoadFindingsFormat(t *testing.T) {
-	got, err := LoadFindingsFormat()
+// 共有断片は "_" 付きのテンプレート名で本文と同じ集合に入ります。
+// キーがずれると本文の {{template "_..."}} が解決できず、全モードが起動時に落ちます。
+func TestPromptTemplatesIncludePartials(t *testing.T) {
+	templates, err := PromptTemplates()
 	if err != nil {
-		t.Fatalf("LoadFindingsFormat failed: %v", err)
+		t.Fatalf("PromptTemplates failed: %v", err)
 	}
-	for _, want := range []string{"severity", "file", "excerpt", "message", "suggestion", "evidence"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("LoadFindingsFormat() missing %q:\n%s", want, got)
-		}
-	}
-}
 
-func TestLoadVerdictFormat(t *testing.T) {
-	got, err := LoadVerdictFormat()
-	if err != nil {
-		t.Fatalf("LoadVerdictFormat failed: %v", err)
+	want := map[string][]string{
+		"_findings_format": {"severity", "file", "excerpt", "message", "suggestion", "evidence"},
+		"_verdict_format":  {"decision", "reason", "title", "summary"},
+		// 行番号の算出と出力言語は、写しを作らずここ 1 箇所に置く決まりです。
+		"_finding_policy": {"hunk", "findings", "日本語"},
 	}
-	for _, want := range []string{"decision", "reason", "title", "summary"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("LoadVerdictFormat() missing %q:\n%s", want, got)
+	for name, keywords := range want {
+		body, ok := templates[name]
+		if !ok {
+			t.Errorf("共有断片 %q がテンプレート集にありません", name)
+			continue
+		}
+		for _, kw := range keywords {
+			if !strings.Contains(body, kw) {
+				t.Errorf("%s に %q がありません:\n%s", name, kw, body)
+			}
 		}
 	}
-}
 
-func TestLoadFindingPolicy(t *testing.T) {
-	got, err := LoadFindingPolicy()
-	if err != nil {
-		t.Fatalf("LoadFindingPolicy failed: %v", err)
-	}
-	// 行番号の算出と出力言語は、写しを作らずここ 1 箇所に置く決まりです。
-	for _, want := range []string{"hunk", "findings", "日本語"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("LoadFindingPolicy() missing %q:\n%s", want, got)
-		}
+	// モード本文も同じ集合に入っている必要があります。
+	if _, ok := templates["code"]; !ok {
+		t.Error("モード本文がテンプレート集にありません")
 	}
 }
 
@@ -134,7 +130,7 @@ func TestPromptsDoNotDuplicateSharedPolicy(t *testing.T) {
 	}
 
 	for key, body := range prompts {
-		if !strings.Contains(body, "{{.FindingPolicy}}") {
+		if !strings.Contains(body, `{{template "_finding_policy" .}}`) {
 			t.Errorf("%s: 共通の指摘方針が展開されていません", key)
 		}
 		if strings.Contains(body, "hunk") {

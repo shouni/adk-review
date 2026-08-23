@@ -100,6 +100,18 @@ SDK の型が違うため別々に組み立てます。**統合しないでく�
 - 差分は `findings[].evidence` の有無だけです。エージェントは作業ディレクトリを実際に
   調べるので「どこを見て判断したか」を自己申告させる意味がありますが、差分しか見ない
   単発レビュアーに出させると**根拠の捏造を促します**。
+- **プロンプトも同じ理由でエンジンごとに出し分けます。** `reviewData.Agent` が false のとき、
+  ツール（`read_file` / `list_files` / `search_text`）の指示と `evidence` の項目は
+  テンプレートから消えます。差分しか読めないレビュアーに「差分の外を確認した根拠」を
+  書かせると、**確認しようのない事柄について根拠を捏造させることになります。**
+  - 生成器は `adapters.PromptAdapter.For(engine)` が配ります。`review.PromptGenerator` の
+    `Generate` はモードと差分しか受け取らないため、**違いは生成器そのものを分けて表します。**
+  - そのため `pipeline.Deps.Prompts` は shared に置かず、`buildPipeline` が 2 本それぞれへ
+    設定します。shared へ戻すと、単発のパイプラインがエージェント用のプロンプトで走ります。
+  - 共有断片（`assets/partials/*.md`）は文字列として流し込まず、`_` 付きのテンプレート名で
+    本文と同じ集合に入れて `{{template "_finding_policy" .}}` で参照します。断片の側でも
+    `{{if .Agent}}` を書けるようにするためです。末尾改行は `prompts.WithTrimPartials` が
+    落とします（自前で `TrimRight` しないこと。断片は箇条書きの途中に入ります）。
 - 列挙値は `review.SeverityStrings` / `review.DecisionStrings`（ライブラリ）を直接使います。
   **アプリ側で `[]string` へ詰め替え直さないでください。** 写しが増えると、値を足したときに
   スキーマと検証が食い違い、モデルはスキーマ上正当な値を返すのにデコードで弾かれます
