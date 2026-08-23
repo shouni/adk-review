@@ -17,6 +17,16 @@ body { background-color: #fcfdfb; }
 /* フッターの装飾 */
 footer hr { border-top: 1px solid #dee2e6; width: 50%; margin: 2rem auto; }
 
+/* モデルが書いた地の文（判定理由・概要・指摘の本文）。
+   改行を残すのは、モデルが段落や箇条書きを改行で表すためです。潰すと 1 つの塊になり、
+   数文以上あるものが読めなくなります。
+
+   3 箇所に同じインラインスタイルを書いていたところ、判定理由だけ抜け落ちていました。
+   **同じ決まりが 3 つあると、増やしたときに 1 つ忘れます。** 定義はここ 1 つです。 */
+.model-text {
+    white-space: pre-wrap;
+}
+
 /* 指摘の引用（excerpt）と修正案。
    見せ方はモードで分かれます（プロンプトの front matter の excerpt が宣言し、
    テンプレートの excerptClass がクラスへ写します）。code は等幅の暗い背景、

@@ -10,18 +10,19 @@
 ## 🚀 概要 (About)
 
 **ADK Review** は、Git リポジトリの差分を AI エージェントにレビューさせる Web アプリです。
+画面用と API 用でルートを分けていないため、ブラウザのフォームからでも、MCP ゲートウェイ
+経由のエージェントからでも、同じ入口で依頼して結果を読めます。
 
-レビューは差分を 1 回モデルへ渡して終わりではなく、[ADK for Go](https://github.com/google/adk-go)
-のエージェントループです。エージェントはツール（ファイル読み・一覧・検索）で
-リポジトリの **差分の外**を自分で調べてから指摘をまとめます。差分だけでは構造的に
-見えない「前の章との矛盾」「登場人物の設定の一貫性」「変更した関数の呼び出し元」を
-拾えるのが、この作りの狙いです。主用途は Git で管理している記事・小説の原稿と
-ソースコードのレビューで、対象は `assets/prompts/` のモードで切り替えます。
+レビューは [ADK for Go](https://github.com/google/adk-go) のエージェントループで走ります。
+エージェントがリポジトリを自分で開き、**差分の外**と突き合わせてから指摘をまとめるので、
+差分だけでは見えない「前の章との矛盾」「登場人物の設定の一貫性」「変更した関数の呼び出し元」
+を拾えます。主用途は Git で管理している記事・小説の原稿とソースコードで、何を見るかは
+`assets/prompts/` のモードで切り替えます。
 
 レビューの手順そのものは [`go-review-kit`](https://github.com/shouni/go-review-kit) に、
 非同期ジョブの記録とページングは [`go-job-kit`](https://github.com/shouni/go-job-kit) に委ね、
-本リポジトリは**依頼の受付・認証・非同期実行・結果の保存と表示、そしてレビュアーの実装**を
-担います。
+本リポジトリは**依頼の受付・認証・非同期実行・結果の保存と提供（画面と JSON API）、
+そしてレビュアーの実装**を担います。
 
 ---
 
@@ -34,10 +35,11 @@
   ツールと構造化出力を併用でき、最終応答としてスキーマに従う JSON が返ります。デコードと
   検証は `go-review-kit` の `ParseReport` / `Validate` をそのまま使います。
 * **暴走はツール呼び出し回数の上限で止めます**: レビュー 1 件は Cloud Tasks の
-  dispatch deadline（`TASK_DISPATCH_DEADLINE`、デプロイでは 10 分）内に収める必要があるため、
-  時間ではなく回数で打ち切ります
-  （`AGENT_MAX_TOOL_CALLS`、既定 32）。上限に達したら「調査を切り上げて結論を出せ」と
-  モデルへ伝わるので、締切超過ではなくレビューの完了に倒れます。
+  dispatch deadline（`TASK_DISPATCH_DEADLINE`）内に収める必要があるため、時間ではなく
+  回数で打ち切ります（`AGENT_MAX_TOOL_CALLS`、既定 32）。**上限の 8 割を使った時点で
+  「新しい調査は始めず、そこまでの情報でまとめよ」と伝えます。** 上限そのものを目安に
+  すると、最後の 1 回を使い切ってから要約に入ることになり、検証しかけの仮説を抱えたまま
+  強制的に打ち切られます。浅く速く済ませたいときはこの数を下げます。
 * **依存の隔離**: ADK が `google.golang.org/genai` を直接要求するため、genai を import するのは
   `internal/adkagent`（レビュアーと出力スキーマ）と `internal/adapters/ai.go`（クライアント設定）
   だけに留めます。`go-review-kit` 自体は AI SDK を知りません。
@@ -50,24 +52,25 @@
 アダプターとして分離しています。
 
 ```text
-フォーム受付          非同期ワーカー
-─────────────        ────────────────────────────────────
-ジョブID採番     →   Git 差分 → ADK エージェント → report.json 保存
-Cloud Tasks 投入     ↘ status.json 記録 / Slack 通知
-受付を記録
-                     履歴 /history → /history/{jobID}
+フォーム受付             非同期ワーカー
+──────────────────      ────────────────────────────────────
+ジョブID採番              Git 差分 → ADK エージェント → report.json 保存
+  ↓                     ↘ status.json 記録 / Slack 通知
+受付を記録（queued）
+  ↓                       履歴 /history → /history/{jobID}
+Cloud Tasks 投入    →
 ```
+
+**受付の記録は投入より先です。** 逆にすると、Cloud Tasks の配送が数十ミリ秒で届くため
+「ワーカーが running を書く → web が queued で踏み潰す」順序が起こり、実行中のジョブが
+履歴では受付済みのまま止まって見えます（`internal/server/handlers/submit_handler.go`）。
 
 * **非同期実行**: 重い解析を Cloud Tasks へ逃がし、Web 側のタイムアウトを回避します。
 * **依存性注入**: `internal/builder` が全コンポーネントを組み立てます。通知先や保存先を
   ロジックに触れずに差し替えられます。
 * **1 イメージ 2 サービス**: 同じイメージを `SERVER_ROLE`（web / worker）で分け、別々の
   Cloud Run サービスとしてデプロイします（兄弟アプリと同じ方式）。Web 面は
-  `WORKER_URL` の worker サービスへタスクを投入します。ローカル開発は `SERVER_ROLE=both` で
-  1 プロセスに両面を持たせます。
-* **調査の深さは回数で決めます**: レビューは常にエージェントループで走ります。どこまで
-  調べるかは `AGENT_MAX_TOOL_CALLS`（ツール呼び出しの上限）で決まり、上限の 8 割を使うと
-  まとめに入るようエージェントへ伝えます。速く浅く済ませたい場合はこの数を下げます。
+  `WORKER_URL` の worker サービスへタスクを投入します（`SERVER_ROLE=both` については後述）。
 
 ### 成果物の置き場所
 
@@ -98,7 +101,7 @@ gs://{GCS_REVIEW_BUCKET}/reviews/{jobID}/
 adk-review/
 ├── assets/            # 【資産】静的リソース（embed でバイナリに埋め込み）
 │   ├── prompts/       #   - レビュー指示書（ファイル名がモード名。front matter に説明と excerpt）
-│   ├── partials/      #   - 全モード共通の出力フォーマット説明（verdict / findings）
+│   ├── partials/      #   - 全モード共通の断片（指摘の方針・verdict / findings の書式）
 │   ├── templates/     #   - HTML テンプレート
 │   ├── static/        #   - ブラウザへ配信する CSS / JS（/static/ で公開）
 │   └── assets.go      #   - embed.FS の定義と front matter の解析
@@ -139,14 +142,18 @@ API キー経路は配線していません。
 
 ### 1. 必要な環境変数
 
-**未設定だと起動時に落ちる**のは、全役割共通で `SERVER_ROLE`・`SERVICE_URL`（本番は HTTPS
-必須）・`GEMINI_MODELS`・`GCP_PROJECT_ID`・`GCS_REVIEW_BUCKET`、web 面ではさらに
-`CLOUD_TASKS_QUEUE_ID`・`WORKER_URL`・`TASK_CALLER_SERVICE_ACCOUNT_EMAIL`・
-`GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET`・`SESSION_SECRET`・`SESSION_ENCRYPT_KEY`・
-`ALLOWED_EMAILS` または `ALLOWED_DOMAINS`、worker 面では `TASK_AUDIENCE_URL`（未設定なら
-`SERVICE_URL` へ落ちます）と `ALLOWED_TASK_SERVICE_ACCOUNTS` です。
-`TASK_DISPATCH_DEADLINE` も全役割で必須、`PIPELINE_TIMEOUT` は worker 面で必須です（後述）。
-worker 面は OAuth 系の設定を要求しません。残りは空でも起動します（機能しないだけです）。
+**未設定だと起動時に落ちる**ものを役割ごとに挙げます（検査は `config.ValidateEssentialConfig`）。
+
+- **全役割**: `SERVER_ROLE` / `SERVICE_URL`（本番は HTTPS 必須）/ `GEMINI_MODELS` /
+  `GCP_PROJECT_ID` / `GCS_REVIEW_BUCKET` / `TASK_DISPATCH_DEADLINE`
+- **web 面**: `GCP_LOCATION_ID` / `CLOUD_TASKS_QUEUE_ID` / `WORKER_URL` /
+  `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` と OAuth 一式（`GOOGLE_CLIENT_ID` /
+  `GOOGLE_CLIENT_SECRET` / `SESSION_SECRET` / `SESSION_ENCRYPT_KEY` /
+  `ALLOWED_EMAILS` か `ALLOWED_DOMAINS`）
+- **worker 面**: `PIPELINE_TIMEOUT` / `ALLOWED_TASK_SERVICE_ACCOUNTS`
+
+**worker 面は OAuth 系を要求しません。** 面ごとにサービスを分けた意味（worker の env を
+最小に保つ）が失われるためです。残りは空でも起動します（機能しないだけです）。
 
 **プロジェクト ID とバケット名に既定値を置かないのは意図的です。** プレースホルダを置くと
 設定漏れのまま起動が成功し、失敗するのは利用者がフォームを送ったあと、しかも Gemini の

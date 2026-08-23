@@ -76,7 +76,7 @@
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-body">
             <h2 class="h6 text-muted mb-2">判定理由</h2>
-            <p class="mb-0">{{.Verdict.Reason}}</p>
+            <p class="model-text mb-0">{{.Verdict.Reason}}</p>
         </div>
     </div>
     {{end}}
@@ -85,7 +85,7 @@
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-body">
             <h2 class="h6 text-muted mb-2">概要</h2>
-            <p class="mb-0" style="white-space: pre-wrap;">{{.Summary}}</p>
+            <p class="model-text mb-0">{{.Summary}}</p>
         </div>
     </div>
     {{end}}
@@ -105,7 +105,7 @@
             <pre class="{{excerptClass $.Detail.Status.Mode}} mb-2">{{codeText .Excerpt}}</pre>
             {{end}}
 
-            <p class="mb-0" style="white-space: pre-wrap;">{{.Message}}</p>
+            <p class="model-text mb-0">{{.Message}}</p>
 
             {{if .Suggestion}}
             <div class="mt-2">

@@ -132,7 +132,7 @@ func New(cfg Config) *Reviewer {
 // ReviewWorkspace は、エージェントループでレビューを実行し review.Report を返します。
 //
 // エージェント・ランナー・セッションはレビュー 1 件ごとに使い捨てます。レビューは
-// 単発のジョブであり、実行をまたいで残したい状態が無いためです（in-memory セッションは
+// 1 回きりのジョブで、実行をまたいで残したい状態が無いためです（in-memory セッションは
 // そのための選択です）。
 func (r *Reviewer) ReviewWorkspace(ctx context.Context, modelName, prompt string, ws review.Workspace) (review.Report, error) {
 	if strings.TrimSpace(modelName) == "" {
