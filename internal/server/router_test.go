@@ -350,3 +350,30 @@ func TestCompressibleResponsesAreCompressed(t *testing.T) {
 		t.Errorf("圧縮後 %d バイトが元の %d バイトを下回っていない", rec.Body.Len(), len(body))
 	}
 }
+
+// CSP 以外の防御ヘッダーも全レスポンスに付くこと。どれも 1 行で入る割に、
+// 抜けても画面は正常に見えるため気付けません。
+func TestResponsesCarrySecurityHeaders(t *testing.T) {
+	router := newRouterForTest(t)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+
+	want := map[string]string{
+		"X-Content-Type-Options":    "nosniff",
+		"Referrer-Policy":           "same-origin",
+		"Strict-Transport-Security": hstsMaxAge,
+	}
+	for name, value := range want {
+		if got := rec.Header().Get(name); got != value {
+			t.Errorf("%s = %q, want %q", name, got, value)
+		}
+	}
+	// autoplay は塞ぎません（メディア再生が壊れます）。
+	policy := rec.Header().Get("Permissions-Policy")
+	if policy == "" {
+		t.Error("Permissions-Policy が付いていない")
+	}
+	if strings.Contains(policy, "autoplay") {
+		t.Errorf("Permissions-Policy が autoplay を塞いでいます: %s", policy)
+	}
+}
