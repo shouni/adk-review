@@ -1,10 +1,13 @@
 package server
 
 import (
+	"compress/gzip"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/shouni/gcp-kit/auth"
@@ -243,5 +246,107 @@ func TestDeleteRequiresAuth(t *testing.T) {
 
 	if w.Code == http.StatusNoContent {
 		t.Fatal("未認証の削除が通っています")
+	}
+}
+
+// バージョン付きの vendor と、URL が変わらない自前アセットで Cache-Control を分けること。
+func TestStaticCacheControlSeparatesVendorFromOwnAssets(t *testing.T) {
+	t.Parallel()
+
+	router := newRouterForTest(t)
+
+	tests := []struct {
+		target string
+		want   string
+	}{
+		{"/static/vendor/bootstrap-5.3.8/bootstrap.min.css", vendorCacheControl},
+		{"/static/css/app.css", ownAssetCacheControl},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.target, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.target, nil))
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s = %d, want 200", tt.target, rec.Code)
+			}
+			if got := rec.Header().Get("Cache-Control"); got != tt.want {
+				t.Errorf("Cache-Control = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// CSP が全レスポンスに付き、script-src が緩められていないこと。
+func TestResponsesCarryContentSecurityPolicy(t *testing.T) {
+	t.Parallel()
+
+	router := newRouterForTest(t)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+
+	policy := rec.Header().Get("Content-Security-Policy")
+	if policy == "" {
+		t.Fatal("Content-Security-Policy が付いていない")
+	}
+	for _, want := range []string{"default-src 'self'", "script-src 'self'", "object-src 'none'", "frame-ancestors 'none'"} {
+		if !strings.Contains(policy, want) {
+			t.Errorf("CSP に %q が無い: %s", want, policy)
+		}
+	}
+	// script-src の 'unsafe-inline' は、review_form.html からインラインスクリプトを
+	// 外した意味を消します（assets の TestTemplatesHaveNoInlineScripts が対です）。
+	scriptSrc := cspDirective(policy, "script-src")
+	if scriptSrc == "" {
+		t.Fatalf("script-src が無い: %s", policy)
+	}
+	if strings.Contains(scriptSrc, "unsafe-inline") || strings.Contains(scriptSrc, "unsafe-eval") {
+		t.Errorf("script-src が緩められています: %s", scriptSrc)
+	}
+}
+
+// cspDirective は CSP から 1 ディレクティブ分を取り出します。無ければ空文字を返します。
+func cspDirective(policy, name string) string {
+	for _, directive := range strings.Split(policy, ";") {
+		directive = strings.TrimSpace(directive)
+		if after, ok := strings.CutPrefix(directive, name+" "); ok {
+			return after
+		}
+	}
+	return ""
+}
+
+// 圧縮が効いていること。画面は日本語 UTF-8（1 文字 3 バイト）でよく縮むのに、
+// これまで無圧縮で配信していました。
+func TestCompressibleResponsesAreCompressed(t *testing.T) {
+	t.Parallel()
+
+	router := newRouterForTest(t)
+	req := httptest.NewRequest(http.MethodGet, "/static/vendor/bootstrap-5.3.8/bootstrap.min.css", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("Content-Encoding = %q, want gzip", got)
+	}
+
+	reader, err := gzip.NewReader(rec.Body)
+	if err != nil {
+		t.Fatalf("gzip.NewReader() error = %v", err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("解凍できない: %v", err)
+	}
+	if !strings.Contains(string(body), "Bootstrap") {
+		t.Error("解凍した中身が Bootstrap の CSS でない")
+	}
+	if len(body) <= rec.Body.Len() {
+		t.Errorf("圧縮後 %d バイトが元の %d バイトを下回っていない", rec.Body.Len(), len(body))
 	}
 }

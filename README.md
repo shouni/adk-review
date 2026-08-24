@@ -104,6 +104,7 @@ adk-review/
 │   ├── partials/      #   - 全モード共通の断片（指摘の方針・verdict / findings の書式）
 │   ├── templates/     #   - HTML テンプレート
 │   ├── static/        #   - ブラウザへ配信する CSS / JS（/static/ で公開）
+│   │   └── vendor/    #     - Bootstrap / Bootstrap Icons を自前配信（ライセンス併置）
 │   └── assets.go      #   - embed.FS の定義と front matter の解析
 ├── internal/
 │   ├── adkagent/      # 【頭脳】ADK エージェント（llmagent + ツール + 出力スキーマ）
@@ -241,7 +242,7 @@ IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必�
 | ルート | メソッド | web | worker | 説明 |
 | :--- | :--- | :---: | :---: | :--- |
 | `/health` | GET | ✅ | ✅ | ヘルスチェック（認証不要） |
-| `/static/*` | GET | ✅ | ✅ | CSS / JS（認証の外側） |
+| `/static/*` | GET | ✅ | ✅ | CSS / JS と `vendor/` の Bootstrap（認証の外側）。CDN を参照しないため CSP は `default-src 'self'`。バージョンがパスに入る `vendor/` は `Cache-Control: public, max-age=31536000, immutable`、自前アセットは `public, max-age=300, must-revalidate` |
 | `/auth/login`, `/auth/callback` | GET | ✅ | — | Google OAuth |
 | `/` | GET | ✅ | — | レビュー依頼フォーム |
 | `/submit_review` | POST | ✅ | — | 依頼の受付とタスク投入 |
