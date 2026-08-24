@@ -29,7 +29,6 @@ const (
 func NewRouter(h *builder.AppHandlers, projectID string) http.Handler {
 	r := chi.NewRouter()
 	setupCommonMiddleware(r, projectID)
-	setupStaticRoutes(r)
 	setupRoutes(r, h)
 
 	return r
@@ -77,6 +76,7 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	setupStaticRoutes(r)
 
 	if h == nil {
 		slog.Warn("AppHandlers is nil, skipping application routes registration")
