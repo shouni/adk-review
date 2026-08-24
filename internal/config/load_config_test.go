@@ -2,8 +2,9 @@ package config
 
 import (
 	"os"
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func unsetEnvForTest(t *testing.T, key string) {
@@ -54,18 +55,18 @@ func TestLoadConfig_FromEnvironment(t *testing.T) {
 		t.Fatalf("unexpected task audience: %s", cfg.Tasks.TaskAudienceURL)
 	}
 	wantModels := []string{"gemini-2.5-pro", "gemini-2.5-flash"}
-	if !reflect.DeepEqual(cfg.AI.GeminiModels, wantModels) {
-		t.Fatalf("gemini models mismatch: got=%v want=%v", cfg.AI.GeminiModels, wantModels)
+	if diff := cmp.Diff(wantModels, cfg.AI.GeminiModels); diff != "" {
+		t.Fatalf("gemini models mismatch (-want +got):\n%s", diff)
 	}
 
 	wantEmails := []string{"alice@example.com", "bob@example.com"}
-	if !reflect.DeepEqual(cfg.Auth.AllowedEmails, wantEmails) {
-		t.Fatalf("allowed emails mismatch: got=%v want=%v", cfg.Auth.AllowedEmails, wantEmails)
+	if diff := cmp.Diff(wantEmails, cfg.Auth.AllowedEmails); diff != "" {
+		t.Fatalf("allowed emails mismatch (-want +got):\n%s", diff)
 	}
 
 	wantDomains := []string{"example.com", "example.org"}
-	if !reflect.DeepEqual(cfg.Auth.AllowedDomains, wantDomains) {
-		t.Fatalf("allowed domains mismatch: got=%v want=%v", cfg.Auth.AllowedDomains, wantDomains)
+	if diff := cmp.Diff(wantDomains, cfg.Auth.AllowedDomains); diff != "" {
+		t.Fatalf("allowed domains mismatch (-want +got):\n%s", diff)
 	}
 }
 
