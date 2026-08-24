@@ -1,0 +1,2 @@
+assets/static/vendor/** -diff linguist-vendored
+assets/static/vendor/**/LICENSE diff
