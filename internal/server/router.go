@@ -29,7 +29,6 @@ const (
 func NewRouter(h *builder.AppHandlers, projectID string) http.Handler {
 	r := chi.NewRouter()
 	setupCommonMiddleware(r, projectID)
-	setupStaticRoutes(r)
 	setupRoutes(r, h)
 
 	return r
@@ -65,7 +64,7 @@ func setupCommonMiddleware(r *chi.Mux, projectID string) {
 	// 画面は日本語 UTF-8（1 文字 3 バイト）なので圧縮がよく効くが、これまで無圧縮で
 	// 配信していた。静的ファイルも同じ経路に乗る（vendor は immutable なので再圧縮は稀）。
 	r.Use(middleware.Compress(compressionLevel))
-	r.Use(contentSecurityPolicyMiddleware)
+	r.Use(securityHeaders)
 }
 
 // setupRoutes は、各コンポーネントのハンドラーをルーティングに登録します。
@@ -77,6 +76,7 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	setupStaticRoutes(r)
 
 	if h == nil {
 		slog.Warn("AppHandlers is nil, skipping application routes registration")
@@ -204,10 +204,36 @@ const contentSecurityPolicy = "default-src 'self'; " +
 	"frame-ancestors 'none'; " +
 	"form-action 'self'"
 
-// contentSecurityPolicyMiddleware は、全レスポンスに CSP を付けます。
-func contentSecurityPolicyMiddleware(next http.Handler) http.Handler {
+// securityHeaders は、全レスポンスに付ける防御的なヘッダー群です。
+//
+// hstsMaxAge は 1 年です。Cloud Run は HTTPS でしか受けないので現状の実害はありませんが、
+// 独自ドメインを当てたときに平文へ降格させないための宣言です。preload は付けません
+// （撤回にブラウザベンダーへの申請が要るうえ、得るものが少ないため）。
+//
+// Referrer-Policy を same-origin まで絞れるのは、外部オリジンへの参照を 1 つも持たないため
+// です（Bootstrap を CDN から自前配信へ移した結果）。唯一の越境は署名付き URL への 302 で、
+// GCS は Referer を見ません。
+//
+// Permissions-Policy は使っていない機能だけを塞ぎます。autoplay は将来メディアを
+// 載せたときに効いてくるため入れません。
+const hstsMaxAge = "max-age=31536000; includeSubDomains"
+
+var securityHeaderValues = map[string]string{
+	"Content-Security-Policy":   contentSecurityPolicy,
+	"Strict-Transport-Security": hstsMaxAge,
+	// MIME スニッフィングを止めます。
+	"X-Content-Type-Options": "nosniff",
+	"Referrer-Policy":        "same-origin",
+	"Permissions-Policy":     "geolocation=(), camera=(), microphone=(), payment=(), usb=()",
+}
+
+// securityHeaders は、全レスポンスに securityHeaderValues を付けます。
+func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
+		header := w.Header()
+		for name, value := range securityHeaderValues {
+			header.Set(name, value)
+		}
 		next.ServeHTTP(w, r)
 	})
 }
