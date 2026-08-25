@@ -34,6 +34,10 @@ const (
 	// query の長さの上限です。検索語を決めるのはモデルなので、リポジトリ内の文章に
 	// 引きずられて異常に長い query を作ることがあり得ます。
 	maxQueryBytes = 200
+
+	// maxSearchContext は、1 ヒットに添えられる前後の行数の上限です。
+	// 5 行を超えるなら read_file で範囲を指定したほうが安く済みます。
+	maxSearchContext = 5
 )
 
 // toolbox は、1 回のレビュー実行に紐付くワークスペース参照ツール一式です。
@@ -67,7 +71,12 @@ func newTools(root string, budget int64) (*toolbox, []tool.Tool, error) {
 	readFile, err := functiontool.New(functiontool.Config{
 		Name: "read_file",
 		Description: "作業ディレクトリ内のファイルを読みます。パスは作業ディレクトリからの相対パスで指定します。" +
-			"差分に含まれないファイル（前後の章、関連コード）の確認に使ってください。",
+			"差分に含まれないファイル（前後の章、関連コード）の確認に使ってください。" +
+			"from（開始行、1 始まり）と lines（行数）で範囲を指定できます。" +
+			"search_text で行番号が分かっているなら、必ず範囲を指定してください。" +
+			"読んだ内容は以降のやり取りすべてに残り、そのたび読み直されます。" +
+			"全文を読むのは、何行目を見ればよいか分からないときだけにしてください。" +
+			"返り値の total_lines で続きの有無が分かります。",
 	}, tb.readFileTool)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read_file の構築に失敗しました: %w", err)
@@ -85,7 +94,9 @@ func newTools(root string, budget int64) (*toolbox, []tool.Tool, error) {
 	searchText, err := functiontool.New(functiontool.Config{
 		Name: "search_text",
 		Description: "作業ディレクトリ内の全テキストファイルから文字列を検索し、ファイル名・行番号付きで返します。" +
-			"登場人物名・用語・関数名などが他のどこに現れるかの確認に使ってください（大文字小文字は区別しません）。",
+			"登場人物名・用語・関数名などが他のどこに現れるかの確認に使ってください（大文字小文字は区別しません）。" +
+			"context（0〜5）を指定すると各ヒットの前後の行も返します。" +
+			"1 行では判断できないと分かっているときは、read_file で開き直すより context を指定するほうが安く済みます。",
 	}, tb.searchTextTool)
 	if err != nil {
 		return nil, nil, fmt.Errorf("search_text の構築に失敗しました: %w", err)
@@ -192,10 +203,21 @@ func (t *toolbox) resolve(rel string) (string, error) {
 
 type readFileArgs struct {
 	Path string `json:"path"`
+	// From は読み始める行番号です（1 始まり）。0 や負値は先頭からとみなします。
+	From int `json:"from,omitempty"`
+	// Lines は読む行数です。0 以下なら From から末尾までです。
+	Lines int `json:"lines,omitempty"`
 }
 
 type readFileResult struct {
-	Content   string `json:"content,omitempty"`
+	Content string `json:"content,omitempty"`
+	// From / To は実際に返した行の範囲です（1 始まり、To を含む）。
+	From int `json:"from,omitempty"`
+	To   int `json:"to,omitempty"`
+	// TotalLines はファイル全体の行数です。**続きがあるかどうかはこれで分かります。**
+	// 無いと、範囲を指定して読んだモデルは「これで全部なのか」を判断できません。
+	TotalLines int `json:"total_lines,omitempty"`
+	// Truncated は、返す量の上限に当たって末尾を落としたことを示します。
 	Truncated bool   `json:"truncated,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
@@ -234,12 +256,50 @@ func (t *toolbox) readFile(toolCtx context.Context, args readFileArgs) (readFile
 		return readFileResult{Error: "テキストファイルではありません"}, nil
 	}
 
+	body, from, to, total := selectLines(string(content), args.From, args.Lines)
+
 	truncated := false
-	if len(content) > maxFileBytes {
-		content = content[:truncateAtRune(content, maxFileBytes)]
+	if len(body) > maxFileBytes {
+		body = body[:truncateAtRune(body, maxFileBytes)]
 		truncated = true
+		// 落としたぶん、返した範囲の終わりも縮みます。ここを直さないと、モデルは
+		// 読めていない行を読んだつもりで次へ進みます。
+		to = from + strings.Count(body, "\n")
 	}
-	return readFileResult{Content: string(content), Truncated: truncated}, nil
+	return readFileResult{
+		Content:    body,
+		From:       from,
+		To:         to,
+		TotalLines: total,
+		Truncated:  truncated,
+	}, nil
+}
+
+// selectLines は、1 始まりの行範囲を切り出し、範囲と全体の行数を返します。
+//
+// 範囲の指定が無ければ全体を返します（従来どおり）。範囲が外れている場合は空を返し、
+// 行番号は 0 になります。**呼び出し側が総行数を見て指定し直せる**ようにするためで、
+// エラーにはしません。
+func selectLines(text string, from, count int) (body string, first, last, total int) {
+	lines := strings.Split(text, "\n")
+	// 末尾の改行で生まれる空要素は行として数えません。
+	if n := len(lines); n > 0 && lines[n-1] == "" {
+		lines = lines[:n-1]
+	}
+	total = len(lines)
+
+	if from <= 0 {
+		from = 1
+	}
+	if from > total {
+		return "", 0, 0, total
+	}
+
+	end := total
+	if count > 0 && from+count-1 < end {
+		end = from + count - 1
+	}
+	return strings.Join(lines[from-1:end], "\n"), from, end, total
 }
 
 // truncateAtRune は、limit を超えない範囲で最も後ろの文字境界を返します。
@@ -338,6 +398,11 @@ func (t *toolbox) listFiles(toolCtx context.Context, args listFilesArgs) (listFi
 
 type searchTextArgs struct {
 	Query string `json:"query"`
+	// Context は、ヒット行の前後に添える行数です（0〜maxSearchContext、既定 0）。
+	//
+	// 既定を 0 にしているのは、広い検索で総量の上限に先に当たると、**添えた文脈のぶんだけ
+	// ヒットそのものが落ちる**ためです。1 行では判断できないと分かっている検索でだけ指定します。
+	Context int `json:"context,omitempty"`
 }
 
 type searchTextResult struct {
@@ -364,11 +429,14 @@ func (t *toolbox) searchText(toolCtx context.Context, args searchTextArgs) (sear
 	}
 	t.trace(toolCtx, "search_text", "query", query)
 
+	ctxLines := min(max(args.Context, 0), maxSearchContext)
+
 	lowered := strings.ToLower(query)
 	var hits []string
 	truncated := false
 	scanned := 0
 	resultBytes := 0
+	matches := 0
 
 	err := filepath.WalkDir(t.root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -414,32 +482,75 @@ func (t *toolbox) searchText(toolCtx context.Context, args searchTextArgs) (sear
 		if err != nil {
 			return err
 		}
-		// strings.Lines は行を切り出しながら回すので、大きなファイルでも
-		// 全行ぶんのスライスを一度に確保しません。
-		lineNo := 0
-		for line := range strings.Lines(string(content)) {
-			lineNo++
-			// 落とすのは改行だけです。TrimSpace までやるとインデントが消え、
-			// モデルから見て行の位置関係（ネストの深さ、箇条書きの階層）が読めなくなります。
-			line = strings.TrimRight(line, "\r\n")
-			if !strings.Contains(strings.ToLower(line), lowered) {
-				continue
+		relPath := filepath.ToSlash(rel)
+
+		// emit は 1 行を結果へ載せます。載せられなければ false を返します。
+		//
+		// 既に載せた行は飛ばします。ヒットが近いと前後の文脈が重なるためで、
+		// 潰さないと同じ行が何度も並んで総量の上限を無駄に食います。
+		lastEmitted := 0
+		emit := func(no int, line string) bool {
+			if no <= lastEmitted {
+				return true
 			}
-			if len(hits) >= maxSearchHits {
-				truncated = true
-				return filepath.SkipAll
-			}
-			hit, cut := formatHit(filepath.ToSlash(rel), lineNo, line)
+			hit, cut := formatHit(relPath, no, line)
 			if cut {
 				truncated = true
 			}
 			// 総量の上限に当たったら、その 1 件は載せずに打ち切ります。
 			if resultBytes+len(hit) > maxSearchResultBytes {
 				truncated = true
-				return filepath.SkipAll
+				return false
 			}
 			resultBytes += len(hit)
 			hits = append(hits, hit)
+			lastEmitted = no
+			return true
+		}
+
+		// strings.Lines は行を切り出しながら回すので、大きなファイルでも
+		// 全行ぶんのスライスを一度に確保しません。**前後の文脈も、直前の数行を
+		// 持ち回るだけで足ります**（全行を配列にする必要はありません）。
+		var before []bufferedLine
+		remainingAfter := 0
+		lineNo := 0
+
+		for raw := range strings.Lines(string(content)) {
+			lineNo++
+			// 落とすのは改行だけです。TrimSpace までやるとインデントが消え、
+			// モデルから見て行の位置関係（ネストの深さ、箇条書きの階層）が読めなくなります。
+			line := strings.TrimRight(raw, "\r\n")
+
+			switch {
+			case strings.Contains(strings.ToLower(line), lowered):
+				if matches >= maxSearchHits {
+					truncated = true
+					return filepath.SkipAll
+				}
+				matches++
+				for _, b := range before {
+					if !emit(b.no, b.text) {
+						return filepath.SkipAll
+					}
+				}
+				before = before[:0]
+				if !emit(lineNo, line) {
+					return filepath.SkipAll
+				}
+				remainingAfter = ctxLines
+
+			case remainingAfter > 0:
+				if !emit(lineNo, line) {
+					return filepath.SkipAll
+				}
+				remainingAfter--
+
+			case ctxLines > 0:
+				if len(before) == ctxLines {
+					before = before[1:]
+				}
+				before = append(before, bufferedLine{no: lineNo, text: line})
+			}
 		}
 		return nil
 	})
@@ -450,6 +561,12 @@ func (t *toolbox) searchText(toolCtx context.Context, args searchTextArgs) (sear
 		return searchTextResult{Error: fmt.Sprintf("検索に失敗しました: %v", err)}, nil
 	}
 	return searchTextResult{Hits: hits, Truncated: truncated}, nil
+}
+
+// bufferedLine は、ヒットの手前で持ち回る 1 行です。
+type bufferedLine struct {
+	no   int
+	text string
 }
 
 // formatHit は "path:line: 行の内容" 形式のヒットを組み立て、行を切り詰めたかを返します。
