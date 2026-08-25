@@ -74,8 +74,7 @@ func (h *History) List(ctx context.Context, page, perPage int) (domain.HistoryPa
 	// ID に埋め込まれた時刻で並べます。ID の辞書順に頼らないのは、採番の接頭辞が
 	// 変わったり別サービス採番の ID が混ざったりすると、時刻より先に接頭辞の差が
 	// 効いて日付を無視した並びになるためです。
-	items, meta, err := paging.LoadPage(ctx, jobIDs, page, perPage, failure.wrap(h.loadStatus),
-		paging.WithSortKey(jobid.SortKey),
+	items, meta, err := paging.LoadPage(ctx, jobIDs, page, perPage, jobid.SortKey, failure.wrap(h.loadStatus),
 		paging.WithConcurrency(loadConcurrency),
 		paging.WithLogger(h.logger),
 	)
