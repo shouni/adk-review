@@ -53,7 +53,7 @@ func reportSchema() *genai.Schema {
 				// ★ 長さの制約は Enum ほど硬く強制されません。**それでも置くのは、
 				// 今まで「どれだけ書いてよいか」を一言も伝えていなかったためです。**
 				// 効いているかはログの response_bytes で見てください。
-				MaxItems:    genai.Ptr(int64(maxFindings)),
+				MaxItems:    new(int64(maxFindings)),
 				Description: "重大な順に並べ、重要でないものは落とす",
 				Items: &genai.Schema{
 					Type: genai.TypeObject,
@@ -63,7 +63,7 @@ func reportSchema() *genai.Schema {
 						"line":     {Type: genai.TypeInteger},
 						"excerpt": {
 							Type:        genai.TypeString,
-							MaxLength:   genai.Ptr(int64(maxExcerptLength)),
+							MaxLength:   new(int64(maxExcerptLength)),
 							Description: "指摘した箇所だけを引用する。前後の文脈やファイル全体は含めない",
 						},
 						"message":    {Type: genai.TypeString},

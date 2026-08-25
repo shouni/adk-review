@@ -55,9 +55,9 @@ func geminiClientConfig(cfg *config.Config) genai.ClientConfig {
 		Location: geminiLocationID,
 		HTTPOptions: genai.HTTPOptions{
 			RetryOptions: &genai.HTTPRetryOptions{
-				Attempts:     genai.Ptr(int32(retryAttempts)),
-				InitialDelay: genai.Ptr(retryInitialDelay),
-				MaxDelay:     genai.Ptr(retryMaxDelay),
+				Attempts:     new(int32(retryAttempts)),
+				InitialDelay: new(float64(retryInitialDelay)),
+				MaxDelay:     new(float64(retryMaxDelay)),
 			},
 		},
 	}
