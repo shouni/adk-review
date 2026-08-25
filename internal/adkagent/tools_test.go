@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -386,5 +387,143 @@ func TestToolsStopOnCanceledContext(t *testing.T) {
 	}
 	if _, err := tb.searchText(ctx, searchTextArgs{Query: "アキラ"}); err == nil {
 		t.Error("search_text がキャンセルを無視しています")
+	}
+}
+
+// ★ 範囲を指定して読めること。
+//
+// **全文を読ませないための機能です。** 読んだ内容は以降のやり取りすべてに残り、
+// そのたびに読み直されるので、1 回の無駄が実行の終わりまで効き続けます。
+func TestReadFileRange(t *testing.T) {
+	dir := t.TempDir()
+	body := "l1\nl2\nl3\nl4\nl5\n"
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tb, err := newToolbox(dir, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name        string
+		from, lines int
+		want        string
+		wantFrom    int
+		wantTo      int
+	}{
+		{"範囲指定なしは全文", 0, 0, "l1\nl2\nl3\nl4\nl5", 1, 5},
+		{"途中から数行", 2, 2, "l2\nl3", 2, 3},
+		{"行数を省くと末尾まで", 4, 0, "l4\nl5", 4, 5},
+		{"末尾を超える行数は詰める", 4, 99, "l4\nl5", 4, 5},
+		{"0 以下の from は先頭", -3, 1, "l1", 1, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tb.readFile(t.Context(), readFileArgs{Path: "f.txt", From: tt.from, Lines: tt.lines})
+			if err != nil {
+				t.Fatalf("readFile: %v", err)
+			}
+			if got.Content != tt.want {
+				t.Errorf("Content = %q, want %q", got.Content, tt.want)
+			}
+			if got.From != tt.wantFrom || got.To != tt.wantTo {
+				t.Errorf("範囲 = %d-%d, want %d-%d", got.From, got.To, tt.wantFrom, tt.wantTo)
+			}
+			// 続きがあるかを判断できないと、範囲で読んだモデルは全部読んだつもりになります。
+			if got.TotalLines != 5 {
+				t.Errorf("TotalLines = %d, want 5", got.TotalLines)
+			}
+		})
+	}
+}
+
+// ファイルの末尾より後ろを指定しても、エラーにせず総行数だけ返すこと。
+// **総行数が分かれば、モデルは自分で指定し直せます。**
+func TestReadFileRangePastEndReportsTotal(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("a\nb\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tb, err := newToolbox(dir, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := tb.readFile(t.Context(), readFileArgs{Path: "f.txt", From: 99, Lines: 5})
+	if err != nil {
+		t.Fatalf("readFile: %v", err)
+	}
+	if got.Error != "" {
+		t.Errorf("範囲外がエラーになっています: %q", got.Error)
+	}
+	if got.Content != "" || got.TotalLines != 2 {
+		t.Errorf("Content = %q, TotalLines = %d, want \"\" / 2", got.Content, got.TotalLines)
+	}
+}
+
+// ヒットの前後を添えられること。read_file で開き直す往復を減らすためのものです。
+func TestSearchTextContext(t *testing.T) {
+	dir := t.TempDir()
+	body := "one\ntwo\nTARGET\nfour\nfive\n"
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tb, err := newToolbox(dir, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := tb.searchText(t.Context(), searchTextArgs{Query: "TARGET", Context: 1})
+	if err != nil {
+		t.Fatalf("searchText: %v", err)
+	}
+	want := []string{"f.txt:2: two", "f.txt:3: TARGET", "f.txt:4: four"}
+	if !slices.Equal(got.Hits, want) {
+		t.Errorf("Hits = %v, want %v", got.Hits, want)
+	}
+}
+
+// 近いヒットの文脈が重なっても、同じ行を二度並べないこと。
+// **潰さないと、総量の上限を重複で食い潰します。**
+func TestSearchTextContextDoesNotRepeatLines(t *testing.T) {
+	dir := t.TempDir()
+	body := "a\nTARGET\nb\nTARGET\nc\n"
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tb, err := newToolbox(dir, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := tb.searchText(t.Context(), searchTextArgs{Query: "TARGET", Context: 2})
+	if err != nil {
+		t.Fatalf("searchText: %v", err)
+	}
+	want := []string{"f.txt:1: a", "f.txt:2: TARGET", "f.txt:3: b", "f.txt:4: TARGET", "f.txt:5: c"}
+	if !slices.Equal(got.Hits, want) {
+		t.Errorf("Hits = %v, want %v", got.Hits, want)
+	}
+}
+
+// context を指定しなければ、これまでどおりヒット行だけを返すこと。
+// 広い検索で文脈を足すと、そのぶんヒットそのものが総量の上限で落ちます。
+func TestSearchTextWithoutContextReturnsOnlyMatches(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("a\nTARGET\nb\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tb, err := newToolbox(dir, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := tb.searchText(t.Context(), searchTextArgs{Query: "TARGET"})
+	if err != nil {
+		t.Fatalf("searchText: %v", err)
+	}
+	if !slices.Equal(got.Hits, []string{"f.txt:2: TARGET"}) {
+		t.Errorf("Hits = %v", got.Hits)
 	}
 }
