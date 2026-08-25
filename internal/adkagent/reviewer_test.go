@@ -2,6 +2,7 @@ package adkagent
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -186,6 +187,19 @@ func TestInstructionForCarriesToolBudget(t *testing.T) {
 	}
 	if strings.Contains(got, "%!") {
 		t.Errorf("書式が埋まっていません:\n%s", got)
+	}
+}
+
+// ★ 指摘件数の上限も、スキーマと同じ数字を語ること。
+//
+// **ずれると、モデルは指示のほうを信じてスキーマを超える件数を書き始めます。**
+// 上限に当たった出力は途中で切れ、そこまで正しく書けていた指摘ごと全損になります。
+func TestInstructionForCarriesFindingsCap(t *testing.T) {
+	t.Parallel()
+
+	got := instructionFor(32)
+	if want := fmt.Sprintf("%d 件", maxFindings); !strings.Contains(got, want) {
+		t.Errorf("instructionFor(32) missing %q:\n%s", want, got)
 	}
 }
 

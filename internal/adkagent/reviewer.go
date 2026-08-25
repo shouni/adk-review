@@ -37,9 +37,11 @@ const agentName = "workspace_reviewer"
 // instructionTemplate は、エージェントの行動指針です。レビュー観点そのもの（何をどう指摘するか）は
 // プロンプト側（review.PromptGenerator）の責務なので、ここには調査の進め方だけを書きます。
 //
-// 書式引数は「ツール呼び出しの上限」と「まとめに入る目安」です。**数字を文章に直書きせず
-// 実際の予算から埋めます。** 予算を変えたときに指示だけ古い数字を語り続けると、
-// モデルは残り 3 回のつもりで調査を続け、budgetExhaustedMsg で不意に打ち切られます。
+// 書式引数は「ツール呼び出しの上限」「まとめに入る目安」「指摘件数の上限」です。
+// **数字を文章に直書きせず実際の予算から埋めます。** 予算を変えたときに指示だけ古い数字を
+// 語り続けると、モデルは残り 3 回のつもりで調査を続け、budgetExhaustedMsg で不意に
+// 打ち切られます。件数も同じで、スキーマと指示がずれると、モデルは指示のほうを信じて
+// スキーマを超える件数を書き始めます。
 const instructionTemplate = `あなたは Git リポジトリの差分をレビューするエージェントです。
 ユーザーメッセージとしてレビュー指示と差分が渡されます。作業ディレクトリには差分の
 比較対象（head）がチェックアウトされており、ツールで中身を調べられます。
@@ -56,6 +58,10 @@ const instructionTemplate = `あなたは Git リポジトリの差分をレビ�
 ツールは合計 %d 回まで呼べます。%d 回を使ったら新しい調査は始めず、そこまでに得た情報で
 最終レビューをまとめてください。上限に達すると調査は強制的に打ち切られます。
 
+指摘は重大な順に並べ、多くとも %d 件までにしてください。出力の長さには上限があり、
+超えるとレビュー結果は途中で切れて何も残りません。重要度の低い指摘は落とし、excerpt は
+指摘した箇所だけを引用してください（前後の文脈やファイル全体は貼らない）。
+
 指摘に行番号を付けるときは search_text の結果（"パス:行番号: 行の内容" 形式）が確実です。
 read_file は行番号を返しません。
 
@@ -69,7 +75,7 @@ read_file は行番号を返しません。
 
 // instructionFor は、ツール予算を埋めた行動指針を返します。
 func instructionFor(maxToolCalls int64) string {
-	return fmt.Sprintf(instructionTemplate, maxToolCalls, wrapUpAfter(maxToolCalls))
+	return fmt.Sprintf(instructionTemplate, maxToolCalls, wrapUpAfter(maxToolCalls), maxFindings)
 }
 
 // wrapUpAfter は、モデルにまとめへ入ってほしい呼び出し回数（上限の 8 割）を返します。
