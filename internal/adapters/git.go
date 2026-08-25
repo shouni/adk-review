@@ -5,7 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/uuid"
+	"uuid"
+
 	gitsource "github.com/shouni/go-review-kit/git"
 	"github.com/shouni/go-review-kit/review"
 )
@@ -38,5 +39,5 @@ func NewDiffSourceFactory(sshKeyPath string) (review.DiffSourceFactory, error) {
 // 先に終わった側の後始末が、まだ差分を取っている側の足元を消してしまいます。
 // 実行ごとに固有の名前にして、その競合を避けます。
 func uniqueRepoDirName(repoURL string) string {
-	return gitsource.RepoDirName(repoURL) + "-" + uuid.New().String()
+	return gitsource.RepoDirName(repoURL) + "-" + uuid.NewV4().String()
 }
