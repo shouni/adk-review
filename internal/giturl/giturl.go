@@ -6,7 +6,6 @@
 package giturl
 
 import (
-	"log/slog"
 	"net/url"
 	"strings"
 )
@@ -21,9 +20,12 @@ func GetRepositoryPath(repoURL string) string {
 		}
 	}
 
+	// 解釈できない URL はそのまま返します。**握り潰しではありません。** 呼び出し元は
+	// テンプレート関数と通知の本文で、どちらも「元の URL を出す」が正しい結末です。
+	// 記録も残しません。この関数は context を受け取れる位置にないので、書けば job_id の
+	// 付かない行が 1 本増えるだけで、誰のどのレビューの話か追えません。
 	u, err := url.Parse(repoURL)
 	if err != nil {
-		slog.Warn("リポジトリURLのパースに失敗しました。元のURLをそのまま使用します。", "url", repoURL, "error", err)
 		return repoURL
 	}
 
