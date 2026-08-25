@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -110,9 +111,9 @@ func (s *stubStore) Get(_ context.Context, jobID string) (domain.JobStatus, erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for i := len(s.saved) - 1; i >= 0; i-- {
-		if s.saved[i].JobID == jobID {
-			return s.saved[i], nil
+	for _, v := range slices.Backward(s.saved) {
+		if v.JobID == jobID {
+			return v, nil
 		}
 	}
 	return domain.JobStatus{}, jobNotFound

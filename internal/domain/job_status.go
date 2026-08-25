@@ -145,11 +145,9 @@ func NewSucceededStatus(req ReviewRequest, outcome review.Status) JobStatus {
 
 func newStatus(req ReviewRequest, state jobstatus.State) JobStatus {
 	return JobStatus{
-		Status: jobstatus.Status{
-			JobID:   req.JobID,
-			Command: CommandReview,
-			State:   state,
-		},
+		JobID:         req.JobID,
+		Command:       CommandReview,
+		State:         state,
 		RepoURL:       req.RepoURL,
 		BaseBranch:    req.BaseBranch,
 		FeatureBranch: req.FeatureBranch,

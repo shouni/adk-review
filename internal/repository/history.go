@@ -216,7 +216,7 @@ func (h *History) loadStatus(ctx context.Context, jobID string) (domain.JobStatu
 	case err == nil:
 		return status, nil
 	case errors.Is(err, jobstatus.ErrNotFound):
-		return domain.JobStatus{Status: jobstatus.Status{JobID: jobID}}, nil
+		return domain.JobStatus{JobID: jobID}, nil
 	default:
 		h.logger.ErrorContext(ctx, "進行状況の読み込みに失敗しました", "job_id", jobID, "error", err)
 		return domain.JobStatus{}, fmt.Errorf("進行状況を読み込めませんでした (job_id: %s): %w", jobID, err)
