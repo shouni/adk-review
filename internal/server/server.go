@@ -24,7 +24,6 @@ const (
 func Run(ctx context.Context, cfg *config.Config) error {
 	slog.Info("🛠️ サーバー依存関係を構築中...")
 
-	// 1. アプリケーションコンテキストの構築
 	appCtx, err := builder.BuildContainer(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("アプリケーションコンテキストの構築に失敗しました: %w", err)
@@ -34,13 +33,11 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		appCtx.Close()
 	}()
 
-	// 2. ハンドラーの組み立て
 	appHandlers, err := builder.BuildHandlers(appCtx)
 	if err != nil {
 		return fmt.Errorf("ハンドラーの構築に失敗しました: %w", err)
 	}
 
-	// 3. ルーターの作成
 	router := NewRouter(appHandlers, cfg.GCP.ProjectID)
 
 	srv := &http.Server{
@@ -56,7 +53,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		// 実行時間の上限は PIPELINE_TIMEOUT と dispatch deadline が受け持ちます。
 	}
 
-	// 5. サーバー起動（別ゴルーチン）
 	serverErrors := make(chan error, 1)
 	go func() {
 		slog.Info("🚀 サーバーを起動中...", "port", cfg.Server.Port)
@@ -65,7 +61,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		}
 	}()
 
-	// 6. 停止待機
 	select {
 	case err := <-serverErrors:
 		return fmt.Errorf("サーバーエラーが発生しました: %w", err)
@@ -81,7 +76,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 // 猶予は設定から受け取ります。Cloud Run が SIGKILL するまでの時間より長く取っても
 // 待ち切れないため、待つ長さはデプロイ側の事情に合わせられる必要があります。
 func gracefulShutdown(srv *http.Server, timeout time.Duration) error {
-	// シャットダウン用のタイムアウト付きコンテキスト
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 

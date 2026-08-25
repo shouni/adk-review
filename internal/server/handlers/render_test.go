@@ -149,3 +149,38 @@ func TestExcerptClass(t *testing.T) {
 		}
 	}
 }
+
+// 差分の大きさは MAX_DIFF_BYTES（既定 320 KiB）と見比べる値なので、桁を数えずに
+// 読める形にすること。
+func TestByteSize(t *testing.T) {
+	t.Parallel()
+
+	tests := map[int]string{
+		0:       "0 B",
+		512:     "512 B",
+		1024:    "1 KiB",
+		327680:  "320 KiB",
+		491186:  "480 KiB",
+		1 << 20: "1.0 MiB",
+	}
+	for in, want := range tests {
+		if got := byteSize(in); got != want {
+			t.Errorf("byteSize(%d) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestDurationText(t *testing.T) {
+	t.Parallel()
+
+	tests := map[int64]string{
+		0:       "0.0 秒",
+		39_000:  "39.0 秒",
+		152_000: "2 分 32 秒",
+	}
+	for in, want := range tests {
+		if got := durationText(in); got != want {
+			t.Errorf("durationText(%d) = %q, want %q", in, got, want)
+		}
+	}
+}

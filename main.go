@@ -38,11 +38,9 @@ func main() {
 // run はアプリケーションの初期化とサーバー起動を行います。defer によるクリーンアップが
 // os.Exit で無視されないよう、終了コードの決定は main 側に委ねます。
 func run() error {
-	// シグナルを監視するコンテキスト
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// 設定のロードとバリデーション
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		slog.Error("設定の読み込みに失敗しました", "error", err)
@@ -53,7 +51,6 @@ func run() error {
 		return err
 	}
 
-	// サーバー実行
 	if err := server.Run(ctx, cfg); err != nil {
 		slog.Error("アプリケーションが異常終了しました", "error", err)
 		return err

@@ -43,6 +43,7 @@ const (
 // 読めないがツール呼び出し回数は設計時に見積もれるためです。
 type toolbox struct {
 	root      string
+	budget    int64
 	remaining atomic.Int64
 }
 
@@ -54,10 +55,13 @@ type toolbox struct {
 const budgetExhaustedMsg = "ツールの呼び出し回数上限に達しました。これ以上の調査はできません。ここまでに得た情報で最終レビューをまとめてください。"
 
 // newTools は、root 配下だけを参照できるツール一式を組み立てます。
-func newTools(root string, budget int64) ([]tool.Tool, error) {
+//
+// toolbox も返すのは、実行後に呼び出し回数を数えるためです（used）。上限が実測に対して
+// 妥当かどうかは、使い切ったかどうかではなく毎回いくつ使ったかで判断します。
+func newTools(root string, budget int64) (*toolbox, []tool.Tool, error) {
 	tb, err := newToolbox(root, budget)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	readFile, err := functiontool.New(functiontool.Config{
@@ -66,7 +70,7 @@ func newTools(root string, budget int64) ([]tool.Tool, error) {
 			"差分に含まれないファイル（前後の章、関連コード）の確認に使ってください。",
 	}, tb.readFileTool)
 	if err != nil {
-		return nil, fmt.Errorf("read_file の構築に失敗しました: %w", err)
+		return nil, nil, fmt.Errorf("read_file の構築に失敗しました: %w", err)
 	}
 
 	listFiles, err := functiontool.New(functiontool.Config{
@@ -75,7 +79,7 @@ func newTools(root string, budget int64) ([]tool.Tool, error) {
 			"リポジトリの構成を把握するために最初に呼ぶことを推奨します。",
 	}, tb.listFilesTool)
 	if err != nil {
-		return nil, fmt.Errorf("list_files の構築に失敗しました: %w", err)
+		return nil, nil, fmt.Errorf("list_files の構築に失敗しました: %w", err)
 	}
 
 	searchText, err := functiontool.New(functiontool.Config{
@@ -84,10 +88,10 @@ func newTools(root string, budget int64) ([]tool.Tool, error) {
 			"登場人物名・用語・関数名などが他のどこに現れるかの確認に使ってください（大文字小文字は区別しません）。",
 	}, tb.searchTextTool)
 	if err != nil {
-		return nil, fmt.Errorf("search_text の構築に失敗しました: %w", err)
+		return nil, nil, fmt.Errorf("search_text の構築に失敗しました: %w", err)
 	}
 
-	return []tool.Tool{readFile, listFiles, searchText}, nil
+	return tb, []tool.Tool{readFile, listFiles, searchText}, nil
 }
 
 // newToolbox は、root を実体パスへ解決して toolbox を生成します。
@@ -101,9 +105,24 @@ func newToolbox(root string, budget int64) (*toolbox, error) {
 		return nil, fmt.Errorf("作業ディレクトリを解決できません (%s): %w", root, err)
 	}
 
-	tb := &toolbox{root: resolved}
+	tb := &toolbox{root: resolved, budget: budget}
 	tb.remaining.Store(budget)
 	return tb, nil
+}
+
+// used は、実際に呼ばれた回数を返します。
+//
+// remaining は使い切ったあとも減り続けるため（spend は減らしてから判定します）、
+// 上限で頭打ちにします。使い切った実行を「上限より多く呼んだ」と記録しないためです。
+func (t *toolbox) used() int {
+	used := t.budget - t.remaining.Load()
+	if used > t.budget {
+		return int(t.budget)
+	}
+	if used < 0 {
+		return 0
+	}
+	return int(used)
 }
 
 // spend は、呼び出し回数の残りを 1 消費します。使い切っていたら false を返します。

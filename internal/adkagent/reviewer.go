@@ -7,7 +7,6 @@
 package adkagent
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -37,9 +36,11 @@ const agentName = "workspace_reviewer"
 // instructionTemplate は、エージェントの行動指針です。レビュー観点そのもの（何をどう指摘するか）は
 // プロンプト側（review.PromptGenerator）の責務なので、ここには調査の進め方だけを書きます。
 //
-// 書式引数は「ツール呼び出しの上限」と「まとめに入る目安」です。**数字を文章に直書きせず
-// 実際の予算から埋めます。** 予算を変えたときに指示だけ古い数字を語り続けると、
-// モデルは残り 3 回のつもりで調査を続け、budgetExhaustedMsg で不意に打ち切られます。
+// 書式引数は「ツール呼び出しの上限」「まとめに入る目安」「指摘件数の上限」です。
+// **数字を文章に直書きせず実際の予算から埋めます。** 予算を変えたときに指示だけ古い数字を
+// 語り続けると、モデルは残り 3 回のつもりで調査を続け、budgetExhaustedMsg で不意に
+// 打ち切られます。件数も同じで、スキーマと指示がずれると、モデルは指示のほうを信じて
+// スキーマを超える件数を書き始めます。
 const instructionTemplate = `あなたは Git リポジトリの差分をレビューするエージェントです。
 ユーザーメッセージとしてレビュー指示と差分が渡されます。作業ディレクトリには差分の
 比較対象（head）がチェックアウトされており、ツールで中身を調べられます。
@@ -56,6 +57,10 @@ const instructionTemplate = `あなたは Git リポジトリの差分をレビ�
 ツールは合計 %d 回まで呼べます。%d 回を使ったら新しい調査は始めず、そこまでに得た情報で
 最終レビューをまとめてください。上限に達すると調査は強制的に打ち切られます。
 
+指摘は重大な順に並べ、多くとも %d 件までにしてください。出力の長さには上限があり、
+超えるとレビュー結果は途中で切れて何も残りません。重要度の低い指摘は落とし、excerpt は
+指摘した箇所だけを引用してください（前後の文脈やファイル全体は貼らない）。
+
 指摘に行番号を付けるときは search_text の結果（"パス:行番号: 行の内容" 形式）が確実です。
 read_file は行番号を返しません。
 
@@ -69,7 +74,7 @@ read_file は行番号を返しません。
 
 // instructionFor は、ツール予算を埋めた行動指針を返します。
 func instructionFor(maxToolCalls int64) string {
-	return fmt.Sprintf(instructionTemplate, maxToolCalls, wrapUpAfter(maxToolCalls))
+	return fmt.Sprintf(instructionTemplate, maxToolCalls, wrapUpAfter(maxToolCalls), maxFindings)
 }
 
 // wrapUpAfter は、モデルにまとめへ入ってほしい呼び出し回数（上限の 8 割）を返します。
@@ -129,30 +134,35 @@ func New(cfg Config) *Reviewer {
 	}
 }
 
-// ReviewWorkspace は、エージェントループでレビューを実行し review.Report を返します。
+// Review は、エージェントループでレビューを実行し review.Report を返します。
 //
 // エージェント・ランナー・セッションはレビュー 1 件ごとに使い捨てます。レビューは
 // 1 回きりのジョブで、実行をまたいで残したい状態が無いためです（in-memory セッションは
 // そのための選択です）。
-func (r *Reviewer) ReviewWorkspace(ctx context.Context, modelName, prompt string, ws review.Workspace) (review.Report, error) {
+//
+// 戻り値の review.RunInfo には、使用量・ツール呼び出し回数と、**出力が途中で切れたか**が
+// 入ります。失敗する経路でも、そこまでに分かったぶんは返します（トークンは既に消費済みです）。
+func (r *Reviewer) Review(
+	ctx context.Context, modelName, prompt string, ws review.Workspace,
+) (review.Report, review.RunInfo, error) {
 	if strings.TrimSpace(modelName) == "" {
-		return review.Report{}, fmt.Errorf("adkagent: モデル名が空です")
+		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: モデル名が空です")
 	}
 	if strings.TrimSpace(prompt) == "" {
-		return review.Report{}, fmt.Errorf("adkagent: プロンプトが空です")
+		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: プロンプトが空です")
 	}
 	if strings.TrimSpace(ws.Dir) == "" {
-		return review.Report{}, fmt.Errorf("adkagent: 作業ディレクトリが空です")
+		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: 作業ディレクトリが空です")
 	}
 
 	llm, err := r.model(ctx, modelName)
 	if err != nil {
-		return review.Report{}, err
+		return review.Report{}, review.RunInfo{}, err
 	}
 
-	tools, err := newTools(ws.Dir, r.maxToolCalls)
+	tb, tools, err := newTools(ws.Dir, r.maxToolCalls)
 	if err != nil {
-		return review.Report{}, err
+		return review.Report{}, review.RunInfo{}, err
 	}
 
 	// OutputSchema とツールは併用できます。ただし経路は 2 通りあり、**Vertex AI の
@@ -169,59 +179,72 @@ func (r *Reviewer) ReviewWorkspace(ctx context.Context, modelName, prompt string
 		OutputSchema: reportSchema(),
 	})
 	if err != nil {
-		return review.Report{}, fmt.Errorf("adkagent: エージェントの構築に失敗しました: %w", err)
+		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: エージェントの構築に失敗しました: %w", err)
 	}
 
 	run, err := runner.NewInMemory("adk-review", ag)
 	if err != nil {
-		return review.Report{}, fmt.Errorf("adkagent: ランナーの構築に失敗しました: %w", err)
+		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: ランナーの構築に失敗しました: %w", err)
 	}
 
 	final, err := r.collectFinal(ctx, run, prompt)
 	if err != nil {
-		return review.Report{}, err
+		return review.Report{}, review.RunInfo{ToolCalls: tb.used()}, err
 	}
+	info := final.runInfo(tb.used())
 
-	// ★ 解釈より先に終了理由を見ます。**上限で切り詰められた出力も「正常な最終応答」として
-	// 降ってきます**（ADK の converters は FinishReason を見ずに Content をそのまま通します）。
-	// ここを飛ばすと、出力上限の超過が「JSON として解釈できません」として報告されます。
-	// 症状しか残らないため、次に起きても同じ調査をやり直すことになります。
+	// 途中切れ以外の理由（安全性フィルタなど）で止まった場合はここで落とします。
+	// **上限で切り詰められた出力も「正常な最終応答」として降ってきます**（ADK の
+	// converters は FinishReason を見ずに Content をそのまま通します）。
 	if err := final.finishError(); err != nil {
 		slog.ErrorContext(ctx, "モデルが最後まで出力しませんでした", final.logAttrs()...)
-		return review.Report{}, err
+		return review.Report{}, info, err
 	}
 
-	// 補修が要ったかどうかを残します。ParseReport は壊れた出力を黙って直して成功するので、
-	// ここで見ないと**効いているのか出番が無いのか区別が付きません。**
-	// モデルがどのくらいの頻度で壊すかは運用で追う価値があります。
-	raw := []byte(final.text)
-	cleaned := review.SanitizeJSON(raw)
-	if !bytes.Equal(cleaned, raw) {
-		slog.WarnContext(ctx, "モデルの出力が壊れていたので補修しました",
-			"before_bytes", len(raw), "after_bytes", len(cleaned),
-			"response_head", headForLog(final.text, repairLogHead))
-	}
+	report, parsed, err := review.ParseReport([]byte(final.text))
+	// 終了理由が欠けたまま切れることがあるため、解釈側の判定と併せて見ます
+	// （実測で、finish_reason が空のまま 212 KB で切れた例があります）。
+	info.Truncated = info.Truncated || parsed.Truncated
 
-	report, err := review.ParseReport(cleaned)
 	if err != nil {
 		// ★ 生の応答を残します。**これが無いと解析失敗は原因不明のまま終わります。**
-		// エージェントレビューは十数分かかるので、失敗のたびに同じ時間を払って
-		// 再現を試みることになります（実際、モデルがエスケープしていない
-		// バックスラッシュを excerpt に入れて落ちた例があります）。
+		// エージェントレビューは数分かかるので、失敗のたびに同じ時間を払って再現を
+		// 試みることになります。
 		//
 		// **頭と末尾の両方を残すのが要点です。** 頭だけだと、最後まで律儀に書いた末に
 		// 切れたのか、途中から同じ出力を繰り返して膨らんだのかが区別できません
 		// （212 KB の出力を頭 2 KB だけ見て判断できなかった例があります）。
 		slog.ErrorContext(ctx, "レビュー結果を解釈できませんでした",
 			append([]any{"error", err}, final.logAttrs()...)...)
-		return review.Report{}, fmt.Errorf("adkagent: %w", err)
+		if final.truncated() {
+			// 利用者がそのまま次の手を打てる文言にします。この失敗は Slack にも履歴にも
+			// 1 行しか残らないので、そこに対処が書かれていないと問い合わせになります。
+			return review.Report{}, info, fmt.Errorf(
+				"adkagent: 出力が上限に達して途中で切れ、拾える範囲もありませんでした: "+
+					"レビュー範囲を狭めて再実行してください: %w", err)
+		}
+		return review.Report{}, info, fmt.Errorf("adkagent: %w", err)
+	}
+
+	// 補修と切り出しが要ったかを残します。**黙って直して成功するので、ここで見ないと
+	// 効いているのか出番が無いのか区別が付きません。**
+	if parsed.Repaired {
+		slog.WarnContext(ctx, "モデルの出力が壊れていたので補修しました",
+			"response_bytes", len(final.text),
+			"response_head", headForLog(final.text, repairLogHead))
+	}
+	if info.Truncated {
+		// ★ 部分であることは呼び出し側へ RunInfo で渡ります。ログにも残すのは、
+		// どのくらいの頻度で起きるかが上限を決め直す材料になるためです。
+		slog.WarnContext(ctx, "出力が途中で切れたため、完結していた範囲だけを採用しました",
+			append([]any{"findings", len(report.Findings)}, final.logAttrs()...)...)
 	}
 
 	// 並びはここで確定させます。プロンプトでも重い順を指示していますが、守られる保証は
 	// ありません。画面も Slack も返ってきた順にそのまま出すので、Blocker が Minor の
 	// 後ろに埋もれると**いちばん読ませたい指摘が最後になります。**
 	report.SortFindings()
-	return report, nil
+	return report, info, nil
 }
 
 // repairLogHead は、補修したときにログへ残す応答の上限です。
@@ -271,21 +294,41 @@ type finalResponse struct {
 	usage *genai.GenerateContentResponseUsageMetadata
 }
 
-// finishError は、モデルが最後まで出力しなかった場合にその理由を返します。
+// truncated は、出力の上限に当たって途中で止まったかどうかを返します。
+func (f finalResponse) truncated() bool {
+	return f.finishReason == genai.FinishReasonMaxTokens
+}
+
+// finishError は、途中切れ**以外**の理由で止まった場合にその理由を返します。
 //
-// 終了理由が空のときは成功として扱います。最終イベントに載るとは限らず（バックエンドや
+// ★ MAX_TOKENS はここで落としません。**そこまでに書けていた指摘は救えます**
+// （review.ParseReport が完結している範囲を拾います）。全損にしていた頃は、完成した
+// Blocker の指摘ごと失っていました。拾えなかった場合だけ、呼び出し元がエラーにします。
+//
+// 終了理由が空のときも成功として扱います。最終イベントに載るとは限らず（バックエンドや
 // 経路によって欠けます）、空を失敗にすると**正常なレビューまで落とします。**
 func (f finalResponse) finishError() error {
 	switch f.finishReason {
-	case "", genai.FinishReasonStop:
+	case "", genai.FinishReasonStop, genai.FinishReasonMaxTokens:
 		return nil
-	case genai.FinishReasonMaxTokens:
-		// 利用者がそのまま次の手を打てる文言にします。この失敗は Slack にも履歴にも
-		// 1 行しか残らないので、そこに対処が書かれていないと問い合わせになります。
-		return fmt.Errorf("adkagent: 出力が上限に達し、レビュー結果が途中で切れました (finish_reason: %s): 差分が大きすぎます。ブランチを分けるか、範囲を絞って再実行してください", f.finishReason)
 	default:
 		return fmt.Errorf("adkagent: モデルが最後まで出力しませんでした (finish_reason: %s)", f.finishReason)
 	}
+}
+
+// runInfo は、この実行の計測値を組み立てます。
+//
+// 使用量は最終応答を出した 1 回ぶんで、ループ全体の合計ではありません（ADK は各回の
+// メタデータを合算しません）。**それでも上限との距離は測れます。** 出力が切り詰められるのは
+// 最後の 1 回だからです。
+func (f finalResponse) runInfo(toolCalls int) review.RunInfo {
+	info := review.RunInfo{Truncated: f.truncated(), ToolCalls: toolCalls}
+	if f.usage != nil {
+		info.PromptTokens = int(f.usage.PromptTokenCount)
+		info.OutputTokens = int(f.usage.CandidatesTokenCount)
+		info.ThoughtTokens = int(f.usage.ThoughtsTokenCount)
+	}
+	return info
 }
 
 // logAttrs は、失敗したときにログへ残す応答の情報です。

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shouni/go-job-kit/jobstatus"
 	"github.com/shouni/go-review-kit/pipeline"
 	"github.com/shouni/go-review-kit/review"
 
@@ -38,6 +39,8 @@ func (s stubSource) Diff(ctx context.Context, _, _ string) (string, error) {
 	return "diff --git a/main.go b/main.go", nil
 }
 
+func (s stubSource) CheckoutHead(context.Context, string) (string, error) { return "/tmp/workdir", nil }
+
 func (s stubSource) Close(context.Context) error { return nil }
 
 type stubFactory struct{ source stubSource }
@@ -52,11 +55,13 @@ func (stubPrompts) Generate(_, _ string) (string, error) { return "prompt", nil 
 
 type stubReviewer struct{}
 
-func (stubReviewer) Review(context.Context, string, string) (review.Report, error) {
+func (stubReviewer) Review(
+	context.Context, string, string, review.Workspace,
+) (review.Report, review.RunInfo, error) {
 	return review.Report{
 		Title:   "レビュー結果",
 		Verdict: review.Verdict{Decision: review.DecisionNone, Reason: "問題なし"},
-	}, nil
+	}, review.RunInfo{}, nil
 }
 
 // stubPublisher は保存のフェイクです。保存時の context を観察できます。
@@ -156,11 +161,11 @@ func newTestPipelineWith(
 	t.Helper()
 
 	p, err := pipeline.New(pipeline.Deps{
-		Sources:   stubFactory{source: source},
-		Prompts:   stubPrompts{},
-		Reviewer:  stubReviewer{},
-		Publisher: publisher,
-		Notifier:  notifier,
+		Sources:           stubFactory{source: source},
+		Prompts:           stubPrompts{},
+		WorkspaceReviewer: stubReviewer{},
+		Publisher:         publisher,
+		Notifier:          notifier,
 	}, opts...)
 	if err != nil {
 		t.Fatalf("パイプラインの構築に失敗: %v", err)
@@ -416,4 +421,65 @@ func TestReviewPipeline_打ち切り後も結末を記録する(t *testing.T) {
 	if len(states) < 2 || states[len(states)-1] != "failed" {
 		t.Fatalf("打ち切りが記録されていません: %v", states)
 	}
+}
+
+// ★ 計測値は失敗した実行にも記録すること。
+//
+// **上限が厳しすぎるかどうかを判断する材料は、通った実行より弾かれた実行の側にあります。**
+// 成功時だけ残す作りだと、いちばん見たい裾が履歴から欠けます。
+func TestBuildOutcomeStatusRecordsMetrics(t *testing.T) {
+	t.Parallel()
+
+	req := testDomainRequest()
+	result := review.Result{
+		Status:    review.StatusSucceeded,
+		Duration:  152 * time.Second,
+		DiffBytes: 327680,
+		Run: review.RunInfo{
+			Truncated:     true,
+			PromptTokens:  219062,
+			OutputTokens:  63950,
+			ThoughtTokens: 1579,
+			ToolCalls:     5,
+		},
+	}
+	want := domain.Metrics{
+		DiffBytes:     327680,
+		DurationMS:    152_000,
+		PromptTokens:  219062,
+		OutputTokens:  63950,
+		ThoughtTokens: 1579,
+		ToolCalls:     5,
+	}
+
+	report := &review.Report{Title: "レビュー", Verdict: review.Verdict{Decision: review.DecisionMinor}}
+
+	t.Run("成功", func(t *testing.T) {
+		got := buildOutcomeStatus(req, result, report, nil)
+		if got.Metrics != want {
+			t.Errorf("Metrics = %+v, want %+v", got.Metrics, want)
+		}
+		if !got.Truncated {
+			t.Error("Truncated が引き継がれていません")
+		}
+		if got.Title != "レビュー" || got.ReportURI != req.StorageURI {
+			t.Errorf("成果物の情報が欠けています: %+v", got)
+		}
+	})
+
+	t.Run("失敗でも残る", func(t *testing.T) {
+		failed := result
+		failed.Status = review.StatusFailed
+
+		got := buildOutcomeStatus(req, failed, nil, errors.New("boom"))
+		if got.State != jobstatus.StateFailed {
+			t.Fatalf("State = %q, want failed", got.State)
+		}
+		if got.Metrics != want {
+			t.Errorf("失敗時に Metrics = %+v, want %+v", got.Metrics, want)
+		}
+		if got.ReportURI != "" {
+			t.Errorf("失敗なのに成果物の URI が入っています: %q", got.ReportURI)
+		}
+	})
 }

@@ -37,7 +37,39 @@ type JobStatus struct {
 	Decision review.Decision `json:"decision,omitempty"`
 	// ReportURI はレビュー結果全文（report.json）の URI です。成功時のみ入ります。
 	ReportURI string `json:"report_uri,omitempty"`
+
+	// Truncated は、モデルの出力が途中で切れ、完結していた範囲だけを保存したことを示します。
+	//
+	// ★ **成功として記録しますが、指摘はこれで全部ではありません。** ここを持たずに保存すると、
+	// 画面も API も「指摘 2 件のレビュー」として見せることになり、読む側は残りが
+	// あったことを知る手段を失います。
+	Truncated bool `json:"truncated,omitempty"`
+
+	// Metrics は、上限を実測から決め直すための材料です。
+	Metrics Metrics `json:"metrics,omitzero"`
 }
+
+// Metrics は、レビュー 1 件の実行の計測値です。
+//
+// **失敗した実行にも入ります。** 上限（差分の大きさ・ツール回数・出力トークン）が
+// 厳しすぎるかどうかを判断する材料は、通った実行より弾かれた実行の側にあります。
+// これを持たない頃は、`MAX_DIFF_BYTES` を決めるのに Cloud Logging を掘って
+// ログ行を手で突き合わせる必要がありました。
+type Metrics struct {
+	// DiffBytes は AI へ送った差分の大きさです。MAX_DIFF_BYTES の調整に使います。
+	DiffBytes int `json:"diff_bytes,omitempty"`
+	// DurationMS はレビュー 1 件の所要時間です。PIPELINE_TIMEOUT の調整に使います。
+	DurationMS int64 `json:"duration_ms,omitempty"`
+	// 以下はモデルの使用量です。出力が上限（64Ki トークン）へどれだけ近いかを見ます。
+	PromptTokens  int `json:"prompt_tokens,omitempty"`
+	OutputTokens  int `json:"output_tokens,omitempty"`
+	ThoughtTokens int `json:"thought_tokens,omitempty"`
+	// ToolCalls はエージェントがツールを呼んだ回数です。AGENT_MAX_TOOL_CALLS の調整に使います。
+	ToolCalls int `json:"tool_calls,omitempty"`
+}
+
+// Empty は、計測値が 1 つも入っていないかどうかを返します。
+func (m Metrics) Empty() bool { return m == Metrics{} }
 
 // HasReport は、レビュー結果全文が保存されているかどうかを返します。
 func (s JobStatus) HasReport() bool {
@@ -71,6 +103,10 @@ func (s *JobStatus) carryOverFrom(prev *JobStatus) {
 	}
 	if s.Outcome == "" {
 		s.Outcome = prev.Outcome
+	}
+	if s.Metrics.Empty() {
+		s.Metrics = prev.Metrics
+		s.Truncated = prev.Truncated
 	}
 }
 

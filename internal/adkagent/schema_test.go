@@ -63,6 +63,22 @@ func TestSchemaShape(t *testing.T) {
 		}
 	}
 
+	// ★ 出力の 64Ki トークンに当たると、途中まで正しく書けていた JSON ごと全損になります。
+	// スキーマが長さについて何も言わないと、モデルから見れば無制限です。
+	if findings.MaxItems == nil {
+		t.Error("findings に MaxItems がありません（出力上限に当たると全損になります）")
+	} else if *findings.MaxItems != maxFindings {
+		t.Errorf("findings の MaxItems = %d, want %d", *findings.MaxItems, maxFindings)
+	}
+
+	// 膨らむのはたいてい引用です。切れた実行の末尾は同じコード片の反復で埋まっていました。
+	excerpt := findings.Items.Properties["excerpt"]
+	if excerpt.MaxLength == nil {
+		t.Error("excerpt に MaxLength がありません")
+	} else if *excerpt.MaxLength != maxExcerptLength {
+		t.Errorf("excerpt の MaxLength = %d, want %d", *excerpt.MaxLength, maxExcerptLength)
+	}
+
 	// evidence はこちらにだけ含めます。作業ディレクトリを実際に調べるレビュアーなので、
 	// 「どこを見て判断したか」を自己申告させる意味があります（schema.go のコメント参照）。
 	if _, ok := findings.Items.Properties["evidence"]; !ok {

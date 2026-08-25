@@ -22,7 +22,18 @@
                 {{if .Decision}}
                 <span class="badge {{decisionClass .Decision}}">{{decisionLabel .Decision}}</span>
                 {{end}}
+                {{if .Truncated}}
+                <span class="badge text-bg-warning">✂ 部分</span>
+                {{end}}
             </div>
+
+            {{if .Truncated}}
+            <div class="alert alert-warning small py-2">
+                <i class="bi bi-scissors me-1"></i>
+                モデルの出力が上限に達して途中で切れたため、<strong>完結していた指摘だけ</strong>を保存しています。
+                切れた先に指摘が何件あったかは分かりません。レビュー範囲を狭めて再実行すると全体を確認できます。
+            </div>
+            {{end}}
 
             {{if .Title}}<h2 class="h5 mb-3">{{.Title}}</h2>{{end}}
 
@@ -47,6 +58,30 @@
                 {{if gt .Attempts 1}}
                 <dt class="col-sm-3 text-muted">試行回数</dt>
                 <dd class="col-sm-9">{{.Attempts}}</dd>
+                {{end}}
+
+                {{with .Metrics}}
+                {{if .DiffBytes}}
+                <dt class="col-sm-3 text-muted">差分</dt>
+                <dd class="col-sm-9">{{byteSize .DiffBytes}}</dd>
+                {{end}}
+
+                {{if .DurationMS}}
+                <dt class="col-sm-3 text-muted">所要時間</dt>
+                <dd class="col-sm-9">{{durationText .DurationMS}}</dd>
+                {{end}}
+
+                {{if .ToolCalls}}
+                <dt class="col-sm-3 text-muted">ツール呼び出し</dt>
+                <dd class="col-sm-9">{{.ToolCalls}} 回</dd>
+                {{end}}
+
+                {{if .OutputTokens}}
+                <dt class="col-sm-3 text-muted">トークン</dt>
+                <dd class="col-sm-9 small text-muted">
+                    入力 {{.PromptTokens}} / 出力 {{.OutputTokens}}{{if .ThoughtTokens}}（うち思考 {{.ThoughtTokens}}）{{end}}
+                </dd>
+                {{end}}
                 {{end}}
 
                 <dt class="col-sm-3 text-muted">ジョブID</dt>

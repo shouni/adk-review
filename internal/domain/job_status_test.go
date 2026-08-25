@@ -172,3 +172,38 @@ func TestJobStatusOmitsEmptyFields(t *testing.T) {
 		}
 	}
 }
+
+// 計測値は、あとから状態を書き直しても失われないこと。
+//
+// ワーカーは状態が変わるたびにタスクから JobStatus を組み立て直すため、引き継がないと
+// **上限を決め直す材料が最後の書き込みで消えます。**
+func TestCarryOverExtrasKeepsMetrics(t *testing.T) {
+	prev := NewSucceededStatus(testRequest(), review.StatusSucceeded)
+	prev.Truncated = true
+	prev.Metrics = Metrics{DiffBytes: 327680, DurationMS: 152_000, ToolCalls: 5}
+
+	next := NewRunningStatus(testRequest())
+	CarryOverExtras(&next, &prev)
+
+	if next.Metrics != prev.Metrics {
+		t.Errorf("Metrics = %+v, want %+v", next.Metrics, prev.Metrics)
+	}
+	if !next.Truncated {
+		t.Error("Truncated が引き継がれていません")
+	}
+}
+
+// 今回の記録に計測値があるなら、前回の値で上書きしないこと。
+func TestCarryOverExtrasKeepsNewerMetrics(t *testing.T) {
+	prev := NewSucceededStatus(testRequest(), review.StatusSucceeded)
+	prev.Metrics = Metrics{DiffBytes: 1}
+
+	next := NewSucceededStatus(testRequest(), review.StatusSucceeded)
+	next.Metrics = Metrics{DiffBytes: 327680}
+
+	CarryOverExtras(&next, &prev)
+
+	if next.Metrics.DiffBytes != 327680 {
+		t.Errorf("DiffBytes = %d, want 327680", next.Metrics.DiffBytes)
+	}
+}

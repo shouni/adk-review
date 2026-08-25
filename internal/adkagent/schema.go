@@ -6,6 +6,24 @@ import (
 	"github.com/shouni/go-review-kit/review"
 )
 
+// maxFindings は、1 レビューで返させる指摘の上限です。
+//
+// **出力の 64Ki トークンに収める**ためのものです。上限に当たると、途中まで正しく
+// 書けていた JSON ごと全損になります（実測で 10.7 KiB の差分に 212 KiB を書いて
+// 切れた例があります。Blocker の指摘が完成した状態で失われました）。
+//
+// 20 なのは、実測の指摘数が最大 2 件で、20 でも正常系には当たらないからです。
+// **これは「20 件まで指摘してよい」という目標ではなく、暴走を止める網です。**
+// instruction が語る数字もここから埋めます（直書きすると片方だけ動いたときに、
+// モデルは実際と違う上限のつもりで書きます）。
+const maxFindings = 20
+
+// maxExcerptLength は、excerpt 1 件の長さの上限です。
+//
+// 切れた実行の末尾は、同じコード片（`Server(t *testing.T) {`）の反復で埋まって
+// いました。**膨らむのはたいてい引用です。** 指摘そのものの長さは縛りません。
+const maxExcerptLength = 500
+
 // reportSchema は、review.Report に対応する構造化出力スキーマです。
 //
 // 列挙値は review パッケージの定義から組み立てます。**アプリ側で []string へ詰め替え
@@ -32,13 +50,22 @@ func reportSchema() *genai.Schema {
 			},
 			"findings": {
 				Type: genai.TypeArray,
+				// ★ 長さの制約は Enum ほど硬く強制されません。**それでも置くのは、
+				// 今まで「どれだけ書いてよいか」を一言も伝えていなかったためです。**
+				// 効いているかはログの response_bytes で見てください。
+				MaxItems:    new(int64(maxFindings)),
+				Description: "重大な順に並べ、重要でないものは落とす",
 				Items: &genai.Schema{
 					Type: genai.TypeObject,
 					Properties: map[string]*genai.Schema{
-						"severity":   {Type: genai.TypeString, Enum: review.SeverityStrings()},
-						"file":       {Type: genai.TypeString},
-						"line":       {Type: genai.TypeInteger},
-						"excerpt":    {Type: genai.TypeString},
+						"severity": {Type: genai.TypeString, Enum: review.SeverityStrings()},
+						"file":     {Type: genai.TypeString},
+						"line":     {Type: genai.TypeInteger},
+						"excerpt": {
+							Type:        genai.TypeString,
+							MaxLength:   new(int64(maxExcerptLength)),
+							Description: "指摘した箇所だけを引用する。前後の文脈やファイル全体は含めない",
+						},
 						"message":    {Type: genai.TypeString},
 						"suggestion": {Type: genai.TypeString},
 						"evidence": {

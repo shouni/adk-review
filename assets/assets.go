@@ -25,8 +25,7 @@ const (
 )
 
 var (
-	// promptFiles はプロンプトテンプレートです。ディレクトリ内は現在プロンプトのみのため、
-	// ファイル名のprefixは不要です（ファイル名がそのままモード名になります）。
+	// promptFiles はレビュープロンプトです。**ファイル名がそのままモード名になります。**
 	//go:embed prompts/*.md
 	promptFiles embed.FS
 
@@ -50,7 +49,6 @@ var (
 // novel / article では日本語の地の文です。同じ体裁で出すと、原稿の引用がコードに見えます。
 type ExcerptStyle string
 
-// 引用の見せ方です。
 const (
 	// ExcerptProse は、地の文としての引用です（本文フォント・明るい背景）。
 	ExcerptProse ExcerptStyle = "prose"

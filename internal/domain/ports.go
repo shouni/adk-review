@@ -6,8 +6,10 @@ import (
 	"context"
 )
 
-// Pipeline は、レビュー要求を処理するために実行される一連のプロセスを表します。
+// Pipeline は、レビュー要求 1 件を最後まで処理する実行面です。
+//
+// 実体は internal/adapters の ReviewPipeline（go-review-kit のパイプラインの ACL）で、
+// worker 面だけが持ちます。
 type Pipeline interface {
-	// Execute 指定されたコンテキスト内で指定されたレビュー要求を処理し、操作が失敗した場合はエラーを返します。
 	Execute(ctx context.Context, payload ReviewRequest) error
 }

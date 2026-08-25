@@ -117,6 +117,13 @@ func (c *Config) validateWorkerConfig() error {
 	if len(c.Tasks.AllowedServiceAccounts) == 0 {
 		return fmt.Errorf("許可する caller SA が 1 件も指定されていません。ALLOWED_TASK_SERVICE_ACCOUNTS を設定してください")
 	}
+
+	// 負値は無制限（0）へ黙って落とさずエラーにします。ライブラリは 0 以下を無視するので、
+	// **上限を狭めたつもりの入力が「上限なし」で動きます。** 差分の大きさで落ちるのは
+	// モデルを呼び終えたあとなので、いちばん高くつく壊れ方が既定に戻ります。
+	if c.Pipeline.MaxDiffBytes < 0 {
+		return fmt.Errorf("MAX_DIFF_BYTES に負の値は指定できません (%d)。無制限にするなら 0 です", c.Pipeline.MaxDiffBytes)
+	}
 	return nil
 }
 

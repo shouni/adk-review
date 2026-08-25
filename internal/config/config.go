@@ -21,6 +21,10 @@ const (
 	// Cloud Run が SIGKILL するまでの猶予より長く取っても待ち切れないため、
 	// 兄弟アプリと同じく短めに置きます。
 	DefaultShutdownTimeout = 15 * time.Second
+
+	// DefaultMaxDiffBytes は、AI へ送る差分の上限の既定値です（320 KiB）。
+	// PipelineConfig.MaxDiffBytes の envDefault と同じ値で、ズレはテストが検知します。
+	DefaultMaxDiffBytes = 320 * 1024
 )
 
 // ServerConfig は HTTP サーバーの設定です。
@@ -108,6 +112,20 @@ type PipelineConfig struct {
 	// 2 箇所に現れ、設定漏れが「誰も選んでいない値」で動いてしまいます。
 	// 渡されるのは worker 面だけなので、必須なのも worker 面だけです。
 	Timeout time.Duration `env:"PIPELINE_TIMEOUT"`
+
+	// MaxDiffBytes は、AI へ送る差分の上限（バイト）です。超えるとレビューを実行せず
+	// 失敗します。0 で無制限。
+	//
+	// **三段のタイムアウトと違い、こちらは既定値を持ちます。** あちらが既定を持たないのは
+	// 同じ数字がデプロイ設定と 2 箇所に現れるからですが、この上限にインフラ側の対応物は
+	// ありません。未設定を無制限にすると、いちばん高くつく壊れ方——モデルを呼び終えてから
+	// 出力の途中切れで失敗する——が既定になります。
+	//
+	// 既定の 320 KiB は実測から決めました。30 日分のログで、成功した最大の差分が 304 KiB、
+	// 出力上限で落ちた唯一の差分が 480 KiB です。**上限は正常系の目標ではなく、
+	// 壊れ方を捕まえる網です**（三段のタイムアウトと同じ考え方）。締めるにしても緩めるにしても、
+	// 判断の材料はログの diff_bytes です。
+	MaxDiffBytes int `env:"MAX_DIFF_BYTES" envDefault:"327680"`
 }
 
 // StorageConfig はストレージの設定です。
