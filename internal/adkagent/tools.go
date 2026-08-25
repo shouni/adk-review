@@ -234,7 +234,10 @@ func (t *toolbox) readFile(toolCtx context.Context, args readFileArgs) (readFile
 	if !t.spend() {
 		return readFileResult{Error: budgetExhaustedMsg}, nil
 	}
-	t.trace(toolCtx, "read_file", "path", args.Path)
+	// ★ 範囲も残します。**これが無いと、モデルが範囲指定を使っているのかを後から
+	// 確かめられません。** 上限や道具の説明を変えたときに効いたかどうかは、
+	// prompt_tokens の増減だけでは「なぜ」まで届きません。
+	t.trace(toolCtx, "read_file", "path", args.Path, "from", args.From, "lines", args.Lines)
 
 	path, err := t.resolve(args.Path)
 	if err != nil {
@@ -427,9 +430,9 @@ func (t *toolbox) searchText(toolCtx context.Context, args searchTextArgs) (sear
 	if len(query) > maxQueryBytes {
 		return searchTextResult{Error: fmt.Sprintf("query が長すぎます（%d バイト、上限 %d バイト）", len(query), maxQueryBytes)}, nil
 	}
-	t.trace(toolCtx, "search_text", "query", query)
 
 	ctxLines := min(max(args.Context, 0), maxSearchContext)
+	t.trace(toolCtx, "search_text", "query", query, "context", ctxLines)
 
 	lowered := strings.ToLower(query)
 	var hits []string
