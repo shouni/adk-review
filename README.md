@@ -175,6 +175,7 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 | `SERVICE_URL` | このサービス自身のルート URL（末尾スラッシュなし）。**本番では HTTPS 必須。既定値は無く、未設定だと起動時に落ちます** | `https://myapp.run.app`（ローカルは `http://localhost:8080`） |
 | `WORKER_URL` | タスクの投入先（worker サービス）のルート URL。web 面で使用。未設定なら `SERVICE_URL`（both 用） | `https://myapp-worker.run.app` |
 | `AGENT_MAX_TOOL_CALLS` | エージェントレビュー 1 件あたりのツール呼び出し回数上限。0 で既定値（32） | `0` |
+| `MAX_DIFF_BYTES` | AI へ送る差分の上限（バイト）。超えるとレビューを実行せず失敗します。0 で無制限、負値は起動時に落ちます | `327680`（320 KiB） |
 | `PORT` | サーバーがリッスンするポート | `8080` |
 | `GCP_PROJECT_ID` | GCP のプロジェクト ID。**既定値は無く、未設定だと起動時に落ちます** | **必須** |
 | `GCP_LOCATION_ID` | Cloud Tasks キューのリージョン。Gemini は `global` 固定（`internal/adapters/ai.go`）なので流用しません。**既定値は無く、web 面では未設定だと起動時に落ちます** | **web 面で必須**（例: `asia-northeast1`） |

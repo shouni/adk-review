@@ -324,7 +324,7 @@ func TestPipelineTimeoutFromEnv(t *testing.T) {
 // PIPELINE_TIMEOUT の同じ確認は TestPipelineTimeoutFromEnv が持っています。
 func TestDefaultsMatchEnvDefaults(t *testing.T) {
 	t.Setenv("SERVER_ROLE", "both")
-	for _, key := range []string{"TASK_DISPATCH_DEADLINE", "HTTP_TIMEOUT"} {
+	for _, key := range []string{"TASK_DISPATCH_DEADLINE", "HTTP_TIMEOUT", "MAX_DIFF_BYTES"} {
 		unsetEnvForTest(t, key)
 	}
 
@@ -343,6 +343,60 @@ func TestDefaultsMatchEnvDefaults(t *testing.T) {
 	if cfg.Server.ShutdownTimeout != DefaultShutdownTimeout {
 		t.Errorf("ShutdownTimeout = %s, want %s", cfg.Server.ShutdownTimeout, DefaultShutdownTimeout)
 	}
+	// ★ ここは既定値を持つ側です。未設定を無制限にすると、いちばん高くつく壊れ方
+	// （モデルを呼び終えてから出力の途中切れで失敗する）が既定になります。
+	if cfg.Pipeline.MaxDiffBytes != DefaultMaxDiffBytes {
+		t.Errorf("MAX_DIFF_BYTES の既定 = %d, want %d", cfg.Pipeline.MaxDiffBytes, DefaultMaxDiffBytes)
+	}
+}
+
+// 差分の上限は、実測から締めたり緩めたりする値です。**再ビルドなしで動かせること**と、
+// 狭めたつもりの入力が「無制限」で通らないことを見ます。
+func TestMaxDiffBytesFromEnv(t *testing.T) {
+	t.Run("env で上書きできる", func(t *testing.T) {
+		t.Setenv("SERVER_ROLE", "both")
+		t.Setenv("MAX_DIFF_BYTES", "1048576")
+		cfg, err := LoadConfig()
+		if err != nil {
+			t.Fatalf("LoadConfig failed: %v", err)
+		}
+		if cfg.Pipeline.MaxDiffBytes != 1048576 {
+			t.Errorf("MaxDiffBytes = %d, want 1048576", cfg.Pipeline.MaxDiffBytes)
+		}
+	})
+
+	t.Run("書式エラーは既定値へ黙って落とさず起動時に落とす", func(t *testing.T) {
+		t.Setenv("SERVER_ROLE", "both")
+		t.Setenv("MAX_DIFF_BYTES", "320KiB")
+
+		if _, err := LoadConfig(); err == nil {
+			t.Fatal("不正な書式が素通りした")
+		}
+	})
+
+	t.Run("明示の 0 は無制限として通る", func(t *testing.T) {
+		cfg := validBase()
+		cfg.Pipeline.MaxDiffBytes = 0
+
+		if err := cfg.ValidateEssentialConfig(); err != nil {
+			t.Errorf("0（無制限）が弾かれました: %v", err)
+		}
+	})
+
+	// ★ ライブラリは 0 以下を無視して無制限にします。黙って落とすと、上限を狭めた
+	// つもりの入力が「上限なし」で動きます。
+	t.Run("負値は起動時に落とす", func(t *testing.T) {
+		cfg := validBase()
+		cfg.Pipeline.MaxDiffBytes = -1
+
+		err := cfg.ValidateEssentialConfig()
+		if err == nil {
+			t.Fatal("負の上限が素通りした")
+		}
+		if !strings.Contains(err.Error(), "MAX_DIFF_BYTES") {
+			t.Errorf("エラーが原因の env を指していません: %v", err)
+		}
+	})
 }
 
 // バケットは名前であって URI ではありません。gs:// 付きで渡されても URI を
