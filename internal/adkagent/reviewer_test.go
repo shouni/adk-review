@@ -1,7 +1,6 @@
 package adkagent
 
 import (
-	"bytes"
 	"fmt"
 	"strings"
 	"testing"
@@ -71,10 +70,10 @@ func TestTailForLogSkipsShortInput(t *testing.T) {
 	}
 }
 
-// 出力上限で切られた応答は、JSON の解析へ進む前にその理由で落とすこと。
+// 終了理由のうち、レビューを続けられないものだけを落とすこと。
 //
-// **ADK は切り詰められた出力も正常な最終応答として通します。** ここで見ないと、
-// 上限超過が「JSONとして解釈できません」として報告され、症状しか残りません。
+// ★ **MAX_TOKENS はここで落としません。** 途中まで書けていた指摘は ParseReport が拾えます。
+// 落としていた頃は、完成した Blocker の指摘ごと全損にしていました。
 func TestFinalResponseFinishError(t *testing.T) {
 	t.Parallel()
 
@@ -85,8 +84,9 @@ func TestFinalResponseFinishError(t *testing.T) {
 	}{
 		"STOP は成功":       {reason: genai.FinishReasonStop},
 		"空は成功":           {reason: ""},
-		"MAX_TOKENS は失敗": {reason: genai.FinishReasonMaxTokens, wantErr: true, want: "途中で切れました"},
-		"SAFETY も失敗":     {reason: genai.FinishReasonSafety, wantErr: true, want: "最後まで出力しませんでした"},
+		"MAX_TOKENS も通す": {reason: genai.FinishReasonMaxTokens},
+		"SAFETY は失敗":     {reason: genai.FinishReasonSafety, wantErr: true, want: "最後まで出力しませんでした"},
+		"RECITATION も失敗": {reason: genai.FinishReasonRecitation, wantErr: true, want: "最後まで出力しませんでした"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -158,19 +158,18 @@ func TestSanitizeDetectsRepairedOutput(t *testing.T) {
 	broken := `{"title":"a","summary":"s","verdict":{"decision":"Minor","reason":"r"},` +
 		`"findings":[{"severity":"Minor","file":"x.go","excerpt":"regexp.MustCompile(\d+)","message":"m"}]}`
 
-	raw := []byte(broken)
-	cleaned := review.SanitizeJSON(raw)
-	if bytes.Equal(cleaned, raw) {
-		t.Fatal("補修されていません。warn の判定条件が成立しません")
-	}
-	if _, err := review.ParseReport(cleaned); err != nil {
+	_, info, err := review.ParseReport([]byte(broken))
+	if err != nil {
 		t.Fatalf("補修後に解釈できません: %v", err)
+	}
+	if !info.Repaired {
+		t.Error("補修されていません。warn の判定条件が成立しません")
 	}
 
 	// 壊れていない出力は補修されない（＝ warn が出ない）こと。
-	sound := []byte(`{"title":"a","summary":"s","verdict":{"decision":"None","reason":"r"},"findings":[]}`)
-	if !bytes.Equal(review.SanitizeJSON(sound), sound) {
-		t.Error("壊れていない出力が補修されています")
+	sound := `{"title":"a","summary":"s","verdict":{"decision":"None","reason":"r"},"findings":[]}`
+	if _, info, err := review.ParseReport([]byte(sound)); err != nil || info.Repaired {
+		t.Errorf("壊れていない出力で info = %+v, err = %v", info, err)
 	}
 }
 
@@ -213,5 +212,73 @@ func TestWrapUpAfter(t *testing.T) {
 		if got := wrapUpAfter(in); got != want {
 			t.Errorf("wrapUpAfter(%d) = %d, want %d", in, got, want)
 		}
+	}
+}
+
+// 途中で切れたことは truncated が伝えること。finishError が通すようになった以上、
+// **切れた事実を運ぶ経路はこちらしかありません。**
+func TestFinalResponseTruncated(t *testing.T) {
+	t.Parallel()
+
+	if !(finalResponse{finishReason: genai.FinishReasonMaxTokens}).truncated() {
+		t.Error("MAX_TOKENS が truncated になりません")
+	}
+	for _, reason := range []genai.FinishReason{"", genai.FinishReasonStop} {
+		if (finalResponse{finishReason: reason}).truncated() {
+			t.Errorf("finish_reason %q が truncated になっています", reason)
+		}
+	}
+}
+
+// 計測値が RunInfo へ載ること。
+//
+// ★ **使用量が欠けて降ってくることがあります**（バックエンドや経路によって載りません）。
+// その場合でもツール回数と切れたかどうかは残す必要があります。上限を決め直す材料が
+// 「全部無い」か「一部無い」かでは、次に調べるときの手間が変わります。
+func TestFinalResponseRunInfo(t *testing.T) {
+	t.Parallel()
+
+	final := finalResponse{
+		finishReason: genai.FinishReasonMaxTokens,
+		usage: &genai.GenerateContentResponseUsageMetadata{
+			PromptTokenCount:     219062,
+			CandidatesTokenCount: 63950,
+			ThoughtsTokenCount:   1579,
+		},
+	}
+
+	got := final.runInfo(5)
+	want := review.RunInfo{
+		Truncated:     true,
+		PromptTokens:  219062,
+		OutputTokens:  63950,
+		ThoughtTokens: 1579,
+		ToolCalls:     5,
+	}
+	if got != want {
+		t.Errorf("runInfo() = %+v, want %+v", got, want)
+	}
+
+	// 使用量が無くても、分かるぶんは残すこと。
+	bare := finalResponse{}.runInfo(3)
+	if bare != (review.RunInfo{ToolCalls: 3}) {
+		t.Errorf("使用量なしの runInfo() = %+v", bare)
+	}
+}
+
+// 使い切ったあとも残り回数は減り続けるため、used が上限を超えないこと。
+// 超えると「上限 32 回の設定で 35 回呼んだ」という記録が残ります。
+func TestToolboxUsedCapsAtBudget(t *testing.T) {
+	t.Parallel()
+
+	tb, err := newToolbox(t.TempDir(), 2)
+	if err != nil {
+		t.Fatalf("newToolbox: %v", err)
+	}
+	for range 5 {
+		tb.spend()
+	}
+	if got := tb.used(); got != 2 {
+		t.Errorf("used() = %d, want 2", got)
 	}
 }

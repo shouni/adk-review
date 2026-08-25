@@ -97,16 +97,26 @@ func buildOutcomeStatus(
 	report *review.Report,
 	cause error,
 ) domain.JobStatus {
-	if cause != nil {
-		return domain.NewFailedStatus(req, cause)
-	}
-
-	// スキップもジョブとしては正常終了です。成果物が無いことは Outcome が表します。
 	status := domain.NewSucceededStatus(req, result.Status)
-	if report != nil {
+	if cause != nil {
+		status = domain.NewFailedStatus(req, cause)
+	} else if report != nil {
+		// スキップもジョブとしては正常終了です。成果物が無いことは Outcome が表します。
 		status.Title = report.Title
 		status.Decision = report.Verdict.Decision
 		status.ReportURI = req.StorageURI
+	}
+
+	// ★ 計測値は**失敗した実行にも**載せます。上限が厳しすぎるかどうかを判断する材料は、
+	// 通った実行より弾かれた実行の側にあります。
+	status.Truncated = result.Run.Truncated
+	status.Metrics = domain.Metrics{
+		DiffBytes:     result.DiffBytes,
+		DurationMS:    result.Duration.Milliseconds(),
+		PromptTokens:  result.Run.PromptTokens,
+		OutputTokens:  result.Run.OutputTokens,
+		ThoughtTokens: result.Run.ThoughtTokens,
+		ToolCalls:     result.Run.ToolCalls,
 	}
 	return status
 }

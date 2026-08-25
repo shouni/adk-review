@@ -50,10 +50,17 @@
                         {{else}}
                         <span class="text-muted">—</span>
                         {{end}}
+                        {{if .Truncated}}
+                        <span class="badge text-bg-warning" title="出力が途中で切れたため、指摘はこれで全部ではありません">✂ 部分</span>
+                        {{end}}
                     </td>
                     <td class="text-nowrap small text-muted">
                         {{if .Mode}}<div>{{.Mode}}</div>{{end}}
                         {{if .ModelName}}<div class="font-monospace">{{.ModelName}}</div>{{end}}
+                        {{with .Metrics}}
+                        {{if .DiffBytes}}<div>差分 {{byteSize .DiffBytes}}</div>{{end}}
+                        {{if .DurationMS}}<div>{{durationText .DurationMS}}</div>{{end}}
+                        {{end}}
                     </td>
                     <td class="text-nowrap">
                         <a href="/history/{{.JobID}}" class="btn btn-sm btn-outline-primary">

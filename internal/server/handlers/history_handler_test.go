@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -513,5 +514,61 @@ func TestReviewDetailRendersCSRFTokenForDelete(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "delete-review-btn") {
 		t.Error("削除ボタンが描画されていません")
+	}
+}
+
+// ★ 途中で切れたレビューは、画面でそれと分かること。
+//
+// **不完全な結果を黙って完全なものとして見せない**、が要点です。ここが無いと、
+// 読む側は「指摘 1 件のレビュー」として受け取り、切れた先にあったものを知る手段を失います。
+func TestHandleReviewDetail_ShowsTruncatedAndMetrics(t *testing.T) {
+	status := sampleStatus(jobstatus.StateSucceeded, review.StatusSucceeded)
+	status.Truncated = true
+	status.Metrics = domain.Metrics{
+		DiffBytes:    327680,
+		DurationMS:   152_000,
+		ToolCalls:    5,
+		PromptTokens: 219062,
+		OutputTokens: 63950,
+	}
+	h := buildHistoryHandler(t, &recordingHistory{detail: domain.ReviewDetail{Status: status}})
+
+	rec := httptest.NewRecorder()
+	req := withURLParam(httptest.NewRequest(http.MethodGet, "/history/x", nil), "jobID", status.JobID)
+	h.HandleReviewDetail(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := html.UnescapeString(rec.Body.String())
+
+	for _, want := range []string{
+		"部分",         // バッジ
+		"完結していた指摘だけ", // 何が起きたかの説明
+		"320 KiB",    // 差分の大きさ（MAX_DIFF_BYTES と見比べる値）
+		"2 分 32 秒",   // 所要時間
+		"5 回",        // ツール呼び出し
+		"63950",      // 出力トークン（64Ki への距離）
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("詳細画面に %q がありません", want)
+		}
+	}
+}
+
+// 計測値が無い実行（旧い記録や、レビューへ到達しなかったもの）でも描画できること。
+func TestHandleReviewDetail_RendersWithoutMetrics(t *testing.T) {
+	status := sampleStatus(jobstatus.StateFailed, review.StatusFailed)
+	h := buildHistoryHandler(t, &recordingHistory{detail: domain.ReviewDetail{Status: status}})
+
+	rec := httptest.NewRecorder()
+	req := withURLParam(httptest.NewRequest(http.MethodGet, "/history/x", nil), "jobID", status.JobID)
+	h.HandleReviewDetail(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if body := rec.Body.String(); strings.Contains(body, "部分") {
+		t.Error("切れていないのに部分バッジが出ています")
 	}
 }

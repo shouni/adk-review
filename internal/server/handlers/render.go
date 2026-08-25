@@ -84,7 +84,33 @@ func templateFuncs() template.FuncMap {
 		"severityClass": severityClass,
 		"codeText":      codeText,
 		"excerptClass":  excerptClass,
+		"byteSize":      byteSize,
+		"durationText":  durationText,
 	}
+}
+
+// byteSize は、バイト数を読める単位へ整えます。
+//
+// 差分の大きさは MAX_DIFF_BYTES（既定 320 KiB）と見比べる値なので、生のバイト数のままだと
+// 桁を数えることになります。
+func byteSize(n int) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0f KiB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}
+
+// durationText は、ミリ秒を読める長さへ整えます。
+func durationText(ms int64) string {
+	d := time.Duration(ms) * time.Millisecond
+	if d < time.Minute {
+		return fmt.Sprintf("%.1f 秒", d.Seconds())
+	}
+	return fmt.Sprintf("%d 分 %d 秒", int(d.Minutes()), int(d.Seconds())%60)
 }
 
 // 引用ブロックの CSS クラスです。見た目そのものは app.css が持ちます。

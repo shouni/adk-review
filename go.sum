@@ -174,6 +174,8 @@ github.com/shouni/go-remote-io v1.9.0 h1:soOCs80UMvAC/wbyess4sn+WafKJZxdOArNsXeC
 github.com/shouni/go-remote-io v1.9.0/go.mod h1:eH/rBfJFQy+hylTq5eLzyj/5NDvvDGjNxEStRXsCw9s=
 github.com/shouni/go-review-kit v1.6.2 h1:wwYisOmIPwIUH1OfEj+5zLiGfacwEh2GB4u9nhdel6Q=
 github.com/shouni/go-review-kit v1.6.2/go.mod h1:6MrIdijq4XbEam98k33mEe3AIdCijYRXJslTE42igPA=
+github.com/shouni/go-review-kit v1.7.0 h1:exNUef0T76WlCa7boscMneCFPtrZ1+G6HhYiYvMVQuQ=
+github.com/shouni/go-review-kit v1.7.0/go.mod h1:6MrIdijq4XbEam98k33mEe3AIdCijYRXJslTE42igPA=
 github.com/shouni/go-utils v1.6.1 h1:RISIeIh+WaiMfZqEx7N3DSbnpq1zdyZB1UtxKVQlv5I=
 github.com/shouni/go-utils v1.6.1/go.mod h1:B0zH+ss8KU51qiCL/jPDO3JsdvTSJ+DaEjZy5MadEQg=
 github.com/shouni/netarmor v1.2.4 h1:4XYB72XSbxoSF4Sa6BzTFXR604bIN7hVX+n7dh1WV0g=
