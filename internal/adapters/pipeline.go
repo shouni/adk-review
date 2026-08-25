@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"log/slog"
+	"runtime/pprof"
 	"time"
 
 	"github.com/shouni/go-job-kit/jobstatus"
@@ -55,6 +56,14 @@ func (p *ReviewPipeline) Execute(ctx context.Context, req domain.ReviewRequest) 
 		slog.String("job_id", req.JobID),
 		slog.String("mode", req.Mode),
 	)
+
+	// ログの相関に加えて、pprof のゴルーチンラベルにも同じ値を載せます。
+	// Go 1.27 以降、ラベルは**パニックのトレースバックの見出し行にも出る**ため、
+	// 落ちたときにどのジョブだったかがスタックだけで分かります。slogctx は
+	// panic の経路では効かないので、そこを埋めるのがこちらの役目です。
+	// ラベルは子ゴルーチン（並列生成など）へも継承されます。
+	ctx = pprof.WithLabels(ctx, pprof.Labels("job_id", req.JobID, "mode", req.Mode))
+	pprof.SetGoroutineLabels(ctx)
 
 	if p.skipRedelivery(ctx, req.JobID) {
 		return nil
