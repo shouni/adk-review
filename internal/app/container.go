@@ -16,17 +16,17 @@ import (
 // Container はアプリケーションの依存関係（DIコンテナ）を保持します。
 type Container struct {
 	Config *config.Config
-	// I/O and Storage
+	// ストレージ I/O
 	RemoteIO *RemoteIO
 	Layout   domain.StorageLayout
-	// Job State and History
+	// 進行状況と履歴
 	StatusStore domain.StatusStore
 	History     domain.HistoryRepository
-	// Asynchronous Task
+	// 非同期タスクの投入
 	TaskEnqueuer TaskEnqueuer
-	// Business Logic
+	// レビューの実行
 	Pipeline domain.Pipeline
-	// External Adapters
+	// 外部アダプター
 	Notifier  review.Notifier
 	PromptGen review.PromptGenerator
 	// Closers は、組み立て時に開いた資源です。Container.Close がまとめて閉じます。

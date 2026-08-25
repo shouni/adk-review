@@ -36,6 +36,10 @@ var _ domain.Pipeline = (*ReviewPipeline)(nil)
 // pipeline.WithRunTimeout が持ちます（internal/builder/pipeline.go で渡しています）。
 // 呼び出し側が context に締切を被せると、ライブラリが公開・通知のために行う
 // 切り離しより外側に掛かり、打ち切りと同時に失敗通知まで落ちるためです。
+//
+// 上限を持つこと自体の意味は、Cloud Tasks より先にアプリが諦めることです。先を越されると
+// プロセスごと SIGTERM になり、失敗の記録も Slack 通知も残りません（review-queue は
+// max_attempts = 1 なので再試行も来ず、タスクは黙って失われます）。
 func NewReviewPipeline(runner reviewRunner, store domain.StatusStore) *ReviewPipeline {
 	return &ReviewPipeline{
 		runner:   runner,
@@ -44,16 +48,8 @@ func NewReviewPipeline(runner reviewRunner, store domain.StatusStore) *ReviewPip
 }
 
 // Execute は domain モデルをライブラリのモデルへ変換して実行します。
-//
-// ★ ここで締切を被せることで、**Cloud Tasks より先にアプリが諦めます**。
-//
-// Cloud Tasks に先を越されるとプロセスごと SIGTERM になり、失敗の記録も Slack 通知も
-// 残りません（review-queue は max_attempts = 1 なので再試行も来ず、タスクは黙って
-// 失われます）。自分で諦めれば、打ち切りの理由が結末に載って記録と通知まで届きます。
-//
-// 締切が保存・通知・後始末を巻き込まないことはライブラリ側が保証しています。
 func (p *ReviewPipeline) Execute(ctx context.Context, req domain.ReviewRequest) error {
-	// 以降このジョブから出るログすべてに job_id が載ります。同時に走るレビューの
+	// 以降このジョブから出るログすべてに job_id と mode が載ります。同時に走るレビューの
 	// ログが混ざっても分離できるよう、個々の出力ではなく context に持たせます。
 	ctx = slogctx.With(ctx,
 		slog.String("job_id", req.JobID),

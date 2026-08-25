@@ -32,14 +32,18 @@
   `search_text`）を持たせ、差分を起点に必要な文脈を自分で集めさせます。ツールが触れるのは
   head をチェックアウトした作業ディレクトリの中だけで、パスは実体解決して外への脱出を防ぎます。
 * **出力は `OutputSchema` で固定**: `review.Report` に対応するスキーマを指定します。ADK は
-  ツールと構造化出力を併用でき、最終応答としてスキーマに従う JSON が返ります。デコードと
-  検証は `go-review-kit` の `ParseReport` / `Validate` をそのまま使います。
+  ツールと構造化出力を併用でき、最終応答としてスキーマに従う JSON が返ります。デコードは
+  `go-review-kit` の `ParseReport` に任せます（体裁の検証も、壊れた出力の補修も、その内側です）。
 * **暴走はツール呼び出し回数の上限で止めます**: レビュー 1 件は Cloud Tasks の
   dispatch deadline（`TASK_DISPATCH_DEADLINE`）内に収める必要があるため、時間ではなく
   回数で打ち切ります（`AGENT_MAX_TOOL_CALLS`、既定 32）。**上限の 8 割を使った時点で
   「新しい調査は始めず、そこまでの情報でまとめよ」と伝えます。** 上限そのものを目安に
   すると、最後の 1 回を使い切ってから要約に入ることになり、検証しかけの仮説を抱えたまま
   強制的に打ち切られます。浅く速く済ませたいときはこの数を下げます。
+* **出力の量はスキーマで縛ります**: モデルの出力には上限（64Ki トークン）があり、超えると
+  途中まで正しく書けていた JSON ごと全損になります。`findings` の `MaxItems` と `excerpt` の
+  `MaxLength` は、**目標ではなく暴走を止める網です**（`internal/adkagent/schema.go`）。
+  差分の大きさは `MAX_DIFF_BYTES` が別に受け持ちます。
 * **依存の隔離**: ADK が `google.golang.org/genai` を直接要求するため、genai を import するのは
   `internal/adkagent`（レビュアーと出力スキーマ）と `internal/adapters/ai.go`（クライアント設定）
   だけに留めます。`go-review-kit` 自体は AI SDK を知りません。
@@ -112,7 +116,7 @@ adk-review/
 │   ├── app/           # 【基盤】Container による依存の保持とライフサイクル管理
 │   ├── builder/       # 【構築】役割（SERVER_ROLE）に応じた初期化と組み立て
 │   ├── config/        # 【設定】環境変数・定数・バリデーション
-│   ├── domain/        # 【中心】モデル、保存先の規約、ポート定義
+│   ├── domain/        # 【中心】モデル、保存先の規約、ポート定義、ワーカーのルート定数
 │   ├── giturl/        # 【変換】リポジトリURLの解析と表示用パス
 │   ├── repository/    # 【読み取り】GCS 上のレビュー履歴
 │   └── server/        # 【玄関】HTTP サーバー、ルーティング、ハンドラ

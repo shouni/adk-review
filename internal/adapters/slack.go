@@ -42,9 +42,9 @@ func NewSlackAdapter(httpClient httpkit.Requester, webhookURL string) (*SlackAda
 
 // Notify は review.Notifier の実装です。
 //
-// リンク先は詳細画面（Request.PublicURL）です。以前は成果物 HTML の署名付き URL を
-// 直接張っていましたが、成果物を JSON で持つようになったため、表示はアプリ側に寄せます。
-// この変更で、リンクを開く人にもログインが必要になります。
+// リンク先は詳細画面（Request.PublicURL）です。成果物への署名付き URL を直接張らないのは、
+// アプリの認証を迂回して読めてしまうためです（ReportPublisher の項を参照）。
+// 裏返して言えば、通知のリンクを開く人にもログインが要ります。
 func (s *SlackAdapter) Notify(ctx context.Context, n review.Notification) error {
 	if !s.pipeline.Enabled() {
 		slog.InfoContext(ctx, "Slack通知が無効化されているためスキップします。", "job_id", n.Request.JobID)

@@ -1,4 +1,4 @@
-// Package adapters は、Gemini / Git / Slack / ストレージのクライアントを
+// Package adapters は、Git / Slack / 保存 / プロンプト / パイプライン ACL を
 // go-review-kit のポート実装として提供します。
 package adapters
 

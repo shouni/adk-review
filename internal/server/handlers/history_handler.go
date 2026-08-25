@@ -46,9 +46,7 @@ func (h *Handler) HandleHistory(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.history.List(ctx, page, perPage)
 	if err != nil {
-		// 「読めなかった」を 500 に潰さず 502 として返します。潰すと、権限剥奪や
-		// ストレージ障害がアプリ側の不具合として報告され、呼び出し元は再試行すべき
-		// 場面で諦めます。
+		// 「まだ無い」と「読めなかった」は別物として返します（recordErrorStatus の項）。
 		code := recordErrorStatus(err)
 		slog.ErrorContext(ctx, "レビュー履歴の取得に失敗しました", "error", err, "status", code)
 		const message = "履歴を取得できませんでした。時間をおいて再度お試しください。"
@@ -90,9 +88,7 @@ func (h *Handler) HandleReviewDetail(w http.ResponseWriter, r *http.Request) {
 
 	detail, err := h.history.Get(ctx, safeJobID)
 	if err != nil {
-		// 「まだ記録が無い」だけを 404 にします。読み取り自体が失敗した場合は 502 です。
-		// 両者を同一視すると、権限剥奪やストレージ障害が「そんなレビューはありません」
-		// として表示されます。
+		// 「まだ無い」だけが 404 です（recordErrorStatus の項）。
 		code := recordErrorStatus(err)
 		message := "レビューを取得できませんでした。"
 		if code == http.StatusNotFound {

@@ -111,13 +111,12 @@ func (h *Handler) configuredModels() []string {
 	return h.cfg.AI.GeminiModels
 }
 
-// validateReviewRequest は入力内容が正しいかまとめてチェックする。
+// validateReviewRequest は、投入内容をまとめて検証します。
 func (h *Handler) validateReviewRequest(req domain.ReviewRequest) error {
 	if req.RepoURL == "" || req.BaseBranch == "" || req.FeatureBranch == "" || req.Mode == "" || req.ModelName == "" {
 		return errors.New("すべてのフィールドを入力してください。")
 	}
 
-	// レビューモードの動的バリデーション
 	if !assets.IsValidMode(req.Mode) {
 		return fmt.Errorf("不正なレビューモードです: %s", req.Mode)
 	}
@@ -141,7 +140,7 @@ func (h *Handler) validateReviewRequest(req domain.ReviewRequest) error {
 	return nil
 }
 
-// validateBranchName は Git のブランチ名として正当かどうかを判定する。
+// validateBranchName は、Git のブランチ名として正当かどうかを返します。
 func validateBranchName(branchName string) error {
 	if !gitBranchRegexp.MatchString(branchName) {
 		return errors.New("形式が不正です。英数字、ハイフン、ドット、スラッシュのみ使用可能です。")

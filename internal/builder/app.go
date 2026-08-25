@@ -31,10 +31,10 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 		}
 	}()
 
-	// 1. HttpClient
+	// 1. HTTP クライアント
 	httpClient := httpkit.New(cfg.HTTP.Timeout)
 
-	// 2. I/O Infrastructure
+	// 2. ストレージ I/O
 	storage, err := gcs.New(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("GCSストレージの生成に失敗しました: %w", err)

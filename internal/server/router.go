@@ -61,8 +61,8 @@ func setupCommonMiddleware(r *chi.Mux, projectID string) {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.CleanPath)
-	// 画面は日本語 UTF-8（1 文字 3 バイト）なので圧縮がよく効くが、これまで無圧縮で
-	// 配信していた。静的ファイルも同じ経路に乗る（vendor は immutable なので再圧縮は稀）。
+	// 画面は日本語 UTF-8（1 文字 3 バイト）なので圧縮がよく効きます。静的ファイルも
+	// 同じ経路に乗ります（vendor は immutable なので再圧縮は稀です）。
 	r.Use(middleware.Compress(compressionLevel))
 	r.Use(securityHeaders)
 }
@@ -144,7 +144,7 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 	})
 }
 
-// crossOriginErrorHandler returns a handler for requests blocked by cross-origin protection.
+// crossOriginErrorHandler は、越境送信として弾いたリクエストに返すハンドラーです。
 func crossOriginErrorHandler() http.Handler {
 	tmpl := template.Must(template.ParseFS(
 		assets.Templates,
@@ -157,7 +157,7 @@ func crossOriginErrorHandler() http.Handler {
 	})
 }
 
-// writeCrossOriginErrorResponse renders a forbidden response for blocked cross-origin requests.
+// writeCrossOriginErrorResponse は、越境送信を弾いたことを 403 で返します。
 func writeCrossOriginErrorResponse(w http.ResponseWriter, r *http.Request, tmpl *template.Template) {
 	slog.WarnContext(r.Context(), "cross-origin request blocked", "method", r.Method, "path", r.URL.Path)
 
@@ -180,14 +180,13 @@ const compressionLevel = 5
 
 // contentSecurityPolicy は全レスポンスに付ける CSP です。
 //
-// 外部オリジンを 1 つも許可しないのは、Bootstrap を CDN から自前配信へ移したためです
-// （assets/static/vendor）。CDN を allowlist に載せる形だと、jsDelivr は npm の全パッケージを
+// 外部オリジンを 1 つも許可しません。**Bootstrap を自前配信にしている（assets/static/vendor）
+// のは、そのためです。** CDN を allowlist に載せる形だと、jsDelivr は npm の全パッケージを
 // 配信しているため「任意の npm パッケージの読み込みを許可する」に等しく、既知の
-// CSP バイパス・ガジェットを持ち込まれます。'self' だけにできるのが自前配信の主目的です。
+// CSP バイパス・ガジェットを持ち込まれます。
 //
-// script-src を 'self' だけにできるのは、review_form.html にあった 69 行のインライン
-// スクリプトを /static/js/review_form.js へ出したためです。assets の
-// TestTemplatesHaveNoInlineScripts が、戻らないことを固定しています。
+// script-src を 'self' だけにできるのは、インラインスクリプトを 1 つも置かないためです。
+// assets の TestTemplatesHaveNoInlineScripts が、戻らないことを固定しています。
 //
 // style-src にだけ 'unsafe-inline' が要ります。Bootstrap の JS（collapse / tab）が
 // 遷移中にインラインスタイルを当てるためです。
@@ -204,20 +203,21 @@ const contentSecurityPolicy = "default-src 'self'; " +
 	"frame-ancestors 'none'; " +
 	"form-action 'self'"
 
-// securityHeaders は、全レスポンスに付ける防御的なヘッダー群です。
+// hstsMaxAge は HSTS の有効期間です。1 年。
 //
-// hstsMaxAge は 1 年です。Cloud Run は HTTPS でしか受けないので現状の実害はありませんが、
-// 独自ドメインを当てたときに平文へ降格させないための宣言です。preload は付けません
-// （撤回にブラウザベンダーへの申請が要るうえ、得るものが少ないため）。
+// Cloud Run は HTTPS でしか受けないので現状の実害はありませんが、独自ドメインを当てた
+// ときに平文へ降格させないための宣言です。preload は付けません（撤回にブラウザベンダーへの
+// 申請が要るうえ、得るものが少ないため）。
+const hstsMaxAge = "max-age=31536000; includeSubDomains"
+
+// securityHeaderValues は、全レスポンスに付ける防御的なヘッダーです。
 //
 // Referrer-Policy を same-origin まで絞れるのは、外部オリジンへの参照を 1 つも持たないため
-// です（Bootstrap を CDN から自前配信へ移した結果）。唯一の越境は署名付き URL への 302 で、
-// GCS は Referer を見ません。
+// です（Bootstrap は自前配信）。唯一の越境は署名付き URL への 302 で、GCS は Referer を
+// 見ません。
 //
 // Permissions-Policy は使っていない機能だけを塞ぎます。autoplay は将来メディアを
 // 載せたときに効いてくるため入れません。
-const hstsMaxAge = "max-age=31536000; includeSubDomains"
-
 var securityHeaderValues = map[string]string{
 	"Content-Security-Policy":   contentSecurityPolicy,
 	"Strict-Transport-Security": hstsMaxAge,
@@ -227,7 +227,7 @@ var securityHeaderValues = map[string]string{
 	"Permissions-Policy":     "geolocation=(), camera=(), microphone=(), payment=(), usb=()",
 }
 
-// securityHeaders は、全レスポンスに securityHeaderValues を付けます。
+// securityHeaders は、securityHeaderValues を全レスポンスへ付けるミドルウェアです。
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := w.Header()

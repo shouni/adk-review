@@ -205,7 +205,7 @@ internal/
   app/        Container（依存の保持とライフサイクル）
   builder/    SERVER_ROLE に応じた組み立て
   config/     環境変数・既定値・起動時検証
-  domain/     モデル、保存先の規約、ポート定義、共有の列挙とルート定数
+  domain/     モデル、保存先の規約、ポート定義、ワーカーのルート定数
   giturl/     リポジトリ URL の解析
   repository/ GCS 上の履歴の読み取り
   server/     HTTP サーバー、ルーティング、ハンドラ
