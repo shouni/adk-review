@@ -1,18 +1,18 @@
 module github.com/shouni/adk-review
 
-go 1.26.6
+go 1.26.5
 
 require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/uuid v1.6.0
-	github.com/shouni/gcp-kit v1.10.3
+	github.com/shouni/gcp-kit v1.10.4
 	github.com/shouni/go-http-kit v1.8.5
-	github.com/shouni/go-job-kit v1.1.1
-	github.com/shouni/go-notify v1.2.5
-	github.com/shouni/go-prompt-kit v1.5.2
+	github.com/shouni/go-job-kit v1.1.2
+	github.com/shouni/go-notify v1.2.6
+	github.com/shouni/go-prompt-kit v1.6.0
 	github.com/shouni/go-remote-io v1.9.0
-	github.com/shouni/go-review-kit v1.7.0
+	github.com/shouni/go-review-kit v1.8.0
 	github.com/shouni/go-utils v1.6.1
 	github.com/shouni/netarmor v1.2.4
 	go.yaml.in/yaml/v3 v3.0.5
@@ -81,6 +81,8 @@ require (
 	// v0.21.0 で log.Value / log.KeyValue が消え（attribute.Value / attribute.KeyValue へ
 	// 統合されました）、それを呼ぶ adk v2.2.0（最新）の internal/telemetry がビルドできません。
 	// adk が追従するまで上げられないため、go get -u の後もここは戻してください。
+	// v0.21.0 は log.Value / log.KeyValue を落としており、google.golang.org/adk/v2 v2.2.0
+	// （最新）がビルドできなくなります。adk 側が追随するまで v0.20.0 に固定します。
 	go.opentelemetry.io/otel/log v0.20.0 // indirect
 	go.opentelemetry.io/otel/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
