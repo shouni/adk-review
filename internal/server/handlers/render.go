@@ -169,7 +169,7 @@ func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return t.In(jst.Location()).Format(jst.LayoutTimestamp)
+	return jst.FormatTimestamp(t)
 }
 
 // badge は、表示名とバッジのクラスの組です。

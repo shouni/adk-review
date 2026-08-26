@@ -78,12 +78,10 @@ func buildHistoryHandler(t *testing.T, history domain.HistoryRepository) *Handle
 
 func sampleStatus(state jobstatus.State, outcome review.Status) domain.JobStatus {
 	return domain.JobStatus{
-		Status: jobstatus.Status{
-			JobID:    "20260810-213000-a1b2c3d4",
-			State:    state,
-			Title:    "認証処理のレビュー",
-			QueuedAt: time.Date(2026, 8, 10, 12, 30, 0, 0, time.UTC),
-		},
+		JobID:         "20260810-213000-a1b2c3d4",
+		State:         state,
+		Title:         "認証処理のレビュー",
+		QueuedAt:      time.Date(2026, 8, 10, 12, 30, 0, 0, time.UTC),
 		Outcome:       outcome,
 		RepoURL:       "git@github.com:org/repo.git",
 		BaseBranch:    "main",

@@ -308,7 +308,7 @@ func TestResponsesCarryContentSecurityPolicy(t *testing.T) {
 
 // cspDirective は CSP から 1 ディレクティブ分を取り出します。無ければ空文字を返します。
 func cspDirective(policy, name string) string {
-	for _, directive := range strings.Split(policy, ";") {
+	for directive := range strings.SplitSeq(policy, ";") {
 		directive = strings.TrimSpace(directive)
 		if after, ok := strings.CutPrefix(directive, name+" "); ok {
 			return after

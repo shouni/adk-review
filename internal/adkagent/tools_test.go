@@ -158,7 +158,7 @@ func TestSearchText(t *testing.T) {
 func TestReadFileTruncatesAtRuneBoundary(t *testing.T) {
 	t.Parallel()
 
-	for pad := 0; pad < 3; pad++ {
+	for pad := range 3 {
 		t.Run(fmt.Sprintf("境界を%dバイトずらす", pad), func(t *testing.T) {
 			t.Parallel()
 
