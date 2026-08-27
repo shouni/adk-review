@@ -50,7 +50,7 @@ func (h *Handler) HandleHistory(w http.ResponseWriter, r *http.Request) {
 		code := recordErrorStatus(err)
 		slog.ErrorContext(ctx, "レビュー履歴の取得に失敗しました", "error", err, "status", code)
 		const message = "履歴を取得できませんでした。時間をおいて再度お試しください。"
-		if wantsJSON(r) {
+		if wantsJSON(w, r) {
 			writeJSON(w, r, code, errorResponse{Error: message})
 			return
 		}
@@ -58,7 +58,7 @@ func (h *Handler) HandleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if wantsJSON(r) {
+	if wantsJSON(w, r) {
 		writeJSON(w, r, http.StatusOK, result)
 		return
 	}
@@ -78,7 +78,7 @@ func (h *Handler) HandleReviewDetail(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.WarnContext(ctx, "不正なジョブIDを受け取りました", "job_id", rawJobID, "error", err)
 		const message = "ジョブIDの形式が不正です。"
-		if wantsJSON(r) {
+		if wantsJSON(w, r) {
 			writeJSON(w, r, http.StatusBadRequest, errorResponse{Error: message})
 			return
 		}
@@ -97,7 +97,7 @@ func (h *Handler) HandleReviewDetail(w http.ResponseWriter, r *http.Request) {
 		} else {
 			slog.ErrorContext(ctx, "レビュー履歴の取得に失敗しました", "job_id", safeJobID, "error", err, "status", code)
 		}
-		if wantsJSON(r) {
+		if wantsJSON(w, r) {
 			writeJSON(w, r, code, errorResponse{Error: message})
 			return
 		}
@@ -105,7 +105,7 @@ func (h *Handler) HandleReviewDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if wantsJSON(r) {
+	if wantsJSON(w, r) {
 		writeJSON(w, r, http.StatusOK, reviewDetailResponse{Status: detail.Status, Report: detail.Report})
 		return
 	}

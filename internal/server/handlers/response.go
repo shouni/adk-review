@@ -5,9 +5,10 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/shouni/go-job-kit/jobstatus"
+
+	"github.com/shouni/gcp-kit/negotiate"
 )
 
 // errorResponse は、JSON を求めた呼び出し元へ返すエラー本文です。
@@ -17,11 +18,16 @@ type errorResponse struct {
 
 // wantsJSON は、呼び出し元が JSON を求めているかを返します。
 //
-// ルートを分けずに Accept で切り替えるのは、**同じ取得処理を 2 本持たないため**です。
+// ルートを分けずに Accept で切り替えるのは、同じ取得処理を 2 本持たないためです。
 // 画面用と API 用にハンドラを分けると、片方だけ直したときに画面の表示と機械可読な
-// 結果が食い違います。兄弟アプリも同じ形です。
-func wantsJSON(r *http.Request) bool {
-	return strings.Contains(strings.ToLower(r.Header.Get("Accept")), "application/json")
+// 結果が食い違います。5 つの兄弟アプリすべてが同じ形です。
+//
+// 判定を gcp-kit へ委ねているのは、同時に Vary: Accept を立てさせるためです。
+// 同じ URL が Accept で中身を変えるのにキャッシュへ伝えないと、共有キャッシュや
+// CDN を挟んだとき JSON を求めたクライアントへ HTML が返りえます。以前は
+// 3 アプリが逐語コピーを持ち、3 つとも Vary を落としていました。
+func wantsJSON(w http.ResponseWriter, r *http.Request) bool {
+	return negotiate.WantsJSON(w, r)
 }
 
 // writeJSON は、payload を JSON として書き出します。
@@ -38,7 +44,7 @@ func writeJSON(w http.ResponseWriter, r *http.Request, status int, payload any) 
 //
 // JSON 固定にしないのは、画面側の JS がエラー本文を resp.text() で読んでいるためです。
 func writeError(w http.ResponseWriter, r *http.Request, status int, message string) {
-	if wantsJSON(r) {
+	if wantsJSON(w, r) {
 		writeJSON(w, r, status, errorResponse{Error: message})
 		return
 	}
