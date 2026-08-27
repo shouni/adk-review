@@ -16,6 +16,7 @@ import (
 	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/builder"
 	"github.com/shouni/adk-review/internal/domain"
+	"github.com/shouni/gcp-kit/auth"
 )
 
 const (
@@ -111,8 +112,8 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 		// クッキーの自動送出を悪用する攻撃への対策で、明示的にトークンを付ける
 		// サーバー間呼び出しには当てはまらないからです（絞りは許可リストが担います）。
 		//
-		// セッション経路へのフォールバックには CSRFContextMiddleware も含まれます。
-		r.Use(h.Auth.ProtectedMiddleware(h.M2M))
+		// セッション経路では Authenticate が CSRF の検証と発行もまとめて行います。
+		r.Use(auth.Protected(h.M2M, h.Auth))
 
 		// ヘッダーを持たないリクエスト（Sec-Fetch-Site も Origin も無い）は
 		// 非ブラウザとみなされて通ります。M2M クライアントはここを素通りします。
@@ -136,7 +137,7 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 			return
 		}
 
-		r.Use(h.TaskAuth.Middleware)
+		r.Use(auth.Require(h.TaskAuth))
 
 		if h.Worker != nil {
 			r.Post(domain.TaskExecuteReviewPath, h.Worker.ProcessTask)

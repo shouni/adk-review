@@ -10,13 +10,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shouni/gcp-kit/auth"
+	"github.com/shouni/gcp-kit/auth/oidc"
+	"github.com/shouni/gcp-kit/auth/session"
 	"github.com/shouni/gcp-kit/worker"
 
+	"github.com/gorilla/sessions"
 	"github.com/shouni/adk-review/internal/builder"
 	"github.com/shouni/adk-review/internal/config"
 	"github.com/shouni/adk-review/internal/domain"
 	"github.com/shouni/adk-review/internal/server/handlers"
+	"github.com/shouni/gcp-kit/auth"
 )
 
 type noopTaskEnqueuer struct{}
@@ -30,10 +33,10 @@ func (noopPipeline) Execute(context.Context, domain.ReviewRequest) error { retur
 
 // newTestAuthHandler は、テスト用の auth.Handler を返します。
 // OAuth の実際のやり取りは行わず、セッション判定と CSRF 検証だけを対象にします。
-func newTestAuthHandler(t *testing.T) *auth.Handler {
+func newTestAuthHandler(t *testing.T) *session.Handler {
 	t.Helper()
 
-	h, err := auth.NewHandler(auth.Config{
+	h, err := session.New(session.Config{
 		ClientID:          "client-id",
 		ClientSecret:      "client-secret",
 		RedirectURL:       "https://service.example.com/auth/callback",
@@ -44,7 +47,7 @@ func newTestAuthHandler(t *testing.T) *auth.Handler {
 		AllowedEmails:     []string{"tester@example.com"},
 	})
 	if err != nil {
-		t.Fatalf("auth.NewHandler() error = %v", err)
+		t.Fatalf("session.New() error = %v", err)
 	}
 	return h
 }
@@ -67,7 +70,7 @@ func newRouterForTest(t *testing.T) http.Handler {
 		},
 	}
 
-	authHandler, err := auth.NewHandler(auth.Config{
+	authHandler, err := session.New(session.Config{
 		ClientID:          cfg.Auth.GoogleClientID,
 		ClientSecret:      cfg.Auth.GoogleClientSecret,
 		RedirectURL:       cfg.Server.ServiceURL + "/auth/callback",
@@ -93,7 +96,7 @@ func newRouterForTest(t *testing.T) http.Handler {
 		Auth:     authHandler,
 		Web:      webHandler,
 		Worker:   workerHandler,
-		TaskAuth: auth.NewTaskVerifier(cfg.Tasks.TaskAudienceURL, cfg.Tasks.AllowedServiceAccounts),
+		TaskAuth: oidc.New(cfg.Tasks.TaskAudienceURL, cfg.Tasks.AllowedServiceAccounts),
 	}
 	return NewRouter(appHandlers, "")
 }
@@ -156,11 +159,14 @@ func TestCSRFAutoGenPopulatesContextOnGet(t *testing.T) {
 	t.Parallel()
 
 	var token string
-	handler := newTestAuthHandler(t).CSRFContextMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	authHandler := newTestAuthHandler(t)
+	handler := auth.Require(authHandler)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		token = handlers.CSRFTokenFromContext(r.Context())
 	}))
 
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(loggedInCookie(t))
+	handler.ServeHTTP(httptest.NewRecorder(), req)
 
 	if token == "" {
 		t.Fatal("GET リクエストで CSRF トークンが自動生成されていない")
@@ -174,11 +180,14 @@ func TestCSRFAutoGenSkipsPost(t *testing.T) {
 	t.Parallel()
 
 	var token string
-	handler := newTestAuthHandler(t).CSRFContextMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	authHandler := newTestAuthHandler(t)
+	handler := auth.Require(authHandler)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		token = handlers.CSRFTokenFromContext(r.Context())
 	}))
 
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/submit_review", nil))
+	req := httptest.NewRequest(http.MethodPost, "/submit_review", nil)
+	req.AddCookie(loggedInCookie(t))
+	handler.ServeHTTP(httptest.NewRecorder(), req)
 
 	if token != "" {
 		t.Fatalf("POST で CSRF トークンが自動生成されている: %q", token)
@@ -200,10 +209,12 @@ func TestFormRendersCSRFTokenFromMiddleware(t *testing.T) {
 		t.Fatalf("failed to create web handler: %v", err)
 	}
 
-	handler := newTestAuthHandler(t).CSRFContextMiddleware(http.HandlerFunc(webHandler.HandleReviewForm))
+	handler := auth.Require(newTestAuthHandler(t))(http.HandlerFunc(webHandler.HandleReviewForm))
 
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(loggedInCookie(t))
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	handler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
@@ -376,4 +387,33 @@ func TestResponsesCarrySecurityHeaders(t *testing.T) {
 	if strings.Contains(policy, "autoplay") {
 		t.Errorf("Permissions-Policy が autoplay を塞いでいます: %s", policy)
 	}
+}
+
+// loggedInCookie は、ログイン済みセッションを表すクッキーを返します。
+//
+// CSRF トークンの発行は認証を通ったあとに行われるため、OAuth のコールバックを
+// 経ずにログイン状態を作ります。newTestAuthHandler と同じ鍵・セッション名で
+// 組み立てないと Handler 側が読めません。
+func loggedInCookie(t *testing.T) *http.Cookie {
+	t.Helper()
+
+	store := sessions.NewCookieStore([]byte("1234567890abcdef"), []byte("1234567890123456"))
+	store.Options = &sessions.Options{Path: "/", MaxAge: 3600, HttpOnly: true, SameSite: http.SameSiteLaxMode}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	sess, err := store.Get(req, "test-session")
+	if err != nil {
+		t.Fatalf("store.Get() error = %v", err)
+	}
+	sess.Values[session.DefaultUserSessionKey] = "tester@example.com"
+	if err := sess.Save(req, rec); err != nil {
+		t.Fatalf("sess.Save() error = %v", err)
+	}
+
+	cookies := rec.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("セッションクッキーが生成されていない")
+	}
+	return cookies[0]
 }

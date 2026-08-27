@@ -4,7 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shouni/gcp-kit/auth"
+	"github.com/shouni/gcp-kit/auth/oidc"
+	"github.com/shouni/gcp-kit/auth/session"
 	"github.com/shouni/gcp-kit/worker"
 
 	"github.com/shouni/adk-review/internal/domain"
@@ -20,10 +21,10 @@ func TestAppHandlersValidate(t *testing.T) {
 	t.Parallel()
 
 	// 中身は見ないので、非 nil であることだけが意味を持ちます。
-	authHandler := &auth.Handler{}
+	authHandler := &session.Handler{}
 	webHandler := &handlers.Handler{}
 	workerHandler := &worker.Handler[domain.ReviewRequest]{}
-	taskAuth := &auth.TaskVerifier{}
+	taskAuth := &oidc.Verifier{}
 
 	tests := []struct {
 		name    string

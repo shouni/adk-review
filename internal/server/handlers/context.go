@@ -4,10 +4,10 @@ package handlers
 import (
 	"context"
 
-	"github.com/shouni/gcp-kit/auth"
+	"github.com/shouni/gcp-kit/auth/session"
 )
 
 // CSRFTokenFromContext は、コンテキストに保存された CSRF トークンを取得します。
 func CSRFTokenFromContext(ctx context.Context) string {
-	return auth.CSRFTokenFromContext(ctx)
+	return session.CSRFTokenFromContext(ctx)
 }

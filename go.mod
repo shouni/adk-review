@@ -6,15 +6,16 @@ require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/go-cmp v0.7.0
-	github.com/shouni/gcp-kit v1.11.0
-	github.com/shouni/go-http-kit v1.9.0
+	github.com/gorilla/sessions v1.4.0
+	github.com/shouni/gcp-kit v1.12.1
+	github.com/shouni/go-http-kit v1.10.0
 	github.com/shouni/go-job-kit v1.2.0
 	github.com/shouni/go-notify v1.3.0
 	github.com/shouni/go-prompt-kit v1.7.0
 	github.com/shouni/go-remote-io v1.10.1
 	github.com/shouni/go-review-kit v1.9.0
 	github.com/shouni/go-utils v1.7.0
-	github.com/shouni/netarmor v1.3.0
+	github.com/shouni/netarmor v1.4.0
 	go.yaml.in/yaml/v3 v3.0.5
 	google.golang.org/adk/v2 v2.2.0
 	google.golang.org/genai v1.70.0
@@ -29,7 +30,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.13.0 // indirect
 	cloud.google.com/go/monitoring v1.30.0 // indirect
-	cloud.google.com/go/storage v1.65.0 // indirect
+	cloud.google.com/go/storage v1.65.1 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.36.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.60.0 // indirect
@@ -59,7 +60,6 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.21 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.0 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
-	github.com/gorilla/sessions v1.4.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jellydator/ttlcache/v3 v3.4.1 // indirect
@@ -74,20 +74,20 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.8.1 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/contrib/detectors/gcp v1.45.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0 // indirect
-	go.opentelemetry.io/otel v1.45.0 // indirect
+	go.opentelemetry.io/contrib/detectors/gcp v1.46.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 // indirect
+	go.opentelemetry.io/otel v1.46.0 // indirect
 	// v0.21.0 で log.Value / log.KeyValue が消え（attribute.Value / attribute.KeyValue へ
 	// 統合されました）、それを呼ぶ adk v2.2.0（最新）の internal/telemetry がビルドできません。
 	// adk が追従するまで上げられないため、go get -u の後もここは戻してください。
 	// v0.21.0 は log.Value / log.KeyValue を落としており、google.golang.org/adk/v2 v2.2.0
 	// （最新）がビルドできなくなります。adk 側が追随するまで v0.20.0 に固定します。
 	go.opentelemetry.io/otel/log v0.20.0 // indirect
-	go.opentelemetry.io/otel/metric v1.45.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.45.0 // indirect
-	go.opentelemetry.io/otel/trace v1.45.0 // indirect
+	go.opentelemetry.io/otel/metric v1.46.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.46.0 // indirect
+	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
@@ -95,11 +95,11 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	google.golang.org/api v0.293.0 // indirect
-	google.golang.org/genproto v0.0.0-20260819154853-08b0e4226688 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
-	google.golang.org/grpc v1.83.1 // indirect
+	google.golang.org/api v0.294.0 // indirect
+	google.golang.org/genproto v0.0.0-20260825221802-da73d73af1c5 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260825221802-da73d73af1c5 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	rsc.io/omap v1.2.0 // indirect
