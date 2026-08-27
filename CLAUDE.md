@@ -99,7 +99,7 @@ JSON を返します（`handlers.wantsJSON`）。分けると同じ取得処理�
   呼び出し元は再試行すべき場面で諦めます。
 - `GET /jobs/{jobID}` と `GET /history/{jobID}` を分けているのは、後者が指摘の全文を
   含むためです。完了検知のたびに全文を返すのは重すぎます。
-- 認証は `Auth.ProtectedMiddleware(M2M)` で、ブラウザはセッション + CSRF、サーバー間は
+- 認証は `auth.Protected(M2M, Auth)` で、ブラウザはセッション + CSRF、サーバー間は
   OIDC Bearer です。**`CrossOriginProtection` はヘッダーを持たない呼び出しを素通しします**
   （Go の仕様。`Sec-Fetch-Site` も `Origin` も無ければ非ブラウザとみなす）。ここが変わると
   ap-mcp からの投入だけが 403 になり、画面は動いたままなので気付きにくいため、

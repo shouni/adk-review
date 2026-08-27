@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/shouni/gcp-kit/auth"
+	"github.com/shouni/gcp-kit/auth/oidc"
+	"github.com/shouni/gcp-kit/auth/session"
 	"github.com/shouni/gcp-kit/worker"
 
 	"github.com/shouni/adk-review/internal/app"
@@ -20,15 +21,15 @@ const defaultSessionName = "adk-review-session"
 // 担当しない面のハンドラーは nil のままにします。ルーターは nil を見て登録を省くため、
 // 役割が増えてもルーティング側を触らずに済みます（兄弟アプリと同じ形です）。
 type AppHandlers struct {
-	Auth   *auth.Handler
+	Auth   *session.Handler
 	Web    *handlers.Handler
 	Worker *worker.Handler[domain.ReviewRequest]
 	// TaskAuth は Cloud Tasks からの OIDC を検証します。Auth と違い OAuth 設定を
 	// 必要としないため、検証だけを担う独立した部品として持ちます。
-	TaskAuth *auth.TaskVerifier
+	TaskAuth *oidc.Verifier
 	// M2M は、他サービス（ap-mcp）からの OIDC Bearer を検証します。nil でも成立し、
 	// その場合 web 面はブラウザセッションだけで守られます。
-	M2M *auth.M2MVerifier
+	M2M *oidc.Verifier
 }
 
 // Validate は、面ごとのハンドラーが揃っているかを確かめます。
@@ -74,9 +75,9 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 		}
 		appHandlers.Web = webHandler
 
-		// 許可リストが空なら nil のままにします。ProtectedMiddleware は nil を
+		// 許可リストが空なら nil のままにします。auth.Protected は nil を
 		// 「M2M は試みられなかった」として扱い、セッション認証へ落とします。
-		if m2m := auth.NewM2MVerifier(appCtx.Config.Server.ServiceURL, appCtx.Config.Auth.AllowedM2MServiceAccounts); m2m.Configured() {
+		if m2m := oidc.New(appCtx.Config.Server.ServiceURL, appCtx.Config.Auth.AllowedM2MServiceAccounts); m2m.Configured() {
 			appHandlers.M2M = m2m
 		}
 	}
@@ -86,7 +87,7 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 		// audience と発行元サービスアカウントの両方が揃わないと検証は常に失敗する
 		// （fail-closed）ため、起動時に構成を確かめておきます。
 		appHandlers.Worker = worker.NewHandler[domain.ReviewRequest](appCtx.Pipeline)
-		taskAuth := auth.NewTaskVerifier(appCtx.Config.Tasks.TaskAudienceURL, appCtx.Config.Tasks.AllowedServiceAccounts)
+		taskAuth := oidc.New(appCtx.Config.Tasks.TaskAudienceURL, appCtx.Config.Tasks.AllowedServiceAccounts)
 		if !taskAuth.Configured() {
 			return nil, fmt.Errorf("cloud Tasks の OIDC 検証を構成できません: TASK_AUDIENCE_URL と ALLOWED_TASK_SERVICE_ACCOUNTS が必要です")
 		}
@@ -101,13 +102,13 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 }
 
 // createAuthHandler は、提供された設定(Config)に基づいて認証ハンドラーを初期化して返します。
-func createAuthHandler(cfg *config.Config) (*auth.Handler, error) {
+func createAuthHandler(cfg *config.Config) (*session.Handler, error) {
 	redirectURL, err := url.JoinPath(cfg.Server.ServiceURL, "/auth/callback")
 	if err != nil {
 		return nil, fmt.Errorf("リダイレクトURLの構築失敗: %w", err)
 	}
 
-	return auth.NewHandler(auth.Config{
+	return session.New(session.Config{
 		ClientID:          cfg.Auth.GoogleClientID,
 		ClientSecret:      cfg.Auth.GoogleClientSecret,
 		RedirectURL:       redirectURL,

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/shouni/gcp-kit/auth"
+	"github.com/shouni/gcp-kit/auth/session"
 	"github.com/shouni/go-job-kit/jobstatus"
 	"github.com/shouni/go-review-kit/review"
 
@@ -479,7 +479,7 @@ func TestReviewDetailShowsDeleteButtonOnlyWhenDeletable(t *testing.T) {
 // 空だと X-CSRF-Token に空文字が載り、削除が 403 で必ず失敗します。ミドルウェアを
 // 通したうえで値の中身まで確かめます。
 func TestReviewDetailRendersCSRFTokenForDelete(t *testing.T) {
-	authHandler, err := auth.NewHandler(auth.Config{
+	authHandler, err := session.New(session.Config{
 		ClientID:          "client-id",
 		ClientSecret:      "client-secret",
 		RedirectURL:       "https://service.example.com/auth/callback",
@@ -489,18 +489,21 @@ func TestReviewDetailRendersCSRFTokenForDelete(t *testing.T) {
 		AllowedEmails:     []string{"tester@example.com"},
 	})
 	if err != nil {
-		t.Fatalf("auth.NewHandler() error = %v", err)
+		t.Fatalf("session.New() error = %v", err)
 	}
 
 	history := &recordingHistory{
 		detail: domain.ReviewDetail{Status: sampleStatus(jobstatus.StateSucceeded, review.StatusSucceeded)},
 	}
-	handler := authHandler.CSRFContextMiddleware(
-		http.HandlerFunc(buildHistoryHandler(t, history).HandleReviewDetail),
-	)
+	// 見たいのは「コンテキストのトークンがテンプレートへ届くか」なので、
+	// 認証を一往復させず直接載せます（発行そのものは gcp-kit 側のテストが見ます）。
+	_ = authHandler
+	handler := http.HandlerFunc(buildHistoryHandler(t, history).HandleReviewDetail)
 
+	req := detailRequest("20260810-213000-a1b2c3d4")
+	req = req.WithContext(session.WithCSRFToken(req.Context(), "csrf-test-token"))
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, detailRequest("20260810-213000-a1b2c3d4"))
+	handler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)

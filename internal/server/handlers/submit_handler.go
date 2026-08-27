@@ -94,7 +94,7 @@ func (h *Handler) HandleReviewSubmit(w http.ResponseWriter, r *http.Request) {
 
 	// 6. 成功応答を返します
 	slog.InfoContext(ctx, "レビュータスク投入成功", "repo", req.RepoURL, "job_id", req.JobID)
-	if wantsJSON(r) {
+	if wantsJSON(w, r) {
 		writeJSON(w, r, http.StatusAccepted, submitResponse{JobID: req.JobID, DetailURL: req.PublicURL})
 		return
 	}
@@ -148,7 +148,7 @@ func isJSONBody(r *http.Request) bool {
 func (h *Handler) submitFailure(
 	w http.ResponseWriter, r *http.Request, req domain.ReviewRequest, status int, message string,
 ) {
-	if wantsJSON(r) {
+	if wantsJSON(w, r) {
 		writeJSON(w, r, status, errorResponse{Error: message})
 		return
 	}
