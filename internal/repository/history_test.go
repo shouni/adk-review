@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"iter"
 	"strings"
 	"testing"
 
 	"github.com/shouni/go-job-kit/jobstatus"
 	"github.com/shouni/go-remote-io/remoteio"
+	"github.com/shouni/go-remote-io/remoteio/memio"
 
 	"github.com/shouni/adk-review/internal/domain"
 )
@@ -19,7 +21,17 @@ const (
 )
 
 // fakeIO は remoteio の読み書きのフェイクです。
+// fakeIO は memio を包んだストレージのフェイクです。
+//
+// 一覧の畳み込みや不在の返し方といったストレージの振る舞いは memio が受け持ちます
+// （本物のハンドラと同じ適合性スイートを通っています）。ここに残しているのは
+// 「どのプレフィックスを走査したか」「何を消したか」という呼び出しの記録と、
+// 障害の注入だけです。
 type fakeIO struct {
+	remoteio.Store
+	h *memio.Handler
+
+	// objects は init で memio へ流し込む前提のオブジェクトです。
 	objects   []string
 	listErr   error
 	deleteErr error
@@ -28,35 +40,39 @@ type fakeIO struct {
 	deleted      []string
 }
 
-func (f *fakeIO) Open(context.Context, string) (io.ReadCloser, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (f *fakeIO) Exists(context.Context, string) (bool, error) { return false, nil }
-
-func (f *fakeIO) List(_ context.Context, path string, callback func(string) error, _ ...remoteio.ListOption) error {
-	f.listedPrefix = path
-	if f.listErr != nil {
-		return f.listErr
+// ensure は memio を組み立てて objects を流し込みます。
+//
+// 各テストが構造体リテラルで前提を書けるよう、生成は最初の呼び出しまで遅らせています。
+// 冪等なので、どの入口から先に触られても同じ状態になります。
+func (f *fakeIO) ensure(t *testing.T) {
+	t.Helper()
+	if f.Store != nil {
+		return
 	}
-	for _, obj := range f.objects {
-		if err := callback(obj); err != nil {
-			return err
+
+	f.h = memio.New(memio.WithScheme(remoteio.SchemeGCS))
+	f.Store = remoteio.NewStore(f.h)
+	for _, uri := range f.objects {
+		if err := f.h.Seed(uri, []byte("x")); err != nil {
+			t.Fatalf("seed(%s) error = %v", uri, err)
 		}
 	}
-	return nil
 }
 
-func (f *fakeIO) Write(context.Context, string, io.Reader, ...remoteio.WriteOption) error {
-	return errors.New("not implemented")
+func (f *fakeIO) List(ctx context.Context, name string, opts ...remoteio.ListOption) iter.Seq2[remoteio.Entry, error] {
+	f.listedPrefix = name
+	if f.listErr != nil {
+		return func(yield func(remoteio.Entry, error) bool) { yield(remoteio.Entry{}, f.listErr) }
+	}
+	return f.Store.List(ctx, name, opts...)
 }
 
-func (f *fakeIO) Delete(_ context.Context, path string) error {
+func (f *fakeIO) Delete(ctx context.Context, name string) error {
 	if f.deleteErr != nil {
 		return f.deleteErr
 	}
-	f.deleted = append(f.deleted, path)
-	return nil
+	f.deleted = append(f.deleted, name)
+	return f.Store.Delete(ctx, name)
 }
 
 // fakeStore は進行状況のフェイクです。
@@ -70,7 +86,8 @@ func (fakeStore) Save(context.Context, string, domain.JobStatus) error { return 
 
 func newTestHistory(t *testing.T, fake *fakeIO) *History {
 	t.Helper()
-	return NewHistory(fake, fake, fakeStore{}, domain.NewStorageLayout(testBucket))
+	fake.ensure(t)
+	return NewHistory(fake, fakeStore{}, domain.NewStorageLayout(testBucket))
 }
 
 // 削除はジョブのプレフィックスを走査して行います。消す側が「何を作ったか」を
@@ -233,7 +250,8 @@ func TestListReturnsOneRowPerJob(t *testing.T) {
 		ids[1]: {Status: jobstatus.Status{JobID: ids[1], State: jobstatus.StateSucceeded}},
 	}}
 
-	h := NewHistory(fake, fake, store, domain.NewStorageLayout(testBucket))
+	fake.ensure(t)
+	h := NewHistory(fake, store, domain.NewStorageLayout(testBucket))
 	page, err := h.List(context.Background(), 1, 20)
 	if err != nil {
 		t.Fatalf("一覧の取得に失敗: %v", err)
@@ -256,7 +274,8 @@ func TestListSortsNewestFirst(t *testing.T) {
 		newer: {Status: jobstatus.Status{JobID: newer}},
 	}}
 
-	h := NewHistory(fake, fake, store, domain.NewStorageLayout(testBucket))
+	fake.ensure(t)
+	h := NewHistory(fake, store, domain.NewStorageLayout(testBucket))
 	page, err := h.List(context.Background(), 1, 20)
 	if err != nil {
 		t.Fatalf("一覧の取得に失敗: %v", err)
@@ -275,7 +294,8 @@ func TestListKeepsJobsWithoutStatus(t *testing.T) {
 	fake := &fakeIO{objects: []string{jobPrefix(testJobID)}}
 	store := stubStore{errs: map[string]error{testJobID: jobstatus.ErrNotFound}}
 
-	h := NewHistory(fake, fake, store, domain.NewStorageLayout(testBucket))
+	fake.ensure(t)
+	h := NewHistory(fake, store, domain.NewStorageLayout(testBucket))
 	page, err := h.List(context.Background(), 1, 20)
 	if err != nil {
 		t.Fatalf("一覧の取得に失敗: %v", err)
@@ -296,7 +316,8 @@ func TestListSurfacesUnavailableStatus(t *testing.T) {
 	fake := &fakeIO{objects: []string{jobPrefix(testJobID)}}
 	store := stubStore{errs: map[string]error{testJobID: jobstatus.ErrUnavailable}}
 
-	h := NewHistory(fake, fake, store, domain.NewStorageLayout(testBucket))
+	fake.ensure(t)
+	h := NewHistory(fake, store, domain.NewStorageLayout(testBucket))
 	if _, err := h.List(context.Background(), 1, 20); err == nil {
 		t.Fatal("読み取り失敗が握り潰されました")
 	}
@@ -317,7 +338,8 @@ func TestGetLoadsReport(t *testing.T) {
 		},
 	}}
 
-	h := NewHistory(rio, fake, store, domain.NewStorageLayout(testBucket))
+	fake.ensure(t)
+	h := NewHistory(rio, store, domain.NewStorageLayout(testBucket))
 	detail, err := h.Get(context.Background(), testJobID)
 	if err != nil {
 		t.Fatalf("詳細の取得に失敗: %v", err)
@@ -342,7 +364,8 @@ func TestGetKeepsStatusWhenReportUnreadable(t *testing.T) {
 		},
 	}}
 
-	h := NewHistory(rio, fake, store, domain.NewStorageLayout(testBucket))
+	fake.ensure(t)
+	h := NewHistory(rio, store, domain.NewStorageLayout(testBucket))
 	detail, err := h.Get(context.Background(), testJobID)
 	if err != nil {
 		t.Fatalf("進行状況まで失われました: %v", err)
@@ -358,7 +381,8 @@ func TestGetKeepsStatusWhenReportUnreadable(t *testing.T) {
 // 未記録は ErrNotFound のまま返すこと。ハンドラーはこれで 404 と 500 を切り分けます。
 func TestGetPreservesNotFound(t *testing.T) {
 	fake := &fakeIO{}
-	h := NewHistory(fake, fake, stubStore{}, domain.NewStorageLayout(testBucket))
+	fake.ensure(t)
+	h := NewHistory(fake, stubStore{}, domain.NewStorageLayout(testBucket))
 
 	_, err := h.Get(context.Background(), testJobID)
 	if !errors.Is(err, jobstatus.ErrNotFound) {
