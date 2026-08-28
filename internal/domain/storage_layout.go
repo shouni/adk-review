@@ -32,18 +32,18 @@ func NewStorageLayout(bucket string) StorageLayout {
 
 // ReviewPrefixURI は、履歴一覧が列挙するプレフィックスの URI を返します。
 func (l StorageLayout) ReviewPrefixURI() string {
-	return remoteio.BuildGCSURI(l.bucket, reviewPrefix)
+	return remoteio.BuildURI(remoteio.SchemeGCS, l.bucket, reviewPrefix)
 }
 
 // JobPrefixURI は、1 ジョブ分のオブジェクトを収めるプレフィックスの URI を返します。
 // 履歴の削除はこのプレフィックス単位で行えます。
 func (l StorageLayout) JobPrefixURI(jobID string) string {
-	return remoteio.BuildGCSURI(l.bucket, JobPrefix(jobID))
+	return remoteio.BuildURI(remoteio.SchemeGCS, l.bucket, JobPrefix(jobID))
 }
 
 // StatusURI は、進行状況と一覧用メタ（status.json）の URI を返します。
 func (l StorageLayout) StatusURI(jobID string) string {
-	return remoteio.BuildGCSURI(l.bucket, JobPrefix(jobID)+statusFileName)
+	return remoteio.BuildURI(remoteio.SchemeGCS, l.bucket, JobPrefix(jobID)+statusFileName)
 }
 
 // ReportURI は、レビュー結果全文（report.json）の URI を返します。
@@ -51,7 +51,7 @@ func (l StorageLayout) StatusURI(jobID string) string {
 // 一覧用メタと別のオブジェクトにするのは、履歴一覧が行数分だけ status.json を読むためです。
 // 指摘の全文を同じファイルへ入れると、一覧の読み取り量が指摘件数に比例して増えます。
 func (l StorageLayout) ReportURI(jobID string) string {
-	return remoteio.BuildGCSURI(l.bucket, JobPrefix(jobID)+reportFileName)
+	return remoteio.BuildURI(remoteio.SchemeGCS, l.bucket, JobPrefix(jobID)+reportFileName)
 }
 
 // JobPrefix は、1 ジョブ分の相対オブジェクトプレフィックスを返します。

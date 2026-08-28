@@ -2,8 +2,8 @@ package builder
 
 import (
 	"github.com/shouni/go-job-kit/jobstatus"
+	"github.com/shouni/go-remote-io/remoteio"
 
-	"github.com/shouni/adk-review/internal/app"
 	"github.com/shouni/adk-review/internal/domain"
 )
 
@@ -11,10 +11,9 @@ import (
 //
 // 配置を UnderJobDir に委ねているのは、成果物と同じジョブディレクトリ配下へ置くためです。
 // 履歴の削除がプレフィックスの一括削除で済み、状態ファイルの消し漏れが起きません。
-func buildStatusStore(rio *app.RemoteIO, layout domain.StorageLayout) domain.StatusStore {
+func buildStatusStore(store remoteio.Store, layout domain.StorageLayout) domain.StatusStore {
 	return jobstatus.NewStore[domain.JobStatus](
-		rio.Reader,
-		rio.Writer,
+		store,
 		jobstatus.UnderJobDir(layout.ReviewPrefixURI()),
 	)
 }

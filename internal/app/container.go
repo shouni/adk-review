@@ -17,8 +17,8 @@ import (
 type Container struct {
 	Config *config.Config
 	// ストレージ I/O
-	RemoteIO *RemoteIO
-	Layout   domain.StorageLayout
+	Store  remoteio.Store
+	Layout domain.StorageLayout
 	// 進行状況と履歴
 	StatusStore domain.StatusStore
 	History     domain.HistoryRepository
@@ -40,13 +40,6 @@ type TaskEnqueuer interface {
 	Enqueue(ctx context.Context, payload domain.ReviewRequest) error
 	Close() error
 }
-
-// RemoteIO は外部ストレージ操作に関するコンポーネントをまとめます。
-//
-// 実体は go-remote-io が持つ remoteio.Bundle です。同じ構造体と組み立て関数を
-// 各アプリが個別に持っていたものをライブラリへ引き取ったため、ここはアプリ内での
-// 呼び名を保つための別名だけになっています（rio.Reader などの参照はそのまま使えます）。
-type RemoteIO = remoteio.Bundle
 
 // Close は、Container が保持するすべての外部接続リソースを安全に解放します。
 //

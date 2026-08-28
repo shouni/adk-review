@@ -8,7 +8,6 @@ import (
 	"io"
 
 	"github.com/shouni/go-http-kit/httpkit"
-	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-remote-io/remoteio/gcs"
 
 	"github.com/shouni/adk-review/internal/adapters"
@@ -40,26 +39,26 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 		return nil, fmt.Errorf("GCSストレージの生成に失敗しました: %w", err)
 	}
 	resources = append(resources, storage)
-	rio, err := remoteio.NewBundle(storage)
+	store, err := storage.Store()
 	if err != nil {
 		return nil, fmt.Errorf("I/Oコンポーネントの初期化に失敗しました: %w", err)
 	}
 
 	// 3. 進行状況と履歴
 	layout := domain.NewStorageLayout(cfg.Storage.GCSBucket)
-	statusStore := buildStatusStore(rio, layout)
-	history := repository.NewHistory(rio.Reader, rio.Writer, statusStore, layout)
+	statusStore := buildStatusStore(store, layout)
+	history := repository.NewHistory(store, statusStore, layout)
 
 	appCtx := &app.Container{
 		Config:      cfg,
-		RemoteIO:    rio,
+		Store:       store,
 		Layout:      layout,
 		StatusStore: statusStore,
 		History:     history,
-		// rio は成功後の storage の所有者です（Bundle.Close が factory を閉じます）。
+		// Store はファクトリが持つクライアントを包むだけで、寿命はファクトリ側にあります。
 		// 組み立てに失敗したときは resources 側が storage を直接閉じるため、
 		// Closers は成功して返ったあとの解放だけを受け持ちます。
-		Closers: []io.Closer{rio},
+		Closers: []io.Closer{storage},
 	}
 
 	// 4. Web 面だけの依存: Task Enqueuer（レビュー依頼の投入口）

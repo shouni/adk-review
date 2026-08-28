@@ -32,30 +32,27 @@ const maxReportBytes = 8 << 20 // 8 MiB
 
 // History は、GCS 上のレビュー履歴を読み書きします。
 type History struct {
-	reader remoteio.InputReader
-	writer remoteio.OutputWriter
-	store  domain.StatusStore
-	layout domain.StorageLayout
-	ids    *cache.IDList
-	logger *slog.Logger
+	storage remoteio.Store
+	store   domain.StatusStore
+	layout  domain.StorageLayout
+	ids     *cache.IDList
+	logger  *slog.Logger
 }
 
 var _ domain.HistoryRepository = (*History)(nil)
 
 // NewHistory は History を構築します。
 func NewHistory(
-	reader remoteio.InputReader,
-	writer remoteio.OutputWriter,
+	storage remoteio.Store,
 	store domain.StatusStore,
 	layout domain.StorageLayout,
 ) *History {
 	return &History{
-		reader: reader,
-		writer: writer,
-		store:  store,
-		layout: layout,
-		ids:    cache.NewIDList(cache.DefaultIDListTTL),
-		logger: slog.Default().With("collection", "reviews"),
+		storage: storage,
+		store:   store,
+		layout:  layout,
+		ids:     cache.NewIDList(cache.DefaultIDListTTL),
+		logger:  slog.Default().With("collection", "reviews"),
 	}
 }
 
@@ -179,16 +176,16 @@ func (h *History) deletePrefix(ctx context.Context, prefix string) error {
 	}
 
 	var uris []string
-	if err := h.reader.List(ctx, prefix, func(gcsPath string) error {
-		uris = append(uris, gcsPath)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("削除対象の一覧取得に失敗しました (%s): %w", prefix, err)
+	for entry, err := range h.storage.List(ctx, prefix) {
+		if err != nil {
+			return fmt.Errorf("削除対象の一覧取得に失敗しました (%s): %w", prefix, err)
+		}
+		uris = append(uris, entry.URI)
 	}
 
 	var errs []error
 	for _, uri := range uris {
-		if err := h.writer.Delete(ctx, uri); err != nil {
+		if err := h.storage.Delete(ctx, uri); err != nil {
 			errs = append(errs, fmt.Errorf("%s の削除に失敗しました: %w", uri, err))
 		}
 	}
@@ -232,19 +229,18 @@ func (h *History) listJobIDs(ctx context.Context) ([]string, error) {
 
 	return h.ids.Load(ctx, prefix, func(ctx context.Context) ([]string, error) {
 		var jobIDs []string
-		err := h.reader.List(ctx, prefix, func(gcsPath string) error {
+		for entry, err := range h.storage.List(ctx, prefix, remoteio.WithDelimiter("/")) {
+			if err != nil {
+				return nil, err
+			}
 			// 疑似ディレクトリだけを拾います。プレフィックス直下に置かれたオブジェクトは
 			// ジョブではないため対象外です。
-			if !strings.HasSuffix(gcsPath, "/") {
-				return nil
+			if !entry.IsPrefix {
+				continue
 			}
-			if jobID := path.Base(strings.TrimSuffix(gcsPath, "/")); jobID != "" {
+			if jobID := path.Base(strings.TrimSuffix(entry.Name, "/")); jobID != "" {
 				jobIDs = append(jobIDs, jobID)
 			}
-			return nil
-		}, remoteio.WithDelimiter("/"))
-		if err != nil {
-			return nil, err
 		}
 		return jobIDs, nil
 	})
@@ -252,7 +248,7 @@ func (h *History) listJobIDs(ctx context.Context) ([]string, error) {
 
 // loadReport は report.json を読み取ります。
 func (h *History) loadReport(ctx context.Context, uri string) (review.Report, error) {
-	rc, err := h.reader.Open(ctx, uri)
+	rc, err := h.storage.Open(ctx, uri)
 	if err != nil {
 		return review.Report{}, fmt.Errorf("レビュー結果を開けませんでした: %w", err)
 	}
