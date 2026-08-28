@@ -151,7 +151,7 @@ func (h *Handler) submitFailure(
 	w http.ResponseWriter, r *http.Request, req domain.ReviewRequest, status int, message string,
 ) {
 	if negotiate.WantsJSON(w, r) {
-		negotiate.JSON(w, r, status, errorResponse{Error: message})
+		negotiate.ErrorJSON(w, r, status, message)
 		return
 	}
 	h.renderForm(w, r, status, reviewFormPageData(req, ReviewFormPageData{Error: message}))

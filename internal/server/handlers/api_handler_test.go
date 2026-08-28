@@ -137,7 +137,7 @@ func TestHandleJobStatus_SeparatesMissingFromUnreadable(t *testing.T) {
 			if rec.Code != tt.want {
 				t.Fatalf("status = %d, want %d\n%s", rec.Code, tt.want, rec.Body.String())
 			}
-			if got := decodeJSON[errorResponse](t, rec); got.Error == "" {
+			if got := decodeJSON[errorBody](t, rec); got.Error == "" {
 				t.Error("エラー本文が空です")
 			}
 		})
@@ -315,7 +315,7 @@ func TestHandleReviewDelete_ConflictAsJSON(t *testing.T) {
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409\n%s", rec.Code, rec.Body.String())
 	}
-	if got := decodeJSON[errorResponse](t, rec); got.Error == "" {
+	if got := decodeJSON[errorBody](t, rec); got.Error == "" {
 		t.Error("エラー本文が空です")
 	}
 	if history.deleteCalls != 0 {
@@ -404,7 +404,7 @@ func TestHandleReviewSubmit_JSONValidationError(t *testing.T) {
 		t.Fatalf("status = %d, want 400\n%s", rec.Code, rec.Body.String())
 	}
 	// 画面ではなく理由だけを返します（HTML が混ざっていないこと）。
-	if got := decodeJSON[errorResponse](t, rec); got.Error == "" {
+	if got := decodeJSON[errorBody](t, rec); got.Error == "" {
 		t.Error("エラー本文が空です")
 	}
 	if enq.called {
@@ -454,4 +454,12 @@ func buildJobStatusHandler(t *testing.T, store domain.StatusStore) *Handler {
 		t.Fatalf("failed to build handler: %v", err)
 	}
 	return h
+}
+
+// errorBody は、エラー応答の本文を読むためのテスト用の型です。
+//
+// gcp-kit の negotiate.ErrorJSON が返す形（{"error": "..."}）に合わせてあります。
+// キット側は本文の型を公開していないので、読む側でだけ持ちます。
+type errorBody struct {
+	Error string `json:"error"`
 }

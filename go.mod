@@ -7,7 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/go-cmp v0.7.0
 	github.com/gorilla/sessions v1.4.0
-	github.com/shouni/gcp-kit v1.13.0
+	github.com/shouni/gcp-kit v1.13.2
 	github.com/shouni/go-http-kit v1.10.0
 	github.com/shouni/go-job-kit v1.2.0
 	github.com/shouni/go-notify v1.3.0

@@ -53,7 +53,7 @@ func (h *Handler) HandleHistory(w http.ResponseWriter, r *http.Request) {
 		slog.ErrorContext(ctx, "レビュー履歴の取得に失敗しました", "error", err, "status", code)
 		const message = "履歴を取得できませんでした。時間をおいて再度お試しください。"
 		if negotiate.WantsJSON(w, r) {
-			negotiate.JSON(w, r, code, errorResponse{Error: message})
+			negotiate.ErrorJSON(w, r, code, message)
 			return
 		}
 		h.render(w, r, code, historyTemplate, HistoryPageData{Error: message})
@@ -81,7 +81,7 @@ func (h *Handler) HandleReviewDetail(w http.ResponseWriter, r *http.Request) {
 		slog.WarnContext(ctx, "不正なジョブIDを受け取りました", "job_id", rawJobID, "error", err)
 		const message = "ジョブIDの形式が不正です。"
 		if negotiate.WantsJSON(w, r) {
-			negotiate.JSON(w, r, http.StatusBadRequest, errorResponse{Error: message})
+			negotiate.ErrorJSON(w, r, http.StatusBadRequest, message)
 			return
 		}
 		h.render(w, r, http.StatusBadRequest, reviewDetailTemplate, ReviewDetailPageData{Error: message})
@@ -100,7 +100,7 @@ func (h *Handler) HandleReviewDetail(w http.ResponseWriter, r *http.Request) {
 			slog.ErrorContext(ctx, "レビュー履歴の取得に失敗しました", "job_id", safeJobID, "error", err, "status", code)
 		}
 		if negotiate.WantsJSON(w, r) {
-			negotiate.JSON(w, r, code, errorResponse{Error: message})
+			negotiate.ErrorJSON(w, r, code, message)
 			return
 		}
 		h.render(w, r, code, reviewDetailTemplate, ReviewDetailPageData{Error: message})

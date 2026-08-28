@@ -39,8 +39,7 @@ func (h *Handler) HandleModes(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// プロンプト資産の破損なので、起動していれば通常は起きません。
 		slog.ErrorContext(r.Context(), "レビューモード一覧の読み込みに失敗しました", "error", err)
-		negotiate.JSON(w, r, http.StatusInternalServerError,
-			errorResponse{Error: "レビューモードを読み込めませんでした。"})
+		negotiate.ErrorJSON(w, r, http.StatusInternalServerError, "レビューモードを読み込めませんでした。")
 		return
 	}
 
@@ -70,7 +69,7 @@ func (h *Handler) HandleJobStatus(w http.ResponseWriter, r *http.Request) {
 	safeJobID, err := jobid.Sanitize(chi.URLParam(r, "jobID"))
 	if err != nil {
 		slog.WarnContext(ctx, "不正なジョブIDを受け取りました", "error", err)
-		negotiate.JSON(w, r, http.StatusBadRequest, errorResponse{Error: "ジョブIDの形式が不正です。"})
+		negotiate.ErrorJSON(w, r, http.StatusBadRequest, "ジョブIDの形式が不正です。")
 		return
 	}
 
@@ -79,11 +78,11 @@ func (h *Handler) HandleJobStatus(w http.ResponseWriter, r *http.Request) {
 		code := recordErrorStatus(err)
 		if code == http.StatusNotFound {
 			slog.WarnContext(ctx, "レビュー履歴が見つかりません", "job_id", safeJobID, "error", err)
-			negotiate.JSON(w, r, code, errorResponse{Error: "指定されたレビューは見つかりませんでした。"})
+			negotiate.ErrorJSON(w, r, code, "指定されたレビューは見つかりませんでした。")
 			return
 		}
 		slog.ErrorContext(ctx, "進行状況の取得に失敗しました", "job_id", safeJobID, "error", err)
-		negotiate.JSON(w, r, code, errorResponse{Error: "進行状況を取得できませんでした。"})
+		negotiate.ErrorJSON(w, r, code, "進行状況を取得できませんでした。")
 		return
 	}
 
