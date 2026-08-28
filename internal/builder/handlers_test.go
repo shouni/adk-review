@@ -96,3 +96,63 @@ func TestAppHandlersValidate(t *testing.T) {
 		})
 	}
 }
+
+// TestNewM2MVerifier は、M2M の設定漏れを起動時に落とすことを固定します。
+//
+// auth.Protected は M2M を無効化できません。未設定でも経路は生き続けて検証が必ず失敗し、
+// セッション認証へフォールバックするため、設定漏れは「ブラウザは動くが ap-mcp だけ
+// ログイン画面の HTML を受け取る」という形でしか現れません。素通りさせると気付けません。
+func TestNewM2MVerifier(t *testing.T) {
+	t.Parallel()
+
+	const serviceURL = "https://adk-review.example.com"
+
+	tests := []struct {
+		name       string
+		serviceURL string
+		allowed    []string
+		wantErr    bool
+	}{
+		{
+			name:       "両方揃っていれば構成できる",
+			serviceURL: serviceURL,
+			allowed:    []string{"ap-mcp@example.iam.gserviceaccount.com"},
+		},
+		{
+			name:       "許可リストが空なら起動を止める",
+			serviceURL: serviceURL,
+			wantErr:    true,
+		},
+		{
+			name:    "audience（SERVICE_URL）が空なら起動を止める",
+			allowed: []string{"ap-mcp@example.iam.gserviceaccount.com"},
+			wantErr: true,
+		},
+		{
+			name:       "空白だけの要素は許可リストとして数えない",
+			serviceURL: serviceURL,
+			allowed:    []string{"", "   "},
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			verifier, err := newM2MVerifier(tt.serviceURL, tt.allowed)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("newM2MVerifier = nil, want エラー（設定漏れは起動時に落とす）")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("newM2MVerifier = %v", err)
+			}
+			if !verifier.Configured() {
+				t.Error("構成できたはずの検証器が Configured() = false です")
+			}
+		})
+	}
+}

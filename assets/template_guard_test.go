@@ -10,7 +10,7 @@ import (
 
 // このファイルは、埋め込みテンプレートが CSP の前提を満たし続けることを見ます。
 //
-// router.go の contentSecurityPolicy は script-src を 'self' だけにしています。
+// secureheaders が組み立てる CSP は script-src を 'self' だけにしています。
 // インラインの <script> や on* 属性が 1 つでも入るとその画面のスクリプトが実行されず、
 // しかもテンプレートを足した本人には気付けません（他の画面は正常に動くため）。
 //

@@ -9,6 +9,8 @@ import (
 
 	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/domain"
+
+	"github.com/shouni/gcp-kit/negotiate"
 )
 
 // ModeInfo は、選べるレビューモード 1 件です。
@@ -37,8 +39,7 @@ func (h *Handler) HandleModes(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// プロンプト資産の破損なので、起動していれば通常は起きません。
 		slog.ErrorContext(r.Context(), "レビューモード一覧の読み込みに失敗しました", "error", err)
-		writeJSON(w, r, http.StatusInternalServerError,
-			errorResponse{Error: "レビューモードを読み込めませんでした。"})
+		negotiate.ErrorJSON(w, r, http.StatusInternalServerError, "レビューモードを読み込めませんでした。")
 		return
 	}
 
@@ -52,7 +53,7 @@ func (h *Handler) HandleModes(w http.ResponseWriter, r *http.Request) {
 			Excerpt:   string(mode.ExcerptKind()),
 		})
 	}
-	writeJSON(w, r, http.StatusOK, modesResponse{Modes: items})
+	negotiate.JSON(w, r, http.StatusOK, modesResponse{Modes: items})
 }
 
 // HandleJobStatus は、ジョブ 1 件の進行状況だけを返します。
@@ -68,7 +69,7 @@ func (h *Handler) HandleJobStatus(w http.ResponseWriter, r *http.Request) {
 	safeJobID, err := jobid.Sanitize(chi.URLParam(r, "jobID"))
 	if err != nil {
 		slog.WarnContext(ctx, "不正なジョブIDを受け取りました", "error", err)
-		writeJSON(w, r, http.StatusBadRequest, errorResponse{Error: "ジョブIDの形式が不正です。"})
+		negotiate.ErrorJSON(w, r, http.StatusBadRequest, "ジョブIDの形式が不正です。")
 		return
 	}
 
@@ -77,15 +78,15 @@ func (h *Handler) HandleJobStatus(w http.ResponseWriter, r *http.Request) {
 		code := recordErrorStatus(err)
 		if code == http.StatusNotFound {
 			slog.WarnContext(ctx, "レビュー履歴が見つかりません", "job_id", safeJobID, "error", err)
-			writeJSON(w, r, code, errorResponse{Error: "指定されたレビューは見つかりませんでした。"})
+			negotiate.ErrorJSON(w, r, code, "指定されたレビューは見つかりませんでした。")
 			return
 		}
 		slog.ErrorContext(ctx, "進行状況の取得に失敗しました", "job_id", safeJobID, "error", err)
-		writeJSON(w, r, code, errorResponse{Error: "進行状況を取得できませんでした。"})
+		negotiate.ErrorJSON(w, r, code, "進行状況を取得できませんでした。")
 		return
 	}
 
-	writeJSON(w, r, http.StatusOK, status)
+	negotiate.JSON(w, r, http.StatusOK, status)
 }
 
 // reviewDetailResponse は GET /history/{jobID} の JSON 応答です。

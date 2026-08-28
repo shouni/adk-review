@@ -87,7 +87,7 @@ Slack 通知も残りません。** `review-queue` は `max_attempts = 1` なの
 ### web 面の JSON API は Accept で切り替える
 
 画面と機械で**ルートを分けません。** `Accept: application/json` を見て同じハンドラが
-JSON を返します（`handlers.wantsJSON`）。分けると同じ取得処理が 2 本になり、片方だけ
+JSON を返します（`negotiate.WantsJSON`）。分けると同じ取得処理が 2 本になり、片方だけ
 直したときに画面の表示と機械可読な結果が食い違います。
 
 - `POST /submit_review` は JSON body も受け付けますが、**`domain.ReviewRequest` を直接
@@ -112,7 +112,11 @@ JSON を返します（`handlers.wantsJSON`）。分けると同じ取得処理�
 
 - `ALLOWED_M2M_SERVICE_ACCOUNTS`: **web 面の JSON API** を呼べる SA（ap-mcp）。
   発行元でも投入先でもなく「他サービスからの呼び出し元」なので、上の 2 つと兼ねません。
-  空なら M2M 無効です（web 面は画面が使えれば成立するため、fail-closed にしません）。
+  **空だと起動しません。** `auth.Protected` は M2M を無効化できず、未設定でも経路は生き続けて
+  検証が必ず失敗し、セッション認証へフォールバックします。つまり設定漏れは
+  「ブラウザは正常に動くが ap-mcp だけログイン画面の HTML を受け取る」という形でしか
+  現れません。意図的な無効化と設定漏れを区別する手段が無いので、空は後者として扱います
+  （以前はここだけ素通りさせており、兄弟アプリ 4 本と違っていました）。
 - `TASK_CALLER_SERVICE_ACCOUNT_EMAIL`: **投入側（web）** が指定する caller SA。
   トークンを生成して付与するのは Cloud Tasks であって、このプロセスではありません。
 - `ALLOWED_TASK_SERVICE_ACCOUNTS`: **受信側（worker）** が受け付ける発行元の許可リスト。
@@ -255,7 +259,7 @@ internal/
   - `paging.LoadPage` は load のエラーを呼び出し元へ返さず、その行を落として続行します。
     障害を surface したい場合は `repository.loadFailure` のように自分で捕まえてください。
 - `gcp-kit`: OAuth・CSRF・Cloud Tasks の投入と OIDC 検証・`cloudlog`
-  - CSRF の検証は `auth.Handler.Middleware` が状態変更メソッドに対して行います。
+  - CSRF の検証は `session.Handler.Authenticate` が状態変更メソッドに対して行います。
     アプリ側に検証コードが無いのは正常です。
 - `go-utils`: ジョブ ID 採番（`jobid`）、JST 整形（`jst`）、`slogctx`
 - `netarmor/securenet`: SSRF 対策と `SERVICE_URL` の安全性判定
