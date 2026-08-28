@@ -27,8 +27,8 @@ type AppHandlers struct {
 	// TaskAuth は Cloud Tasks からの OIDC を検証します。Auth と違い OAuth 設定を
 	// 必要としないため、検証だけを担う独立した部品として持ちます。
 	TaskAuth *oidc.Verifier
-	// M2M は、他サービス（ap-mcp）からの OIDC Bearer を検証します。nil でも成立し、
-	// その場合 web 面はブラウザセッションだけで守られます。
+	// M2M は、他サービス（ap-mcp）からの OIDC Bearer を検証します。web 面を担うなら
+	// 必ず構成されます（未設定は起動時に落とします。newM2MVerifier を参照）。
 	M2M *oidc.Verifier
 }
 
@@ -75,11 +75,11 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 		}
 		appHandlers.Web = webHandler
 
-		// 許可リストが空なら nil のままにします。auth.Protected は nil を
-		// 「M2M は試みられなかった」として扱い、セッション認証へ落とします。
-		if m2m := oidc.New(appCtx.Config.Server.ServiceURL, appCtx.Config.Auth.AllowedM2MServiceAccounts); m2m.Configured() {
-			appHandlers.M2M = m2m
+		m2m, err := newM2MVerifier(appCtx.Config.Server.ServiceURL, appCtx.Config.Auth.AllowedM2MServiceAccounts)
+		if err != nil {
+			return nil, err
 		}
+		appHandlers.M2M = m2m
 	}
 
 	if role.ServesWorker() {
@@ -119,4 +119,27 @@ func createAuthHandler(cfg *config.Config) (*session.Handler, error) {
 		AllowedEmails:     cfg.Auth.AllowedEmails,
 		AllowedDomains:    cfg.Auth.AllowedDomains,
 	})
+}
+
+// newM2MVerifier は M2M（サーバー間通信）用の OIDC 検証器を構成します。
+//
+// 未設定を「意図的に無効化した」とは解釈せず、起動時に落とします。auth.Protected は
+// M2M を無効化できないためです。許可リストか audience が欠けていても経路は生き続け、
+// 検証が必ず失敗してセッション認証へフォールバックします。つまり設定漏れは
+// 「ブラウザは正常に動くが ap-mcp だけログイン画面の HTML を受け取る」という形でしか
+// 現れません。意図的な無効化と設定漏れを区別する手段が無い以上、空は後者としか
+// 解釈できないので、TaskVerifier と同じく起動時に弾きます。
+//
+// 以前はここだけ「未設定なら nil のまま（＝素通り）」にしていましたが、
+// 兄弟アプリ 4 本はいずれも起動時に落とす形で、adk-review だけが違っていました。
+//
+// 構成の可否を config ではなく検証器自身に尋ねるのは、必要な設定が何かを知っているのが
+// gcp-kit 側だからです。許可リストの空だけを config で見ると audience（SERVICE_URL）の
+// 欠落を拾えず、キットが要件を増やしても追随しません。
+func newM2MVerifier(serviceURL string, allowedServiceAccounts []string) (*oidc.Verifier, error) {
+	m2m := oidc.New(serviceURL, allowedServiceAccounts)
+	if !m2m.Configured() {
+		return nil, fmt.Errorf("m2m の OIDC 検証を構成できません: SERVICE_URL と ALLOWED_M2M_SERVICE_ACCOUNTS が必要です")
+	}
+	return m2m, nil
 }
