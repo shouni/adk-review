@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/shouni/gcp-kit/negotiate"
 )
 
 // 表現を Accept で選ぶ以上、それをキャッシュへ伝える必要があります。
@@ -33,8 +35,8 @@ func TestWantsJSONSetsVary(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 
-			if got := wantsJSON(rec, req); got != tt.want {
-				t.Errorf("wantsJSON() = %v, want %v", got, tt.want)
+			if got := negotiate.WantsJSON(rec, req); got != tt.want {
+				t.Errorf("negotiate.WantsJSON() = %v, want %v", got, tt.want)
 			}
 			// 判定の結果によらず Vary は必ず立ちます。
 			if got := rec.Header().Get("Vary"); got != "Accept" {

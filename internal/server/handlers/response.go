@@ -1,54 +1,19 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/shouni/go-job-kit/jobstatus"
-
-	"github.com/shouni/gcp-kit/negotiate"
 )
 
-// errorResponse は、JSON を求めた呼び出し元へ返すエラー本文です。
+// errorResponse は、JSON 固定のエンドポイントが返すエラー本文です。
+//
+// 表現を出し分けるルートは negotiate.Error を使います（相手が JSON を求めていなければ
+// text/plain を返します）。ここに残しているのは、画面から開かれることのない
+// JSON 専用ルートで、常に同じ本文の形を返す必要があるためです。
 type errorResponse struct {
 	Error string `json:"error"`
-}
-
-// wantsJSON は、呼び出し元が JSON を求めているかを返します。
-//
-// ルートを分けずに Accept で切り替えるのは、同じ取得処理を 2 本持たないためです。
-// 画面用と API 用にハンドラを分けると、片方だけ直したときに画面の表示と機械可読な
-// 結果が食い違います。5 つの兄弟アプリすべてが同じ形です。
-//
-// 判定を gcp-kit へ委ねているのは、同時に Vary: Accept を立てさせるためです。
-// 同じ URL が Accept で中身を変えるのにキャッシュへ伝えないと、共有キャッシュや
-// CDN を挟んだとき JSON を求めたクライアントへ HTML が返りえます。以前は
-// 3 アプリが逐語コピーを持ち、3 つとも Vary を落としていました。
-func wantsJSON(w http.ResponseWriter, r *http.Request) bool {
-	return negotiate.WantsJSON(w, r)
-}
-
-// writeJSON は、payload を JSON として書き出します。
-func writeJSON(w http.ResponseWriter, r *http.Request, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		// ヘッダーは送信済みなので、ここからエラーへ倒すことはできません。記録だけ残します。
-		slog.ErrorContext(r.Context(), "レスポンスのエンコードに失敗しました", "error", err)
-	}
-}
-
-// writeError は、JSON を求められていれば JSON で、そうでなければ text/plain で返します。
-//
-// JSON 固定にしないのは、画面側の JS がエラー本文を resp.text() で読んでいるためです。
-func writeError(w http.ResponseWriter, r *http.Request, status int, message string) {
-	if wantsJSON(w, r) {
-		writeJSON(w, r, status, errorResponse{Error: message})
-		return
-	}
-	http.Error(w, message, status)
 }
 
 // recordErrorStatus は、進行状況の読み出し失敗に対応する HTTP ステータスを返します。

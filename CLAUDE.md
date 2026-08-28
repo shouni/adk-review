@@ -87,7 +87,7 @@ Slack 通知も残りません。** `review-queue` は `max_attempts = 1` なの
 ### web 面の JSON API は Accept で切り替える
 
 画面と機械で**ルートを分けません。** `Accept: application/json` を見て同じハンドラが
-JSON を返します（`handlers.wantsJSON`）。分けると同じ取得処理が 2 本になり、片方だけ
+JSON を返します（`negotiate.WantsJSON`）。分けると同じ取得処理が 2 本になり、片方だけ
 直したときに画面の表示と機械可読な結果が食い違います。
 
 - `POST /submit_review` は JSON body も受け付けますが、**`domain.ReviewRequest` を直接

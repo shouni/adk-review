@@ -12,6 +12,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/shouni/gcp-kit/cloudlog"
+	"github.com/shouni/gcp-kit/cloudrun"
+	"github.com/shouni/gcp-kit/secureheaders"
 
 	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/builder"
@@ -65,7 +67,7 @@ func setupCommonMiddleware(r *chi.Mux, projectID string) {
 	// 画面は日本語 UTF-8（1 文字 3 バイト）なので圧縮がよく効きます。静的ファイルも
 	// 同じ経路に乗ります（vendor は immutable なので再圧縮は稀です）。
 	r.Use(middleware.Compress(compressionLevel))
-	r.Use(securityHeaders)
+	r.Use(secureheaders.New(secureheaders.Config{}))
 }
 
 // setupRoutes は、各コンポーネントのハンドラーをルーティングに登録します。
@@ -73,10 +75,8 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 	// --- 1. 公開ルート (ヘルスチェック) ---
 	// "/healthz" は Cloud Run のデフォルトドメイン (*.run.app) 側で予約パス的に扱われ、
 	// コンテナまでリクエストが届かず GFE の汎用 404 に置き換えられるため使わない。
-	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	// パスの選択理由（"/healthz" を使わない）は cloudrun.HealthPath を参照。
+	r.Get(cloudrun.HealthPath, cloudrun.Health)
 	setupStaticRoutes(r)
 
 	if h == nil {
@@ -178,66 +178,6 @@ func writeCrossOriginErrorResponse(w http.ResponseWriter, r *http.Request, tmpl 
 
 // compressionLevel は gzip の圧縮レベルです。
 const compressionLevel = 5
-
-// contentSecurityPolicy は全レスポンスに付ける CSP です。
-//
-// 外部オリジンを 1 つも許可しません。**Bootstrap を自前配信にしている（assets/static/vendor）
-// のは、そのためです。** CDN を allowlist に載せる形だと、jsDelivr は npm の全パッケージを
-// 配信しているため「任意の npm パッケージの読み込みを許可する」に等しく、既知の
-// CSP バイパス・ガジェットを持ち込まれます。
-//
-// script-src を 'self' だけにできるのは、インラインスクリプトを 1 つも置かないためです。
-// assets の TestTemplatesHaveNoInlineScripts が、戻らないことを固定しています。
-//
-// style-src にだけ 'unsafe-inline' が要ります。Bootstrap の JS（collapse / tab）が
-// 遷移中にインラインスタイルを当てるためです。
-//
-// この画面は画像も音声も持たないため、img-src / media-src に外部ホストは要りません。
-const contentSecurityPolicy = "default-src 'self'; " +
-	"script-src 'self'; " +
-	"style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data:; " +
-	"font-src 'self'; " +
-	"connect-src 'self'; " +
-	"object-src 'none'; " +
-	"base-uri 'none'; " +
-	"frame-ancestors 'none'; " +
-	"form-action 'self'"
-
-// hstsMaxAge は HSTS の有効期間です。1 年。
-//
-// Cloud Run は HTTPS でしか受けないので現状の実害はありませんが、独自ドメインを当てた
-// ときに平文へ降格させないための宣言です。preload は付けません（撤回にブラウザベンダーへの
-// 申請が要るうえ、得るものが少ないため）。
-const hstsMaxAge = "max-age=31536000; includeSubDomains"
-
-// securityHeaderValues は、全レスポンスに付ける防御的なヘッダーです。
-//
-// Referrer-Policy を same-origin まで絞れるのは、外部オリジンへの参照を 1 つも持たないため
-// です（Bootstrap は自前配信）。唯一の越境は署名付き URL への 302 で、GCS は Referer を
-// 見ません。
-//
-// Permissions-Policy は使っていない機能だけを塞ぎます。autoplay は将来メディアを
-// 載せたときに効いてくるため入れません。
-var securityHeaderValues = map[string]string{
-	"Content-Security-Policy":   contentSecurityPolicy,
-	"Strict-Transport-Security": hstsMaxAge,
-	// MIME スニッフィングを止めます。
-	"X-Content-Type-Options": "nosniff",
-	"Referrer-Policy":        "same-origin",
-	"Permissions-Policy":     "geolocation=(), camera=(), microphone=(), payment=(), usb=()",
-}
-
-// securityHeaders は、securityHeaderValues を全レスポンスへ付けるミドルウェアです。
-func securityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		header := w.Header()
-		for name, value := range securityHeaderValues {
-			header.Set(name, value)
-		}
-		next.ServeHTTP(w, r)
-	})
-}
 
 // vendorPathPrefix より下は第三者製の配布物で、パスにバージョンが入っています
 // （assets/static/vendor/bootstrap-5.3.8 など）。更新すれば必ず別の URL になるので、
