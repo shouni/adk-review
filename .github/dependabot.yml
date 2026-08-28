@@ -15,6 +15,21 @@ updates:
         patterns:
           - "*"
 
+  # Dockerfile のベースイメージ。**cloudbuild.yaml でビルドしているので CI には出ない**が、
+  # 追跡しないと誰も上げない。`FROM scratch` は Dependabot の対象外。
+  - package-ecosystem: docker
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      docker:
+        patterns:
+          - "*"
+
   - package-ecosystem: github-actions
     directory: /
     target-branch: develop
