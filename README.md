@@ -2,12 +2,11 @@
 
 [![CI](https://github.com/shouni/adk-review/actions/workflows/ci.yml/badge.svg)](https://github.com/shouni/adk-review/actions/workflows/ci.yml)
 [![Status](https://img.shields.io/badge/Status-Active-brightgreen)](#)
-[![Language](https://img.shields.io/badge/Language-Go-blue)](https://golang.org/)
+[![Language](https://img.shields.io/badge/Language-Go-blue)](https://go.dev/)
 [![Platform](https://img.shields.io/badge/Platform-Cloud%20Run-blue?logo=google-cloud)](https://cloud.google.com/run)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/shouni/adk-review)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 🚀 概要 (About)
+## 🚀 概要 (About) - 人もエージェントも、同じ URL でレビューを頼む
 
 **ADK Review** は、Git リポジトリの差分を AI エージェントにレビューさせる Web アプリです。
 画面用と API 用でルートを分けていないため、ブラウザのフォームからでも、MCP ゲートウェイ
