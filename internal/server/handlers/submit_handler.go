@@ -15,7 +15,7 @@ import (
 
 	"github.com/shouni/adk-review/internal/domain"
 
-	"github.com/shouni/gcp-kit/negotiate"
+	"github.com/shouni/go-serve-kit/respond"
 )
 
 // maxSubmitBody は、JSON で受け取る投入内容の上限です。
@@ -96,8 +96,8 @@ func (h *Handler) HandleReviewSubmit(w http.ResponseWriter, r *http.Request) {
 
 	// 6. 成功応答を返します
 	slog.InfoContext(ctx, "レビュータスク投入成功", "repo", req.RepoURL, "job_id", req.JobID)
-	if negotiate.WantsJSON(w, r) {
-		negotiate.JSON(w, r, http.StatusAccepted, submitResponse{JobID: req.JobID, DetailURL: req.PublicURL})
+	if respond.WantsJSON(w, r) {
+		respond.JSON(w, r, http.StatusAccepted, submitResponse{JobID: req.JobID, DetailURL: req.PublicURL})
 		return
 	}
 	h.renderForm(w, r, http.StatusAccepted, reviewFormPageData(req, ReviewFormPageData{
@@ -150,8 +150,8 @@ func isJSONBody(r *http.Request) bool {
 func (h *Handler) submitFailure(
 	w http.ResponseWriter, r *http.Request, req domain.ReviewRequest, status int, message string,
 ) {
-	if negotiate.WantsJSON(w, r) {
-		negotiate.ErrorJSON(w, r, status, message)
+	if respond.WantsJSON(w, r) {
+		respond.ErrorJSON(w, r, status, message)
 		return
 	}
 	h.renderForm(w, r, status, reviewFormPageData(req, ReviewFormPageData{Error: message}))

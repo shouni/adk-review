@@ -5,12 +5,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/shouni/gcp-kit/negotiate"
+	"github.com/shouni/go-serve-kit/respond"
 )
 
 // 表現を Accept で選ぶ以上、それをキャッシュへ伝える必要があります。
 // Vary が無いと、共有キャッシュや CDN を挟んだとき JSON を求めた
-// クライアントへ HTML が返りえます。判定を gcp-kit/negotiate に
+// クライアントへ HTML が返りえます。判定を go-serve-kit/respond に
 // 委ねているのは、判定と宣言を切り離せなくするためです。
 func TestWantsJSONSetsVary(t *testing.T) {
 	t.Parallel()
@@ -35,8 +35,8 @@ func TestWantsJSONSetsVary(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 
-			if got := negotiate.WantsJSON(rec, req); got != tt.want {
-				t.Errorf("negotiate.WantsJSON() = %v, want %v", got, tt.want)
+			if got := respond.WantsJSON(rec, req); got != tt.want {
+				t.Errorf("respond.WantsJSON() = %v, want %v", got, tt.want)
 			}
 			// 判定の結果によらず Vary は必ず立ちます。
 			if got := rec.Header().Get("Vary"); got != "Accept" {

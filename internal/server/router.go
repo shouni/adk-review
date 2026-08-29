@@ -13,7 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/shouni/gcp-kit/cloudlog"
 	"github.com/shouni/gcp-kit/cloudrun"
-	"github.com/shouni/gcp-kit/secureheaders"
+	"github.com/shouni/go-serve-kit/secureheaders"
 
 	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/builder"
@@ -67,7 +67,10 @@ func setupCommonMiddleware(r *chi.Mux, projectID string) {
 	// 画面は日本語 UTF-8（1 文字 3 バイト）なので圧縮がよく効きます。静的ファイルも
 	// 同じ経路に乗ります（vendor は immutable なので再圧縮は稀です）。
 	r.Use(middleware.Compress(compressionLevel))
-	r.Use(secureheaders.New(secureheaders.Config{}))
+	r.Use(secureheaders.Middleware(secureheaders.Config{
+		// Bootstrap の JS が遷移中にインラインスタイルを当てるため。
+		AllowInlineStyle: true,
+	}))
 }
 
 // setupRoutes は、各コンポーネントのハンドラーをルーティングに登録します。

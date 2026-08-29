@@ -458,7 +458,7 @@ func buildJobStatusHandler(t *testing.T, store domain.StatusStore) *Handler {
 
 // errorBody は、エラー応答の本文を読むためのテスト用の型です。
 //
-// gcp-kit の negotiate.ErrorJSON が返す形（{"error": "..."}）に合わせてあります。
+// gcp-kit の respond.ErrorJSON が返す形（{"error": "..."}）に合わせてあります。
 // キット側は本文の型を公開していないので、読む側でだけ持ちます。
 type errorBody struct {
 	Error string `json:"error"`
