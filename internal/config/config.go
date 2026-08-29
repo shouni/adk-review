@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
-	"github.com/shouni/gcp-kit/serverrole"
 	"github.com/shouni/go-remote-io/remoteio"
+	"github.com/shouni/go-serve-kit/serverrole"
 	"github.com/shouni/go-utils/strlist"
 )
 

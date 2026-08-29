@@ -6,7 +6,7 @@ import (
 
 	"time"
 
-	"github.com/shouni/gcp-kit/serverrole"
+	"github.com/shouni/go-serve-kit/serverrole"
 )
 
 // testDispatchDeadline は、テストで使う打ち切りです。アプリは既定値を持たないため、

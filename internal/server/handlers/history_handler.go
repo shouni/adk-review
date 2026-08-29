@@ -10,7 +10,7 @@ import (
 
 	"github.com/shouni/adk-review/internal/domain"
 
-	"github.com/shouni/gcp-kit/negotiate"
+	"github.com/shouni/go-serve-kit/respond"
 )
 
 const (
@@ -52,16 +52,16 @@ func (h *Handler) HandleHistory(w http.ResponseWriter, r *http.Request) {
 		code := recordErrorStatus(err)
 		slog.ErrorContext(ctx, "レビュー履歴の取得に失敗しました", "error", err, "status", code)
 		const message = "履歴を取得できませんでした。時間をおいて再度お試しください。"
-		if negotiate.WantsJSON(w, r) {
-			negotiate.ErrorJSON(w, r, code, message)
+		if respond.WantsJSON(w, r) {
+			respond.ErrorJSON(w, r, code, message)
 			return
 		}
 		h.render(w, r, code, historyTemplate, HistoryPageData{Error: message})
 		return
 	}
 
-	if negotiate.WantsJSON(w, r) {
-		negotiate.JSON(w, r, http.StatusOK, result)
+	if respond.WantsJSON(w, r) {
+		respond.JSON(w, r, http.StatusOK, result)
 		return
 	}
 	h.render(w, r, http.StatusOK, historyTemplate, HistoryPageData{
@@ -80,8 +80,8 @@ func (h *Handler) HandleReviewDetail(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.WarnContext(ctx, "不正なジョブIDを受け取りました", "job_id", rawJobID, "error", err)
 		const message = "ジョブIDの形式が不正です。"
-		if negotiate.WantsJSON(w, r) {
-			negotiate.ErrorJSON(w, r, http.StatusBadRequest, message)
+		if respond.WantsJSON(w, r) {
+			respond.ErrorJSON(w, r, http.StatusBadRequest, message)
 			return
 		}
 		h.render(w, r, http.StatusBadRequest, reviewDetailTemplate, ReviewDetailPageData{Error: message})
@@ -99,16 +99,16 @@ func (h *Handler) HandleReviewDetail(w http.ResponseWriter, r *http.Request) {
 		} else {
 			slog.ErrorContext(ctx, "レビュー履歴の取得に失敗しました", "job_id", safeJobID, "error", err, "status", code)
 		}
-		if negotiate.WantsJSON(w, r) {
-			negotiate.ErrorJSON(w, r, code, message)
+		if respond.WantsJSON(w, r) {
+			respond.ErrorJSON(w, r, code, message)
 			return
 		}
 		h.render(w, r, code, reviewDetailTemplate, ReviewDetailPageData{Error: message})
 		return
 	}
 
-	if negotiate.WantsJSON(w, r) {
-		negotiate.JSON(w, r, http.StatusOK, reviewDetailResponse{Status: detail.Status, Report: detail.Report})
+	if respond.WantsJSON(w, r) {
+		respond.JSON(w, r, http.StatusOK, reviewDetailResponse{Status: detail.Status, Report: detail.Report})
 		return
 	}
 	h.render(w, r, http.StatusOK, reviewDetailTemplate, ReviewDetailPageData{
@@ -149,7 +149,7 @@ func (h *Handler) HandleReviewDelete(w http.ResponseWriter, r *http.Request) {
 	safeJobID, err := jobid.Sanitize(chi.URLParam(r, "jobID"))
 	if err != nil {
 		slog.WarnContext(ctx, "不正なジョブIDを受け取りました", "error", err)
-		negotiate.Error(w, r, http.StatusBadRequest, "ジョブIDの形式が不正です。")
+		respond.Error(w, r, http.StatusBadRequest, "ジョブIDの形式が不正です。")
 		return
 	}
 
@@ -158,11 +158,11 @@ func (h *Handler) HandleReviewDelete(w http.ResponseWriter, r *http.Request) {
 		code := recordErrorStatus(err)
 		if code == http.StatusNotFound {
 			slog.WarnContext(ctx, "レビュー履歴が見つかりません", "job_id", safeJobID, "error", err)
-			negotiate.Error(w, r, code, "指定されたレビューは見つかりませんでした。")
+			respond.Error(w, r, code, "指定されたレビューは見つかりませんでした。")
 			return
 		}
 		slog.ErrorContext(ctx, "レビュー履歴の取得に失敗しました", "job_id", safeJobID, "error", err, "status", code)
-		negotiate.Error(w, r, code, "レビューを取得できませんでした。")
+		respond.Error(w, r, code, "レビューを取得できませんでした。")
 		return
 	}
 
@@ -170,13 +170,13 @@ func (h *Handler) HandleReviewDelete(w http.ResponseWriter, r *http.Request) {
 	// 画面ではボタンを出していませんが、直接呼ばれても弾けるようここでも判定します。
 	if !detail.Status.Deletable() {
 		slog.WarnContext(ctx, "実行中のレビューに削除要求がありました", "job_id", safeJobID, "state", detail.Status.State)
-		negotiate.Error(w, r, http.StatusConflict, "実行中のレビューは削除できません。")
+		respond.Error(w, r, http.StatusConflict, "実行中のレビューは削除できません。")
 		return
 	}
 
 	if err := h.history.Delete(ctx, safeJobID); err != nil {
 		slog.ErrorContext(ctx, "レビュー履歴の削除に失敗しました", "job_id", safeJobID, "error", err)
-		negotiate.Error(w, r, http.StatusInternalServerError, "削除に失敗しました。")
+		respond.Error(w, r, http.StatusInternalServerError, "削除に失敗しました。")
 		return
 	}
 

@@ -7,13 +7,14 @@ require (
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/go-cmp v0.7.0
 	github.com/gorilla/sessions v1.4.0
-	github.com/shouni/gcp-kit v1.13.2
+	github.com/shouni/gcp-kit v1.14.0
 	github.com/shouni/go-http-kit v1.10.0
 	github.com/shouni/go-job-kit v1.3.0
 	github.com/shouni/go-notify v1.3.0
 	github.com/shouni/go-prompt-kit v1.7.0
 	github.com/shouni/go-remote-io v1.11.0
 	github.com/shouni/go-review-kit v1.9.0
+	github.com/shouni/go-serve-kit v1.0.0
 	github.com/shouni/go-utils v1.7.1
 	github.com/shouni/netarmor v1.4.0
 	go.yaml.in/yaml/v3 v3.0.5
@@ -95,7 +96,7 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	google.golang.org/api v0.294.0 // indirect
+	google.golang.org/api v0.295.0 // indirect
 	google.golang.org/genproto v0.0.0-20260825221802-da73d73af1c5 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260825221802-da73d73af1c5 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
