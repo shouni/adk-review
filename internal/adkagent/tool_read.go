@@ -80,7 +80,19 @@ func (t *toolbox) readFile(toolCtx context.Context, args readFileArgs) (readFile
 		truncated = true
 		// 落としたぶん、返した範囲の終わりも縮みます。ここを直さないと、モデルは
 		// 読めていない行を読んだつもりで次へ進みます。
-		to = from + strings.Count(body, "\n")
+		//
+		// 改行の数が、返し切れた行数です。末尾が行の途中で切れていればその行は
+		// 数に入らず、ちょうど改行の直後で切れていれば次の行は 1 バイトも入って
+		// いません。どちらも to へ足すと、モデルは次にその先から読むので、
+		// 渡していない行が黙って飛ばされます。
+		if complete := strings.Count(body, "\n"); complete > 0 {
+			to = from + complete - 1
+		} else {
+			// 1 行が maxFileBytes を超えています。全部は返せないので、この行は
+			// 返したことにして先へ進ませます。範囲を空にすると、同じ行を読み直す
+			// だけのやり取りが残りの呼び出し回数ぶん繰り返されます。
+			to = from
+		}
 	}
 	return readFileResult{
 		Content:    body,
@@ -112,7 +124,10 @@ func selectLines(text string, from, count int) (body string, first, last, total 
 	}
 
 	end := total
-	if count > 0 && from+count-1 < end {
+	// from+count が桁溢れし得るため、残りの行数と比べる形にします。どちらの値も
+	// モデルが書く JSON なので、int の上限に近い値が届きます（足してから比べると
+	// 負に折り返し、end が from を下回って切り出しで panic します）。
+	if remaining := total - from + 1; count > 0 && count < remaining {
 		end = from + count - 1
 	}
 	return strings.Join(lines[from-1:end], "\n"), from, end, total

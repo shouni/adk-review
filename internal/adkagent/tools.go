@@ -27,6 +27,11 @@ const (
 	maxHitBytes          = 2 * 1024
 	maxSearchResultBytes = 64 * 1024
 
+	// 件数だけで足りないのは list_files も同じです。深く入れ子になったパスは 1 本で
+	// 数 KiB あり、500 件で数 MB のツール結果になり得ます。上限を search_text と
+	// 揃えるのは、抑えたい理由（以降の全ターンで読み直される）が同じだからです。
+	maxListResultBytes = 64 * 1024
+
 	// query の長さの上限です。検索語を決めるのはモデルなので、リポジトリ内の文章に
 	// 引きずられて異常に長い query を作ることがあり得ます。
 	maxQueryBytes = 200

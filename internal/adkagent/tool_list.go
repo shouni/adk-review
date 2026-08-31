@@ -45,6 +45,7 @@ func (t *toolbox) listFiles(toolCtx context.Context, args listFilesArgs) (listFi
 	}
 
 	var files []string
+	resultBytes := 0
 	truncated := false
 	err = filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -74,7 +75,14 @@ func (t *toolbox) listFiles(toolCtx context.Context, args listFilesArgs) (listFi
 		if err != nil {
 			return err
 		}
-		files = append(files, filepath.ToSlash(rel))
+		name := filepath.ToSlash(rel)
+		// 件数の上限に当たる前に総量で打ち切ることがあります（上の maxListResultBytes）。
+		if resultBytes+len(name) > maxListResultBytes {
+			truncated = true
+			return filepath.SkipAll
+		}
+		resultBytes += len(name)
+		files = append(files, name)
 		return nil
 	})
 	if err != nil {
