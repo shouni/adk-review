@@ -63,6 +63,14 @@ func TestSchemaShape(t *testing.T) {
 		}
 	}
 
+	// 履歴一覧は title を切り詰めずに 1 列へ流し込みます。画面側で切らない以上、
+	// 長さを頼むのはここだけです（verdict_format.md の日本語は狙いの長さ、こちらは歯止め）。
+	if title := schema.Properties["title"]; title.MaxLength == nil {
+		t.Error("title に MaxLength がありません（長い題が履歴一覧の表を崩します）")
+	} else if *title.MaxLength != maxTitleLength {
+		t.Errorf("title の MaxLength = %d, want %d", *title.MaxLength, maxTitleLength)
+	}
+
 	// ★ 出力の 64Ki トークンに当たると、途中まで正しく書けていた JSON ごと全損になります。
 	// スキーマが長さについて何も言わないと、モデルから見れば無制限です。
 	if findings.MaxItems == nil {

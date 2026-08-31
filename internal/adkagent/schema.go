@@ -18,6 +18,14 @@ import (
 // モデルは実際と違う上限のつもりで書きます）。
 const maxFindings = 20
 
+// maxTitleLength は、title の長さの上限です。
+//
+// 履歴一覧は title を 1 列へそのまま流し込み、切り詰めません
+// （assets/templates/history.html）。長い題が来ると表が崩れるので、画面側で切るのでは
+// なくここで頼みます。狙いの長さ（30 文字程度）は verdict_format.md が伝えていて、
+// この数字はそれを 2 倍に取った最後の歯止めです。excerpt と同じく硬い強制ではありません。
+const maxTitleLength = 60
+
 // maxExcerptLength は、excerpt 1 件の長さの上限です。
 //
 // 切れた実行の末尾は、同じコード片（`Server(t *testing.T) {`）の反復で埋まって
@@ -38,7 +46,11 @@ func reportSchema() *genai.Schema {
 	return &genai.Schema{
 		Type: genai.TypeObject,
 		Properties: map[string]*genai.Schema{
-			"title":   {Type: genai.TypeString},
+			"title": {
+				Type:        genai.TypeString,
+				MaxLength:   new(int64(maxTitleLength)),
+				Description: "何の変更かが分かる 1 行。一覧表の 1 列に収まる長さにする",
+			},
 			"summary": {Type: genai.TypeString},
 			"verdict": {
 				Type: genai.TypeObject,
