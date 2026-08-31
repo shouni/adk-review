@@ -145,7 +145,7 @@ type HTTPConfig struct {
 	Timeout time.Duration `env:"HTTP_TIMEOUT" envDefault:"30s"`
 }
 
-// AuthConfig は認証と認可の設定です。Web 面だけが読みます。
+// AuthConfig は認証と認可の設定です。web 面だけが読みます。
 type AuthConfig struct {
 	GoogleClientID     string `env:"GOOGLE_CLIENT_ID"`
 	GoogleClientSecret string `env:"GOOGLE_CLIENT_SECRET"`

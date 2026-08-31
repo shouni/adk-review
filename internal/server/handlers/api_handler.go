@@ -65,7 +65,6 @@ func (h *Handler) HandleModes(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleJobStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// ジョブ ID はストレージのパス要素になるため、受け取った時点で正規化します。
 	safeJobID, err := jobid.Sanitize(chi.URLParam(r, "jobID"))
 	if err != nil {
 		slog.WarnContext(ctx, "不正なジョブIDを受け取りました", "error", err)

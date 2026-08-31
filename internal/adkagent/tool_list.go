@@ -11,7 +11,6 @@ import (
 )
 
 // list_files ツールです。作業ディレクトリ配下のファイル一覧を返します。
-// ツールの登録（説明文つき）は newTools にあります。
 
 type listFilesArgs struct {
 	Dir string `json:"dir,omitempty"`

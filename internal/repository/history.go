@@ -31,6 +31,9 @@ const loadConcurrency = 10
 const maxReportBytes = 8 << 20 // 8 MiB
 
 // History は、GCS 上のレビュー履歴を読み書きします。
+//
+// 各メソッドが何を返すかは domain.HistoryRepository が定めます。ここに書くのは、
+// この実装に固有の事情（並列読み込みの失敗の扱い、削除の走査範囲）だけです。
 type History struct {
 	storage remoteio.Store
 	store   domain.StatusStore
@@ -56,7 +59,8 @@ func NewHistory(
 	}
 }
 
-// List は、新しい順に page ページ目を返します。
+// List は、プレフィックス走査で集めた ID を並べ替え、そのページの分だけ
+// 進行状況を読みます。何を返すかは domain.HistoryRepository の側にあります。
 func (h *History) List(ctx context.Context, page, perPage int) (domain.HistoryPage, error) {
 	jobIDs, err := h.listJobIDs(ctx)
 	if err != nil {
@@ -117,7 +121,7 @@ func (f *loadFailure) err() error {
 	return f.first
 }
 
-// Get は、1 件分の進行状況とレビュー結果全文を返します。
+// Get は、進行状況を読み、成果物があれば report.json も読んで 1 件に組み立てます。
 func (h *History) Get(ctx context.Context, jobID string) (domain.ReviewDetail, error) {
 	status, err := h.store.Get(ctx, jobID)
 	if err != nil {
@@ -145,10 +149,8 @@ func (h *History) Get(ctx context.Context, jobID string) (domain.ReviewDetail, e
 	return detail, nil
 }
 
-// Delete は、1 件分のオブジェクトをすべて削除します。
-//
-// ジョブのプレフィックスを走査して消すため、消す側は「そのジョブが何を作ったか」を
-// 知らずに済みます。成果物の種類が増えてもここを直す必要はありません
+// Delete は、ジョブのプレフィックスを走査して消します。そのため、消す側は
+// 「そのジョブが何を作ったか」を知らずに済み、成果物の種類が増えてもここは直りません
 // （進行状況も同じプレフィックス配下にあるので、まとめて消えます）。
 func (h *History) Delete(ctx context.Context, jobID string) error {
 	safeJobID, err := jobid.Sanitize(jobID)
@@ -161,7 +163,7 @@ func (h *History) Delete(ctx context.Context, jobID string) error {
 	}
 
 	// 消したジョブが一覧に残らないよう、ID 一覧のキャッシュを捨てます。
-	// 捨てないと、読めない ID がジョブIDだけの空行として TTL の間並びます。
+	// 捨てないと、読めない ID がジョブ ID だけの空行として TTL の間並びます。
 	h.Invalidate()
 	return nil
 }
@@ -192,7 +194,7 @@ func (h *History) deletePrefix(ctx context.Context, prefix string) error {
 	return errors.Join(errs...)
 }
 
-// Invalidate は、ジョブ ID 一覧のキャッシュを捨てます。
+// Invalidate は、レビュープレフィックスの ID 一覧をキャッシュから落とします。
 func (h *History) Invalidate() {
 	h.ids.Invalidate(h.layout.ReviewPrefixURI())
 }

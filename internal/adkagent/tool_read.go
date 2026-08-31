@@ -12,7 +12,6 @@ import (
 )
 
 // read_file ツールです。作業ディレクトリ配下の 1 ファイルを、行範囲を指定して読みます。
-// ツールの登録（説明文つき）は newTools にあります。
 
 type readFileArgs struct {
 	Path string `json:"path"`

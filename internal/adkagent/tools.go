@@ -61,6 +61,9 @@ const budgetExhaustedMsg = "ツールの呼び出し回数上限に達しまし�
 
 // newTools は、root 配下だけを参照できるツール一式を組み立てます。
 //
+// ここにあるのは登録と、モデルへ渡す説明文だけです。各ツールの中身は tool_read.go /
+// tool_list.go / tool_search.go にあります。
+//
 // toolbox も返すのは、実行後に呼び出し回数を数えるためです（used）。上限が実測に対して
 // 妥当かどうかは、使い切ったかどうかではなく毎回いくつ使ったかで判断します。
 func newTools(root string, budget int64) (*toolbox, []tool.Tool, error) {

@@ -270,7 +270,7 @@ func TestHandleReviewDetail_WithoutReport(t *testing.T) {
 	}
 }
 
-// ジョブIDはストレージのパス要素になるため、受け取った時点で正規化します。
+// ジョブ ID はストレージのパス要素になるため、受け取った時点で正規化します。
 // jobid.Sanitize は末尾要素だけを取り出すので、パス要素は下流へ渡りません。
 func TestHandleReviewDetail_StripsPathTraversal(t *testing.T) {
 	history := &recordingHistory{}
@@ -369,8 +369,8 @@ func TestHandleReviewDelete(t *testing.T) {
 	}
 }
 
-// 実行中のものを消すと、ワーカーがあとから status.json を書き戻して復活します。
-// 画面にボタンが出ていなくても、直接呼ばれた場合に弾けること。
+// 画面にボタンが出ていなくても、直接呼ばれた実行中の削除を弾くこと
+// （消せない理由は domain.JobStatus.Deletable）。
 func TestHandleReviewDeleteRejectsRunning(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -115,7 +115,6 @@ func (h *Handler) HandleReviewForm(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) rerunFormData(ctx context.Context, jobID string, data ReviewFormPageData) ReviewFormPageData {
 	const unavailable = "元のレビューを読み込めなかったため、既定値で表示しています。"
 
-	// ジョブ ID はストレージのパス要素になるため、受け取った時点で正規化します。
 	safeJobID, err := jobid.Sanitize(jobID)
 	if err != nil {
 		slog.WarnContext(ctx, "再実行の元ジョブIDが不正です", "job_id", jobID, "error", err)

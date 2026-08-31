@@ -13,7 +13,6 @@ import (
 )
 
 // search_text ツールです。作業ディレクトリ配下のテキストファイルを横断して検索します。
-// ツールの登録（説明文つき）は newTools にあります。
 
 type searchTextArgs struct {
 	Query string `json:"query"`

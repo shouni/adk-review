@@ -140,7 +140,8 @@ JSON を返します（`negotiate.WantsJSON`）。分けると同じ取得処理
 
 ### ツールの返却量は、その実行の最後まで課金され続ける
 
-`internal/adkagent/tools.go` の上限は、1 回の呼び出しを守るためだけのものではありません。
+上限は `internal/adkagent/tools.go` にまとめてあります（各ツールの中身は `tool_read.go` /
+`tool_list.go` / `tool_search.go`）。これは 1 回の呼び出しを守るためだけのものではありません。
 **ツールが返した内容は会話に残り、以降のすべてのターンで読み直されます。** 4 回目の呼び出しで
 返した 16 KB は、その後 10 ターンぶん課金されます。
 
@@ -183,7 +184,8 @@ JSON を返します（`negotiate.WantsJSON`）。分けると同じ取得処理
 
 ### genai を import してよい場所は 3 ファイルだけ
 
-`google.golang.org/genai` を直接使ってよいのは次だけです。**増やさないでください。**
+`google.golang.org/genai` を直接使ってよいのは次だけです（それぞれのテストを除く）。
+**増やさないでください。**
 
 - `internal/adkagent/reviewer.go` — ADK のモデル層へ渡すクライアント設定
 - `internal/adkagent/schema.go` — 構造化出力スキーマ

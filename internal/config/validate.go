@@ -64,9 +64,9 @@ func (c *Config) ValidateEssentialConfig() error {
 	return nil
 }
 
-// validateWebConfig は、Web 面（OAuth・セッション、タスク投入）の設定を検証します。
+// validateWebConfig は、web 面（OAuth・セッション、タスク投入）の設定を検証します。
 func (c *Config) validateWebConfig() error {
-	// タスクを投入するのは Web 面だけなので、キュー名も投入先も Web 面の要件です。
+	// タスクを投入するのは web 面だけなので、キュー名も投入先も web 面の要件です。
 	if c.Tasks.QueueID == "" {
 		return fmt.Errorf("CLOUD_TASKS_QUEUE_ID が設定されていません")
 	}
@@ -81,7 +81,7 @@ func (c *Config) validateWebConfig() error {
 	if c.GCP.LocationID == "" {
 		return fmt.Errorf("GCP_LOCATION_ID が設定されていません（Cloud Tasks のキューが属するリージョンです。例: asia-northeast1）")
 	}
-	// caller SA はタスクを投入する側＝ Web 面の要件です。worker が受け付ける許可リストは
+	// caller SA はタスクを投入する側＝ web 面の要件です。worker が受け付ける許可リストは
 	// ALLOWED_TASK_SERVICE_ACCOUNTS で別に指定します。
 	if c.Tasks.CallerServiceAccountEmail == "" {
 		return fmt.Errorf("TASK_CALLER_SERVICE_ACCOUNT_EMAIL が設定されていません")

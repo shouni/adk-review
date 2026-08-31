@@ -74,7 +74,6 @@ func (h *Handler) HandleHistory(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleReviewDetail(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// ジョブ ID はストレージのパス要素になるため、URL から受け取った時点で検証します。
 	rawJobID := chi.URLParam(r, "jobID")
 	safeJobID, err := jobid.Sanitize(rawJobID)
 	if err != nil {
@@ -145,7 +144,6 @@ func clamp(value, low, high int) int {
 func (h *Handler) HandleReviewDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// ジョブ ID はストレージのパス要素になるため、受け取った時点で正規化します。
 	safeJobID, err := jobid.Sanitize(chi.URLParam(r, "jobID"))
 	if err != nil {
 		slog.WarnContext(ctx, "不正なジョブIDを受け取りました", "error", err)
@@ -166,8 +164,8 @@ func (h *Handler) HandleReviewDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 実行中のものを消すと、ワーカーがあとから status.json を書き戻して復活します。
-	// 画面ではボタンを出していませんが、直接呼ばれても弾けるようここでも判定します。
+	// 判定の理由は domain.JobStatus.Deletable が持ちます。画面ではボタンを出して
+	// いませんが、直接呼ばれても弾けるようここでも通します。
 	if !detail.Status.Deletable() {
 		slog.WarnContext(ctx, "実行中のレビューに削除要求がありました", "job_id", safeJobID, "state", detail.Status.State)
 		respond.Error(w, r, http.StatusConflict, "実行中のレビューは削除できません。")

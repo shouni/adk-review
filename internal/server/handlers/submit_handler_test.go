@@ -73,7 +73,7 @@ func (f *fakeEnqueuer) Enqueue(_ context.Context, payload domain.ReviewRequest) 
 	return f.err
 }
 
-// testJobID は、テストで採番されるジョブIDです。
+// testJobID は、テストで採番されるジョブ ID です。
 const testJobID = "20260415-102030-abcdef123456"
 
 func buildTestHandler(t *testing.T, jobIDErr, enqueueErr error) (*Handler, *fakeEnqueuer, *fakeStatusStore, *fakeHistory) {
@@ -243,7 +243,7 @@ func TestHandleReviewSubmit_InvalidModelName(t *testing.T) {
 	}
 }
 
-// ジョブIDを採番できなければ保存先も閲覧先も決まらないため、投入まで進みません。
+// ジョブ ID を採番できなければ保存先も閲覧先も決まらないため、投入まで進みません。
 func TestHandleReviewSubmit_JobIDError(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, errors.New("entropy failure"), nil)
 	w := httptest.NewRecorder()
@@ -288,7 +288,7 @@ func TestHandleReviewSubmit_Success(t *testing.T) {
 		t.Fatalf("unexpected job id: %s", enq.received.JobID)
 	}
 
-	// 保存先も閲覧先もジョブIDから決まります。
+	// 保存先も閲覧先もジョブ ID から決まります。
 	wantURI := "gs://bucket-a/reviews/" + testJobID + "/report.json"
 	if enq.received.StorageURI != wantURI {
 		t.Fatalf("storage uri = %s, want %s", enq.received.StorageURI, wantURI)

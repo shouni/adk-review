@@ -82,7 +82,7 @@ Cloud Tasks 投入    →
 * **依存性注入**: `internal/builder` が全コンポーネントを組み立てます。通知先や保存先を
   ロジックに触れずに差し替えられます。
 * **1 イメージ 2 サービス**: 同じイメージを `SERVER_ROLE`（web / worker）で分け、別々の
-  Cloud Run サービスとしてデプロイします（兄弟アプリと同じ方式）。Web 面は
+  Cloud Run サービスとしてデプロイします（兄弟アプリと同じ方式）。web 面は
   `WORKER_URL` の worker サービスへタスクを投入します（`SERVER_ROLE=both` については後述）。
 
 ### 成果物の置き場所

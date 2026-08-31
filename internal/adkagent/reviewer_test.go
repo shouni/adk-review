@@ -71,9 +71,7 @@ func TestTailForLogSkipsShortInput(t *testing.T) {
 }
 
 // 終了理由のうち、レビューを続けられないものだけを落とすこと。
-//
-// ★ MAX_TOKENS はここで落としません。途中まで書けていた指摘は ParseReport が拾えます。
-// 落としていた頃は、完成した Blocker の指摘ごと全損にしていました。
+// MAX_TOKENS を落とさない理由は finishError の doc にあります。
 func TestFinalResponseFinishError(t *testing.T) {
 	t.Parallel()
 
@@ -189,10 +187,8 @@ func TestInstructionForCarriesToolBudget(t *testing.T) {
 	}
 }
 
-// ★ 指摘件数の上限も、スキーマと同じ数字を語ること。
-//
-// ずれると、モデルは指示のほうを信じてスキーマを超える件数を書き始めます。
-// 上限に当たった出力は途中で切れ、そこまで正しく書けていた指摘ごと全損になります。
+// ★ 指摘件数の上限も、スキーマと同じ数字を語ること
+// （ずれたときに何が起きるかは instructionTemplate の上の doc）。
 func TestInstructionForCarriesFindingsCap(t *testing.T) {
 	t.Parallel()
 

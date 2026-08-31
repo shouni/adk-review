@@ -67,9 +67,9 @@ func (h *Handler) HandleReviewSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. ジョブIDの採番と、成果物・閲覧先の決定
+	// 3. ジョブ ID の採番と、成果物・閲覧先の決定
 	//
-	// 保存先も閲覧先もジョブIDから決まります。ワーカー側で組み立て直さないのは、
+	// 保存先も閲覧先もジョブ ID から決まります。ワーカー側で組み立て直さないのは、
 	// 投入時に決めた場所と食い違わないようにするためです。
 	if err := h.assignJob(&req); err != nil {
 		slog.ErrorContext(ctx, "ジョブIDの採番に失敗", "error", err)
@@ -157,7 +157,7 @@ func (h *Handler) submitFailure(
 	h.renderForm(w, r, status, reviewFormPageData(req, ReviewFormPageData{Error: message}))
 }
 
-// assignJob は、ジョブIDを採番して保存先と閲覧先を決めます。
+// assignJob は、ジョブ ID を採番して保存先と閲覧先を決めます。
 func (h *Handler) assignJob(req *domain.ReviewRequest) error {
 	jobID, err := h.newJobID()
 	if err != nil {
@@ -185,7 +185,7 @@ func (h *Handler) recordQueued(ctx context.Context, req domain.ReviewRequest) {
 		return
 	}
 
-	// 投入直後に一覧へ現れるよう、ジョブID一覧のキャッシュを捨てます。
+	// 投入直後に一覧へ現れるよう、ジョブ ID 一覧のキャッシュを捨てます。
 	h.history.Invalidate()
 }
 
@@ -201,7 +201,7 @@ func (h *Handler) discardQueued(ctx context.Context, jobID string) {
 	h.history.Invalidate()
 }
 
-// newJobID はジョブIDを採番します。
+// newJobID はジョブ ID を採番します。
 func newJobID() (string, error) {
 	return jobid.New("")
 }
