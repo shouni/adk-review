@@ -9,7 +9,7 @@ require (
 	github.com/gorilla/sessions v1.4.0
 	github.com/shouni/gcp-kit v1.14.0
 	github.com/shouni/go-http-kit v1.10.0
-	github.com/shouni/go-job-kit v1.3.0
+	github.com/shouni/go-job-kit v1.3.1
 	github.com/shouni/go-notify v1.3.0
 	github.com/shouni/go-prompt-kit v1.7.0
 	github.com/shouni/go-remote-io v1.11.0
