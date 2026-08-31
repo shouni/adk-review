@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/shouni/gcp-kit/auth"
 	"github.com/shouni/gcp-kit/cloudlog"
 	"github.com/shouni/gcp-kit/cloudrun"
 	"github.com/shouni/go-serve-kit/secureheaders"
@@ -18,7 +19,6 @@ import (
 	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/builder"
 	"github.com/shouni/adk-review/internal/domain"
-	"github.com/shouni/gcp-kit/auth"
 )
 
 const (
@@ -143,7 +143,7 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 		r.Use(auth.Require(h.TaskAuth))
 
 		if h.Worker != nil {
-			r.Post(domain.TaskExecuteReviewPath, h.Worker.ProcessTask)
+			r.Post(domain.WorkerTaskPath, h.Worker.ProcessTask)
 		}
 	})
 }
