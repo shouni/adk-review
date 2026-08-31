@@ -12,6 +12,13 @@
     </div>
     {{end}}
 
+    {{if .Notice}}
+    <div class="alert alert-info shadow-sm d-flex align-items-center" role="alert">
+        <i class="bi bi-info-circle-fill me-2"></i>
+        <div>{{.Notice}}</div>
+    </div>
+    {{end}}
+
     {{if .Message}}
     <div class="alert alert-success shadow-sm" role="alert">
         <h4 class="alert-heading text-success fw-bold"><i class="bi bi-check-circle-fill me-2"></i>成功</h4>

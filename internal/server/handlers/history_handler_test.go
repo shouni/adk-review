@@ -473,6 +473,40 @@ func TestReviewDetailShowsDeleteButtonOnlyWhenDeletable(t *testing.T) {
 	}
 }
 
+// 再依頼のリンクは、もう動いていない依頼にだけ出すこと。
+//
+// queued / running に出すと、結果を待っているレビューがもう 1 本走ります。
+// 依頼内容が記録されていないジョブに出さないのは、開いても埋まらないためです。
+func TestReviewDetailShowsRerunLinkOnlyWhenRerunnable(t *testing.T) {
+	tests := []struct {
+		name    string
+		state   jobstatus.State
+		repoURL string
+		want    bool
+	}{
+		{"完了", jobstatus.StateSucceeded, "git@github.com:org/repo.git", true},
+		{"失敗", jobstatus.StateFailed, "git@github.com:org/repo.git", true},
+		{"実行中", jobstatus.StateRunning, "git@github.com:org/repo.git", false},
+		{"受付済み", jobstatus.StateQueued, "git@github.com:org/repo.git", false},
+		{"依頼内容の記録が無い", jobstatus.StateFailed, "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status := sampleStatus(tt.state, "")
+			status.RepoURL = tt.repoURL
+			history := &recordingHistory{detail: domain.ReviewDetail{Status: status}}
+
+			w := httptest.NewRecorder()
+			buildHistoryHandler(t, history).HandleReviewDetail(w, detailRequest("20260810-213000-a1b2c3d4"))
+
+			if got := strings.Contains(w.Body.String(), "/?from="+status.JobID); got != tt.want {
+				t.Errorf("再依頼リンクの表示 = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // 削除ボタンと一緒に、送信に使う CSRF トークンが実際に埋まること。
 //
 // ボタンの有無だけを見ていたため、トークンが空のまま描画される不具合を見逃していました。

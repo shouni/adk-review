@@ -91,6 +91,19 @@ func (s JobStatus) Deletable() bool {
 	return s.State == jobstatus.StateSucceeded || s.State == jobstatus.StateFailed
 }
 
+// Rerunnable は、この依頼内容でフォームを埋め直せるかどうかを返します。
+//
+// queued / running で出さないのは、結果を待っている依頼をもう一度出させると
+// 同じレビューが 2 本走るためです。RepoURL を見るのは、依頼内容を記録する前の
+// 形式で保存されたジョブがあり得るからで、埋まらないフォームを開かせても
+// 打ち直しと変わりません。
+func (s JobStatus) Rerunnable() bool {
+	if s.RepoURL == "" {
+		return false
+	}
+	return s.State == jobstatus.StateSucceeded || s.State == jobstatus.StateFailed
+}
+
 // carryOverFrom は、前回の記録から引き継ぐべきサービス固有フィールドを移します。
 //
 // ワーカーは状態が変わるたびにタスクの内容から JobStatus を組み立て直すため、投入時に
