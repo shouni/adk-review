@@ -48,7 +48,7 @@ func TestWriteCrossOriginErrorResponse_FallsBackToPlainTextOnTemplateError(t *te
 
 // ヘッダーを持たないサーバー間呼び出しが CrossOriginProtection を素通りすること。
 //
-// **ここが黙って変わると、ap-mcp からの投入だけが 403 になります。** 画面は動いたままなので
+// ここが黙って変わると、ap-mcp からの投入だけが 403 になります。画面は動いたままなので
 // 気付きにくく、原因も「CSRF らしきもの」としか見えません。Go の実装は
 // 「Sec-Fetch-Site も Origin も無いリクエストは非ブラウザとみなして許可」する仕様で、
 // M2M クライアントはどちらも送りません。その前提をここで固定します。

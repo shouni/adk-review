@@ -177,7 +177,7 @@ func TestJobStatusOmitsEmptyFields(t *testing.T) {
 // 計測値は、あとから状態を書き直しても失われないこと。
 //
 // ワーカーは状態が変わるたびにタスクから JobStatus を組み立て直すため、引き継がないと
-// **上限を決め直す材料が最後の書き込みで消えます。**
+// 上限を決め直す材料が最後の書き込みで消えます。
 func TestCarryOverExtrasKeepsMetrics(t *testing.T) {
 	prev := NewSucceededStatus(testRequest(), review.StatusSucceeded)
 	prev.Truncated = true

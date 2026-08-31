@@ -72,7 +72,7 @@ func TestTailForLogSkipsShortInput(t *testing.T) {
 
 // 終了理由のうち、レビューを続けられないものだけを落とすこと。
 //
-// ★ **MAX_TOKENS はここで落としません。** 途中まで書けていた指摘は ParseReport が拾えます。
+// ★ MAX_TOKENS はここで落としません。途中まで書けていた指摘は ParseReport が拾えます。
 // 落としていた頃は、完成した Blocker の指摘ごと全損にしていました。
 func TestFinalResponseFinishError(t *testing.T) {
 	t.Parallel()
@@ -173,8 +173,8 @@ func TestSanitizeDetectsRepairedOutput(t *testing.T) {
 	}
 }
 
-// 行動指針はツール予算を数字で伝えること。**指示の数字が実際の予算とずれると、
-// モデルは残りがあるつもりで調査を続け、打ち切りに不意打ちされます。**
+// 行動指針はツール予算を数字で伝えること。指示の数字が実際の予算とずれると、
+// モデルは残りがあるつもりで調査を続け、打ち切りに不意打ちされます。
 func TestInstructionForCarriesToolBudget(t *testing.T) {
 	t.Parallel()
 
@@ -191,7 +191,7 @@ func TestInstructionForCarriesToolBudget(t *testing.T) {
 
 // ★ 指摘件数の上限も、スキーマと同じ数字を語ること。
 //
-// **ずれると、モデルは指示のほうを信じてスキーマを超える件数を書き始めます。**
+// ずれると、モデルは指示のほうを信じてスキーマを超える件数を書き始めます。
 // 上限に当たった出力は途中で切れ、そこまで正しく書けていた指摘ごと全損になります。
 func TestInstructionForCarriesFindingsCap(t *testing.T) {
 	t.Parallel()
@@ -216,7 +216,7 @@ func TestWrapUpAfter(t *testing.T) {
 }
 
 // 途中で切れたことは truncated が伝えること。finishError が通すようになった以上、
-// **切れた事実を運ぶ経路はこちらしかありません。**
+// 切れた事実を運ぶ経路はこちらしかありません。
 func TestFinalResponseTruncated(t *testing.T) {
 	t.Parallel()
 
@@ -232,7 +232,7 @@ func TestFinalResponseTruncated(t *testing.T) {
 
 // 計測値が RunInfo へ載ること。
 //
-// ★ **使用量が欠けて降ってくることがあります**（バックエンドや経路によって載りません）。
+// ★ 使用量が欠けて降ってくることがあります（バックエンドや経路によって載りません）。
 // その場合でもツール回数と切れたかどうかは残す必要があります。上限を決め直す材料が
 // 「全部無い」か「一部無い」かでは、次に調べるときの手間が変わります。
 func TestFinalResponseRunInfo(t *testing.T) {

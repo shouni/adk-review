@@ -19,8 +19,8 @@ type searchTextArgs struct {
 	Query string `json:"query"`
 	// Context は、ヒット行の前後に添える行数です（0〜maxSearchContext、既定 0）。
 	//
-	// 既定を 0 にしているのは、広い検索で総量の上限に先に当たると、**添えた文脈のぶんだけ
-	// ヒットそのものが落ちる**ためです。1 行では判断できないと分かっている検索でだけ指定します。
+	// 既定を 0 にしているのは、広い検索で総量の上限に先に当たると、添えた文脈のぶんだけ
+	// ヒットそのものが落ちるためです。1 行では判断できないと分かっている検索でだけ指定します。
 	Context int `json:"context,omitempty"`
 }
 
@@ -97,8 +97,8 @@ func (s *searchRun) walkFunc(ctx context.Context) fs.WalkDirFunc {
 			}
 			return nil
 		}
-		// ★ 通常ファイル以外（symlink・FIFO・デバイス）は開きません。**os.ReadFile は
-		// symlink を辿るため、ここを通すと root 外のファイルの中身がモデルの入力に入ります。**
+		// ★ 通常ファイル以外（symlink・FIFO・デバイス）は開きません。os.ReadFile は
+		// symlink を辿るため、ここを通すと root 外のファイルの中身がモデルの入力に入ります。
 		// d.Info() が返すのはリンク自身の情報なので、下のサイズ検査も素通りします
 		// （read_file は resolve で塞いでいますが、こちらは WalkDir のパスを直接開きます）。
 		if !d.Type().IsRegular() {
@@ -159,8 +159,8 @@ func (s *searchRun) scanFile(relPath, content string) error {
 	}
 
 	// strings.Lines は行を切り出しながら回すので、大きなファイルでも
-	// 全行ぶんのスライスを一度に確保しません。**前後の文脈も、直前の数行を
-	// 持ち回るだけで足ります**（全行を配列にする必要はありません）。
+	// 全行ぶんのスライスを一度に確保しません。前後の文脈も、直前の数行を
+	// 持ち回るだけで足ります（全行を配列にする必要はありません）。
 	var before []bufferedLine
 	remainingAfter := 0
 	lineNo := 0

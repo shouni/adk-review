@@ -393,7 +393,7 @@ func TestToolsStopOnCanceledContext(t *testing.T) {
 
 // ★ 範囲を指定して読めること。
 //
-// **全文を読ませないための機能です。** 読んだ内容は以降のやり取りすべてに残り、
+// 全文を読ませないための機能です。読んだ内容は以降のやり取りすべてに残り、
 // そのたびに読み直されるので、1 回の無駄が実行の終わりまで効き続けます。
 func TestReadFileRange(t *testing.T) {
 	dir := t.TempDir()
@@ -440,7 +440,7 @@ func TestReadFileRange(t *testing.T) {
 }
 
 // ファイルの末尾より後ろを指定しても、エラーにせず総行数だけ返すこと。
-// **総行数が分かれば、モデルは自分で指定し直せます。**
+// 総行数が分かれば、モデルは自分で指定し直せます。
 func TestReadFileRangePastEndReportsTotal(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("a\nb\n"), 0o600); err != nil {
@@ -486,7 +486,7 @@ func TestSearchTextContext(t *testing.T) {
 }
 
 // 近いヒットの文脈が重なっても、同じ行を二度並べないこと。
-// **潰さないと、総量の上限を重複で食い潰します。**
+// 潰さないと、総量の上限を重複で食い潰します。
 func TestSearchTextContextDoesNotRepeatLines(t *testing.T) {
 	dir := t.TempDir()
 	body := "a\nTARGET\nb\nTARGET\nc\n"

@@ -27,7 +27,7 @@ type readFileResult struct {
 	// From / To は実際に返した行の範囲です（1 始まり、To を含む）。
 	From int `json:"from,omitempty"`
 	To   int `json:"to,omitempty"`
-	// TotalLines はファイル全体の行数です。**続きがあるかどうかはこれで分かります。**
+	// TotalLines はファイル全体の行数です。続きがあるかどうかはこれで分かります。
 	// 無いと、範囲を指定して読んだモデルは「これで全部なのか」を判断できません。
 	TotalLines int `json:"total_lines,omitempty"`
 	// Truncated は、返す量の上限に当たって末尾を落としたことを示します。
@@ -47,8 +47,8 @@ func (t *toolbox) readFile(toolCtx context.Context, args readFileArgs) (readFile
 	if !t.spend() {
 		return readFileResult{Error: budgetExhaustedMsg}, nil
 	}
-	// ★ 範囲も残します。**これが無いと、モデルが範囲指定を使っているのかを後から
-	// 確かめられません。** 上限や道具の説明を変えたときに効いたかどうかは、
+	// ★ 範囲も残します。これが無いと、モデルが範囲指定を使っているのかを後から
+	// 確かめられません。上限や道具の説明を変えたときに効いたかどうかは、
 	// prompt_tokens の増減だけでは「なぜ」まで届きません。
 	t.trace(toolCtx, "read_file", "path", args.Path, "from", args.From, "lines", args.Lines)
 
@@ -106,7 +106,7 @@ func (t *toolbox) readFile(toolCtx context.Context, args readFileArgs) (readFile
 // selectLines は、1 始まりの行範囲を切り出し、範囲と全体の行数を返します。
 //
 // 範囲の指定が無ければ全体を返します（従来どおり）。範囲が外れている場合は空を返し、
-// 行番号は 0 になります。**呼び出し側が総行数を見て指定し直せる**ようにするためで、
+// 行番号は 0 になります。呼び出し側が総行数を見て指定し直せるようにするためで、
 // エラーにはしません。
 func selectLines(text string, from, count int) (body string, first, last, total int) {
 	lines := strings.Split(text, "\n")

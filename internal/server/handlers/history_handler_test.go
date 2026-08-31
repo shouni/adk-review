@@ -554,7 +554,7 @@ func TestReviewDetailRendersCSRFTokenForDelete(t *testing.T) {
 
 // ★ 途中で切れたレビューは、画面でそれと分かること。
 //
-// **不完全な結果を黙って完全なものとして見せない**、が要点です。ここが無いと、
+// 不完全な結果を黙って完全なものとして見せない、が要点です。ここが無いと、
 // 読む側は「指摘 1 件のレビュー」として受け取り、切れた先にあったものを知る手段を失います。
 func TestHandleReviewDetail_ShowsTruncatedAndMetrics(t *testing.T) {
 	status := sampleStatus(jobstatus.StateSucceeded, review.StatusSucceeded)

@@ -36,7 +36,7 @@ func NewPromptAdapter() (*PromptAdapter, error) {
 		return nil, fmt.Errorf("レビューテンプレートの読み込みに失敗: %w", err)
 	}
 
-	// WithTrimPartials を付けるのは、断片を箇条書きの**途中**へ差し込むためです。
+	// WithTrimPartials を付けるのは、断片を箇条書きの途中へ差し込むためです。
 	// ファイル末尾の改行が残ると、差し込んだ位置に空行が入り、後ろに続くモード固有の
 	// 方針が別のリストとして分かれて見えます。
 	builder, err := prompts.NewBuilder(templates, prompts.WithTrimPartials())

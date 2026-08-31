@@ -350,7 +350,7 @@ func TestDefaultsMatchEnvDefaults(t *testing.T) {
 	}
 }
 
-// 差分の上限は、実測から締めたり緩めたりする値です。**再ビルドなしで動かせること**と、
+// 差分の上限は、実測から締めたり緩めたりする値です。再ビルドなしで動かせることと、
 // 狭めたつもりの入力が「無制限」で通らないことを見ます。
 func TestMaxDiffBytesFromEnv(t *testing.T) {
 	t.Run("env で上書きできる", func(t *testing.T) {

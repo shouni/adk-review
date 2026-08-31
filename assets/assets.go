@@ -25,7 +25,7 @@ const (
 )
 
 var (
-	// promptFiles はレビュープロンプトです。**ファイル名がそのままモード名になります。**
+	// promptFiles はレビュープロンプトです。ファイル名がそのままモード名になります。
 	//go:embed prompts/*.md
 	promptFiles embed.FS
 
@@ -57,7 +57,7 @@ const (
 )
 
 // ModeMetadata は、プロンプト冒頭の front matter に書くモードの説明です。
-// 兄弟アプリと同じ方式で、**説明の置き場をプロンプト自身にします。**
+// 兄弟アプリと同じ方式で、説明の置き場をプロンプト自身にします。
 //
 // 画面側に一覧を持たせない理由は、モードの追加が prompts/<mode>.md を置くだけで
 // 済む仕組みだからです。説明を別ファイルに分けると、モードを足した人が説明を
@@ -72,7 +72,7 @@ type ModeMetadata struct {
 	UseWhen string `yaml:"use_when"`
 	// Excerpt は、指摘の引用を画面でどう見せるかです。空なら ExcerptProse 扱いです。
 	//
-	// **モードを足す人がプロンプト側で宣言します。** 画面側に
+	// モードを足す人がプロンプト側で宣言します。画面側に
 	// 「code なら等幅」といった一覧を持たせると、モードを足したときに
 	// prompts/<mode>.md を置くだけでは済まなくなります。
 	//
@@ -90,7 +90,7 @@ type Mode struct {
 
 // DisplayName は選択肢に表示する名前です。
 //
-// front matter が無いプロンプトを置いてもキーで表示され、**選択肢自体は消えません。**
+// front matter が無いプロンプトを置いてもキーで表示され、選択肢自体は消えません。
 // 説明の書き忘れで動くはずのモードが画面から消えるほうが困るためです。
 func (m Mode) DisplayName() string {
 	if m.Label != "" {
@@ -129,7 +129,7 @@ var loadModes = sync.OnceValues(func() (promptSet, error) {
 
 	bodies, fronts := frontmatter.SplitMap(raw)
 
-	// **黙って無視しません。** 書き間違えた説明が空欄になるだけだと、画面を開くまで
+	// 黙って無視しません。書き間違えた説明が空欄になるだけだと、画面を開くまで
 	// 気付けません。
 	metas, err := frontmatter.DecodeMap[ModeMetadata](fronts, yaml.Unmarshal)
 	if err != nil {
@@ -153,7 +153,7 @@ var loadModes = sync.OnceValues(func() (promptSet, error) {
 	return promptSet{bodies: bodies, modes: modes}, nil
 })
 
-// LoadPrompts は埋め込まれたプロンプトの**本文だけ**を読み込みます。
+// LoadPrompts は埋め込まれたプロンプトの本文だけを読み込みます。
 //
 // front matter は説明であってプロンプトではないので、ここで落とします。
 // 残したまま渡すと YAML が指示文の先頭に紛れ込みます。
@@ -168,8 +168,8 @@ func LoadPrompts() (map[string]string, error) {
 // PromptTemplates は、モードのプロンプト本文と共有断片を 1 つのテンプレート集として返します。
 //
 // 断片を "_" 付きのテンプレート名で同じ集合に入れるのは、本文から
-// {{template "_finding_policy" .}} で参照させるためです。**文字列として流し込むのをやめた
-// 理由は、末尾改行の始末をライブラリ（prompts.WithTrimPartials）へ渡すためです。** 断片は
+// {{template "_finding_policy" .}} で参照させるためです。文字列として流し込むのをやめた
+// 理由は、末尾改行の始末をライブラリ（prompts.WithTrimPartials）へ渡すためです。断片は
 // 箇条書きの途中に差し込まれるので、末尾改行が残るとそこだけリストが分かれます。
 // テンプレートとして参照していれば、断片の側でも条件分岐やデータの参照を書けます。
 //
@@ -228,7 +228,7 @@ func IsValidMode(mode string) bool {
 
 // ExcerptStyleFor は、モードの引用の見せ方を返します。
 //
-// **未知のモードでもエラーにしません。** 呼ぶのは履歴の詳細ページで、履歴には
+// 未知のモードでもエラーにしません。呼ぶのは履歴の詳細ページで、履歴には
 // 過去に実行したモード名がそのまま残ります。プロンプトを消したり改名したりしたあとに
 // 過去のレビューを開けなくなるのは、表示の都合として重すぎます。
 func ExcerptStyleFor(mode string) ExcerptStyle {

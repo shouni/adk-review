@@ -58,7 +58,7 @@ func (h *Handler) HandleModes(w http.ResponseWriter, r *http.Request) {
 
 // HandleJobStatus は、ジョブ 1 件の進行状況だけを返します。
 //
-// 詳細（HandleReviewDetail）と分けているのは、**完了検知のポーリング先だから**です。
+// 詳細（HandleReviewDetail）と分けているのは、完了検知のポーリング先だからです。
 // 詳細は指摘の全文を含むので、状態を確かめるたびに返すには重すぎます。
 //
 // このルートも HTML を持ちません。人間向けには履歴の詳細画面があります。
