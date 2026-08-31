@@ -13,7 +13,7 @@ import (
 	"github.com/shouni/adk-review/internal/domain"
 )
 
-// Container はアプリケーションの依存関係（DIコンテナ）を保持します。
+// Container はアプリケーションの依存関係（DI コンテナ）を保持します。
 type Container struct {
 	Config *config.Config
 	// ストレージ I/O

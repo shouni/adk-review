@@ -24,7 +24,7 @@ const maxSubmitBody = 16 << 10
 
 // submitInput は、JSON で投入するときの入力です。
 //
-// **domain.ReviewRequest を直接デコードしません。** そうすると呼び出し元が JobID /
+// domain.ReviewRequest を直接デコードしません。そうすると呼び出し元が JobID /
 // StorageURI / PublicURL を指定できてしまい、成果物をバケット内の任意のパスへ
 // 書かせられます。採番と配置は assignJob だけの責務です。
 //
@@ -67,9 +67,9 @@ func (h *Handler) HandleReviewSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. ジョブIDの採番と、成果物・閲覧先の決定
+	// 3. ジョブ ID の採番と、成果物・閲覧先の決定
 	//
-	// 保存先も閲覧先もジョブIDから決まります。ワーカー側で組み立て直さないのは、
+	// 保存先も閲覧先もジョブ ID から決まります。ワーカー側で組み立て直さないのは、
 	// 投入時に決めた場所と食い違わないようにするためです。
 	if err := h.assignJob(&req); err != nil {
 		slog.ErrorContext(ctx, "ジョブIDの採番に失敗", "error", err)
@@ -79,7 +79,7 @@ func (h *Handler) HandleReviewSubmit(w http.ResponseWriter, r *http.Request) {
 
 	// 4. 受付を履歴へ残す
 	//
-	// ★ 投入より **先** に記録します。あとに回すと、Cloud Tasks の配送が数十ミリ秒で
+	// ★ 投入より先に記録します。あとに回すと、Cloud Tasks の配送が数十ミリ秒で
 	// 届くため「ワーカーが running を書く → web が queued で踏み潰す」順序が起こり、
 	// 実行中のジョブが履歴で受付済みのまま止まって見えます。
 	// 積めなかったジョブを履歴に残さない配慮は、下の投入失敗時の取り消しで担保します。
@@ -112,7 +112,7 @@ func readSubmitRequest(r *http.Request) (domain.ReviewRequest, error) {
 		var in submitInput
 		dec := json.NewDecoder(io.LimitReader(r.Body, maxSubmitBody))
 		// 知らない項目はエラーにします。黙って捨てると、storage_uri のように
-		// **受け付けない項目を送った呼び出し元が、効いたと思い込みます。**
+		// 受け付けない項目を送った呼び出し元が、効いたと思い込みます。
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&in); err != nil {
 			return domain.ReviewRequest{}, fmt.Errorf("リクエスト本文を解釈できません: %w", err)
@@ -157,7 +157,7 @@ func (h *Handler) submitFailure(
 	h.renderForm(w, r, status, reviewFormPageData(req, ReviewFormPageData{Error: message}))
 }
 
-// assignJob は、ジョブIDを採番して保存先と閲覧先を決めます。
+// assignJob は、ジョブ ID を採番して保存先と閲覧先を決めます。
 func (h *Handler) assignJob(req *domain.ReviewRequest) error {
 	jobID, err := h.newJobID()
 	if err != nil {
@@ -185,7 +185,7 @@ func (h *Handler) recordQueued(ctx context.Context, req domain.ReviewRequest) {
 		return
 	}
 
-	// 投入直後に一覧へ現れるよう、ジョブID一覧のキャッシュを捨てます。
+	// 投入直後に一覧へ現れるよう、ジョブ ID 一覧のキャッシュを捨てます。
 	h.history.Invalidate()
 }
 
@@ -201,7 +201,7 @@ func (h *Handler) discardQueued(ctx context.Context, jobID string) {
 	h.history.Invalidate()
 }
 
-// newJobID はジョブIDを採番します。
+// newJobID はジョブ ID を採番します。
 func newJobID() (string, error) {
 	return jobid.New("")
 }

@@ -241,7 +241,7 @@ func jobPrefix(jobID string) string {
 // 一覧は「疑似ディレクトリ」だけを拾い、ジョブ 1 件を 1 行として返すこと。
 //
 // 区切り指定が効かなくなると配下のオブジェクトが全件返り、末尾スラッシュの
-// フィルタで全部落ちて **履歴一覧が常に空** になります。
+// フィルタで全部落ちて履歴一覧が常に空になります。
 func TestListReturnsOneRowPerJob(t *testing.T) {
 	ids := []string{"20260810-213000-a1b2c3d4", "20260811-090000-b2c3d4e5"}
 	fake := &fakeIO{objects: []string{jobPrefix(ids[0]), jobPrefix(ids[1])}}

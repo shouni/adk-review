@@ -1,7 +1,7 @@
 // Package giturl は、Git リポジトリの URL（HTTPS / SSH）から、画面や通知に出す
 // 表示用のリポジトリパスを取り出します。
 //
-// **扱うのは表示だけです。** クローン先は go-review-kit が、保存先は
+// 扱うのは表示だけです。クローン先は go-review-kit が、保存先は
 // internal/domain の StorageLayout が決めます。
 package giturl
 
@@ -20,7 +20,7 @@ func GetRepositoryPath(repoURL string) string {
 		}
 	}
 
-	// 解釈できない URL はそのまま返します。**握り潰しではありません。** 呼び出し元は
+	// 解釈できない URL はそのまま返します。握り潰しではありません。呼び出し元は
 	// テンプレート関数と通知の本文で、どちらも「元の URL を出す」が正しい結末です。
 	// 記録も残しません。この関数は context を受け取れる位置にないので、書けば job_id の
 	// 付かない行が 1 本増えるだけで、誰のどのレビューの話か追えません。

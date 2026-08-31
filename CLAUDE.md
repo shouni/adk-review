@@ -140,7 +140,8 @@ JSON を返します（`negotiate.WantsJSON`）。分けると同じ取得処理
 
 ### ツールの返却量は、その実行の最後まで課金され続ける
 
-`internal/adkagent/tools.go` の上限は、1 回の呼び出しを守るためだけのものではありません。
+上限は `internal/adkagent/tools.go` にまとめてあります（各ツールの中身は `tool_read.go` /
+`tool_list.go` / `tool_search.go`）。これは 1 回の呼び出しを守るためだけのものではありません。
 **ツールが返した内容は会話に残り、以降のすべてのターンで読み直されます。** 4 回目の呼び出しで
 返した 16 KB は、その後 10 ターンぶん課金されます。
 
@@ -183,7 +184,8 @@ JSON を返します（`negotiate.WantsJSON`）。分けると同じ取得処理
 
 ### genai を import してよい場所は 3 ファイルだけ
 
-`google.golang.org/genai` を直接使ってよいのは次だけです。**増やさないでください。**
+`google.golang.org/genai` を直接使ってよいのは次だけです（それぞれのテストを除く）。
+**増やさないでください。**
 
 - `internal/adkagent/reviewer.go` — ADK のモデル層へ渡すクライアント設定
 - `internal/adkagent/schema.go` — 構造化出力スキーマ
@@ -253,11 +255,17 @@ internal/
 `go doc` かモジュールキャッシュのソースを当たってください。
 
 - `go-review-kit`: レビューの手順（差分取得 → プロンプト → レビュー → 公開 → 通知）
-- `go-job-kit`: 進行状況の記録（`jobstatus`）、履歴のページング（`paging`）、ID キャッシュ
+- `go-job-kit`: 進行状況の記録（`jobstatus`）、履歴のページング（`paging`）、ID キャッシュ、
+  プレフィックス走査（`joblist`）
   - `jobstatus.ErrNotFound`（未記録）と `ErrUnavailable`（読めない）は**意図的に別物**です。
     同一視すると障害が「空行が並ぶ 200」として出ます。
   - `paging.LoadPage` は load のエラーを呼び出し元へ返さず、その行を落として続行します。
     障害を surface したい場合は `repository.loadFailure` のように自分で捕まえてください。
+  - `jobstatus.Status` を埋め込む `domain.JobStatus` の数値・真偽値のタグは `omitzero` です。
+    `status.json` を書くのは `jobstatus.Store` で、そちらは `encoding/json/v2` を使うため、
+    `omitempty` だと 0 と false が落ちません。文字列は `omitempty` のままで構いません。
+  - プレフィックス走査は `joblist.Collect` に任せます。同じ走査を手で書くと、重複潰しや
+    プレフィックスの末尾補正が抜けます（実際、一度そうなっていました）。
 - `gcp-kit`: OAuth・CSRF・Cloud Tasks の投入と OIDC 検証・`cloudlog`
   - CSRF の検証は `session.Handler.Authenticate` が状態変更メソッドに対して行います。
     アプリ側に検証コードが無いのは正常です。

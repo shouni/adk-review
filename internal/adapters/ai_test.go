@@ -10,7 +10,7 @@ import (
 
 // ★ 再試行の設定が落ちていないこと。
 //
-// **genai は RetryOptions が nil だと一度も再試行しません。** 落ちても平常時は誰も
+// genai は RetryOptions が nil だと一度も再試行しません。落ちても平常時は誰も
 // 気付かず、気付くのは Vertex が 5xx を返した日に、数分かけたレビューが 1 件丸ごと
 // 失われたときです（review-queue は max_attempts = 1 で再試行も来ません）。
 func TestGeminiClientConfigEnablesRetry(t *testing.T) {

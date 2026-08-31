@@ -18,7 +18,7 @@ func (c *Config) IsSecureServiceURL() bool {
 // 面ごとの設定は担当するプロセスでだけ要求します。worker に OAuth の設定を要求すると、
 // 面ごとにサービスを分けた意味（worker の env を最小に保つ）が失われるためです。
 //
-// **失敗は「起動を止める」ことに意味があります。** ここを通してしまうと、設定漏れは
+// 失敗は「起動を止める」ことに意味があります。ここを通してしまうと、設定漏れは
 // 利用者がレビューを投げたあと、しかも AI 呼び出しを終えた保存段階で初めて表面化します。
 func (c *Config) ValidateEssentialConfig() error {
 	if c.Server.ServiceURL == "" {
@@ -37,7 +37,7 @@ func (c *Config) ValidateEssentialConfig() error {
 		return fmt.Errorf("GCP_PROJECT_ID が設定されていません（Gemini は Vertex AI 経由で呼びます）")
 	}
 
-	// **両ロールで要ります。** web は履歴の一覧・詳細・削除に、worker は成果物の保存に使います。
+	// 両ロールで要ります。web は履歴の一覧・詳細・削除に、worker は成果物の保存に使います。
 	if c.Storage.GCSBucket == "" {
 		return fmt.Errorf("GCS_REVIEW_BUCKET が設定されていません")
 	}
@@ -64,9 +64,9 @@ func (c *Config) ValidateEssentialConfig() error {
 	return nil
 }
 
-// validateWebConfig は、Web 面（OAuth・セッション、タスク投入）の設定を検証します。
+// validateWebConfig は、web 面（OAuth・セッション、タスク投入）の設定を検証します。
 func (c *Config) validateWebConfig() error {
-	// タスクを投入するのは Web 面だけなので、キュー名も投入先も Web 面の要件です。
+	// タスクを投入するのは web 面だけなので、キュー名も投入先も web 面の要件です。
 	if c.Tasks.QueueID == "" {
 		return fmt.Errorf("CLOUD_TASKS_QUEUE_ID が設定されていません")
 	}
@@ -81,7 +81,7 @@ func (c *Config) validateWebConfig() error {
 	if c.GCP.LocationID == "" {
 		return fmt.Errorf("GCP_LOCATION_ID が設定されていません（Cloud Tasks のキューが属するリージョンです。例: asia-northeast1）")
 	}
-	// caller SA はタスクを投入する側＝ Web 面の要件です。worker が受け付ける許可リストは
+	// caller SA はタスクを投入する側＝ web 面の要件です。worker が受け付ける許可リストは
 	// ALLOWED_TASK_SERVICE_ACCOUNTS で別に指定します。
 	if c.Tasks.CallerServiceAccountEmail == "" {
 		return fmt.Errorf("TASK_CALLER_SERVICE_ACCOUNT_EMAIL が設定されていません")
@@ -119,7 +119,7 @@ func (c *Config) validateWorkerConfig() error {
 	}
 
 	// 負値は無制限（0）へ黙って落とさずエラーにします。ライブラリは 0 以下を無視するので、
-	// **上限を狭めたつもりの入力が「上限なし」で動きます。** 差分の大きさで落ちるのは
+	// 上限を狭めたつもりの入力が「上限なし」で動きます。差分の大きさで落ちるのは
 	// モデルを呼び終えたあとなので、いちばん高くつく壊れ方が既定に戻ります。
 	if c.Pipeline.MaxDiffBytes < 0 {
 		return fmt.Errorf("MAX_DIFF_BYTES に負の値は指定できません (%d)。無制限にするなら 0 です", c.Pipeline.MaxDiffBytes)

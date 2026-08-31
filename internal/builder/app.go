@@ -61,7 +61,7 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 		Closers: []io.Closer{storage},
 	}
 
-	// 4. Web 面だけの依存: Task Enqueuer（レビュー依頼の投入口）
+	// 4. web 面だけの依存: Task Enqueuer（レビュー依頼の投入口）
 	if cfg.Server.Role.ServesWeb() {
 		enqueuer, err := buildTaskEnqueuer(ctx, cfg)
 		if err != nil {

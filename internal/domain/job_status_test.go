@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"testing"
 
@@ -176,7 +177,7 @@ func TestJobStatusOmitsEmptyFields(t *testing.T) {
 // 計測値は、あとから状態を書き直しても失われないこと。
 //
 // ワーカーは状態が変わるたびにタスクから JobStatus を組み立て直すため、引き継がないと
-// **上限を決め直す材料が最後の書き込みで消えます。**
+// 上限を決め直す材料が最後の書き込みで消えます。
 func TestCarryOverExtrasKeepsMetrics(t *testing.T) {
 	prev := NewSucceededStatus(testRequest(), review.StatusSucceeded)
 	prev.Truncated = true
@@ -205,5 +206,55 @@ func TestCarryOverExtrasKeepsNewerMetrics(t *testing.T) {
 
 	if next.Metrics.DiffBytes != 327680 {
 		t.Errorf("DiffBytes = %d, want 327680", next.Metrics.DiffBytes)
+	}
+}
+
+// 数値と真偽値が omitzero であること。
+//
+// status.json を書くのは jobstatus.Store で、そちらは encoding/json/v2 を使います。
+// v2 の omitempty は「空の JSON 値になるか」で判定するので 0 と false を落としません。
+// omitempty へ戻すと、まだ計測値の無いジョブの記録にも truncated:false と
+// 0 だらけの metrics が残ります。上の TestJobStatusOmitsEmptyFields は v1 で
+// エンコードしているため、この違いを見つけられません。
+func TestJobStatusOmitsZeroNumbersUnderJSONV2(t *testing.T) {
+	data, err := jsonv2.Marshal(NewRunningStatus(testRequest()))
+	if err != nil {
+		t.Fatalf("エンコードに失敗: %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("デコードに失敗: %v", err)
+	}
+	for _, key := range []string{"truncated", "metrics"} {
+		if _, ok := raw[key]; ok {
+			t.Errorf("値の無い %s が出力されています: %s", key, data)
+		}
+	}
+
+	// 一部だけ埋まった計測値でも、0 のままの項目は出しません。metrics 自体の
+	// omitzero は中身が全部ゼロのときにしか効かないため、ここが本番です。
+	partial := NewSucceededStatus(testRequest(), review.StatusSucceeded)
+	partial.Metrics = Metrics{DurationMS: 152_000}
+
+	data, err = jsonv2.Marshal(partial)
+	if err != nil {
+		t.Fatalf("エンコードに失敗: %v", err)
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("デコードに失敗: %v", err)
+	}
+
+	metrics, ok := raw["metrics"].(map[string]any)
+	if !ok {
+		t.Fatalf("metrics が出ていません: %s", data)
+	}
+	if _, ok := metrics["duration_ms"]; !ok {
+		t.Errorf("duration_ms が落ちています: %s", data)
+	}
+	for _, key := range []string{"diff_bytes", "prompt_tokens", "output_tokens", "thought_tokens", "tool_calls"} {
+		if _, ok := metrics[key]; ok {
+			t.Errorf("0 のままの %s が出力されています: %s", key, data)
+		}
 	}
 }

@@ -82,7 +82,7 @@ Cloud Tasks 投入    →
 * **依存性注入**: `internal/builder` が全コンポーネントを組み立てます。通知先や保存先を
   ロジックに触れずに差し替えられます。
 * **1 イメージ 2 サービス**: 同じイメージを `SERVER_ROLE`（web / worker）で分け、別々の
-  Cloud Run サービスとしてデプロイします（兄弟アプリと同じ方式）。Web 面は
+  Cloud Run サービスとしてデプロイします（兄弟アプリと同じ方式）。web 面は
   `WORKER_URL` の worker サービスへタスクを投入します（`SERVER_ROLE=both` については後述）。
 
 ### 成果物の置き場所
@@ -258,7 +258,7 @@ IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必�
 | `/health` | GET | ✅ | ✅ | ヘルスチェック（認証不要） |
 | `/static/*` | GET | ✅ | ✅ | CSS / JS と `vendor/` の Bootstrap（認証の外側）。CDN を参照しないため CSP は `default-src 'self'`。バージョンがパスに入る `vendor/` は `Cache-Control: public, max-age=31536000, immutable`、自前アセットは `public, max-age=300, must-revalidate` |
 | `/auth/login`, `/auth/callback` | GET | ✅ | — | Google OAuth |
-| `/` | GET | ✅ | — | レビュー依頼フォーム |
+| `/` | GET | ✅ | — | レビュー依頼フォーム。`?from={jobID}` でそのレビューの依頼内容を引き継ぎます（詳細画面の「同じ内容で再依頼」） |
 | `/submit_review` | POST | ✅ | — | 依頼の受付とタスク投入 |
 | `/modes` | GET | ✅ | — | 選べるレビューモード一覧（JSON のみ） |
 | `/jobs/{jobID}` | GET | ✅ | — | 進行状況だけを返す（JSON のみ。完了検知用） |

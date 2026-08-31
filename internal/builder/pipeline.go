@@ -34,7 +34,7 @@ func buildPipeline(_ context.Context, appCtx *app.Container) (domain.Pipeline, e
 		// 切り離しより外側に掛かり、打ち切りと同時に失敗通知まで落ちます。
 		pipeline.WithRunTimeout(appCtx.Config.Pipeline.Timeout),
 		// 大きすぎる差分は AI へ送る前に落とします。送っても出力の途中切れか締切超過で
-		// 失敗しますが、**どちらもモデルを呼び終えたあとにしか分かりません。**
+		// 失敗しますが、どちらもモデルを呼び終えたあとにしか分かりません。
 		pipeline.WithMaxDiffBytes(appCtx.Config.Pipeline.MaxDiffBytes),
 	)
 	if err != nil {

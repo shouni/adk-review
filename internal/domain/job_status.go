@@ -17,6 +17,12 @@ const CommandReview = "review"
 //
 // 一覧が 1 行あたり 1 オブジェクトの読み取りで済むよう、表示に要る項目はすべてここへ
 // 持たせます。指摘の全文だけは行数に比例して重くなるため、report.json 側に置きます。
+//
+// 数値と真偽値のタグは omitzero です。omitempty へ戻さないでください。
+// この構造体を status.json へ書くのは jobstatus.Store で、そちらは encoding/json/v2
+// を使います。v2 の omitempty は「空の JSON 値になるか」で判定するため 0 と false を
+// 落とさず、omitempty のままだと truncated:false と 0 だらけの metrics が全レコードに
+// 残ります。文字列は v2 でも空文字が空なので omitempty のままで構いません。
 type JobStatus struct {
 	jobstatus.Status
 
@@ -40,10 +46,10 @@ type JobStatus struct {
 
 	// Truncated は、モデルの出力が途中で切れ、完結していた範囲だけを保存したことを示します。
 	//
-	// ★ **成功として記録しますが、指摘はこれで全部ではありません。** ここを持たずに保存すると、
+	// ★ 成功として記録しますが、指摘はこれで全部ではありません。ここを持たずに保存すると、
 	// 画面も API も「指摘 2 件のレビュー」として見せることになり、読む側は残りが
 	// あったことを知る手段を失います。
-	Truncated bool `json:"truncated,omitempty"`
+	Truncated bool `json:"truncated,omitzero"`
 
 	// Metrics は、上限を実測から決め直すための材料です。
 	Metrics Metrics `json:"metrics,omitzero"`
@@ -51,21 +57,21 @@ type JobStatus struct {
 
 // Metrics は、レビュー 1 件の実行の計測値です。
 //
-// **失敗した実行にも入ります。** 上限（差分の大きさ・ツール回数・出力トークン）が
+// 失敗した実行にも入ります。上限（差分の大きさ・ツール回数・出力トークン）が
 // 厳しすぎるかどうかを判断する材料は、通った実行より弾かれた実行の側にあります。
 // これを持たない頃は、`MAX_DIFF_BYTES` を決めるのに Cloud Logging を掘って
 // ログ行を手で突き合わせる必要がありました。
 type Metrics struct {
 	// DiffBytes は AI へ送った差分の大きさです。MAX_DIFF_BYTES の調整に使います。
-	DiffBytes int `json:"diff_bytes,omitempty"`
+	DiffBytes int `json:"diff_bytes,omitzero"`
 	// DurationMS はレビュー 1 件の所要時間です。PIPELINE_TIMEOUT の調整に使います。
-	DurationMS int64 `json:"duration_ms,omitempty"`
+	DurationMS int64 `json:"duration_ms,omitzero"`
 	// 以下はモデルの使用量です。出力が上限（64Ki トークン）へどれだけ近いかを見ます。
-	PromptTokens  int `json:"prompt_tokens,omitempty"`
-	OutputTokens  int `json:"output_tokens,omitempty"`
-	ThoughtTokens int `json:"thought_tokens,omitempty"`
+	PromptTokens  int `json:"prompt_tokens,omitzero"`
+	OutputTokens  int `json:"output_tokens,omitzero"`
+	ThoughtTokens int `json:"thought_tokens,omitzero"`
 	// ToolCalls はエージェントがツールを呼んだ回数です。AGENT_MAX_TOOL_CALLS の調整に使います。
-	ToolCalls int `json:"tool_calls,omitempty"`
+	ToolCalls int `json:"tool_calls,omitzero"`
 }
 
 // Empty は、計測値が 1 つも入っていないかどうかを返します。
@@ -82,6 +88,19 @@ func (s JobStatus) HasReport() bool {
 // 書き戻し、プレフィックスが復活するためです。結果として、中身の無い行が履歴に残ります。
 // failed を許すのは、review-queue が max_attempts = 1 で再試行が来ないためです。
 func (s JobStatus) Deletable() bool {
+	return s.State == jobstatus.StateSucceeded || s.State == jobstatus.StateFailed
+}
+
+// Rerunnable は、この依頼内容でフォームを埋め直せるかどうかを返します。
+//
+// queued / running で出さないのは、結果を待っている依頼をもう一度出させると
+// 同じレビューが 2 本走るためです。RepoURL を見るのは、依頼内容を記録する前の
+// 形式で保存されたジョブがあり得るからで、埋まらないフォームを開かせても
+// 打ち直しと変わりません。
+func (s JobStatus) Rerunnable() bool {
+	if s.RepoURL == "" {
+		return false
+	}
 	return s.State == jobstatus.StateSucceeded || s.State == jobstatus.StateFailed
 }
 

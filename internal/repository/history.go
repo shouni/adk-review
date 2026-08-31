@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"path"
 	"strings"
 	"sync"
 
 	"github.com/shouni/go-job-kit/cache"
+	"github.com/shouni/go-job-kit/joblist"
 	"github.com/shouni/go-job-kit/jobstatus"
 	"github.com/shouni/go-job-kit/paging"
 	"github.com/shouni/go-remote-io/remoteio"
@@ -31,6 +31,9 @@ const loadConcurrency = 10
 const maxReportBytes = 8 << 20 // 8 MiB
 
 // History は、GCS 上のレビュー履歴を読み書きします。
+//
+// 各メソッドが何を返すかは domain.HistoryRepository が定めます。ここに書くのは、
+// この実装に固有の事情（並列読み込みの失敗の扱い、削除の走査範囲）だけです。
 type History struct {
 	storage remoteio.Store
 	store   domain.StatusStore
@@ -56,7 +59,8 @@ func NewHistory(
 	}
 }
 
-// List は、新しい順に page ページ目を返します。
+// List は、プレフィックス走査で集めた ID を並べ替え、そのページの分だけ
+// 進行状況を読みます。何を返すかは domain.HistoryRepository の側にあります。
 func (h *History) List(ctx context.Context, page, perPage int) (domain.HistoryPage, error) {
 	jobIDs, err := h.listJobIDs(ctx)
 	if err != nil {
@@ -64,7 +68,7 @@ func (h *History) List(ctx context.Context, page, perPage int) (domain.HistoryPa
 	}
 
 	// LoadPage は個々の load 失敗を「その行を落として続行」で処理します。未記録の
-	// ジョブには妥当ですが、読み取り障害まで同じ扱いだと**ジョブが一覧から消えるだけ**で
+	// ジョブには妥当ですが、読み取り障害まで同じ扱いだとジョブが一覧から消えるだけで
 	// 200 が返り、障害が障害に見えません。そこで種類を見分けて拾い直します。
 	var failure loadFailure
 
@@ -117,7 +121,7 @@ func (f *loadFailure) err() error {
 	return f.first
 }
 
-// Get は、1 件分の進行状況とレビュー結果全文を返します。
+// Get は、進行状況を読み、成果物があれば report.json も読んで 1 件に組み立てます。
 func (h *History) Get(ctx context.Context, jobID string) (domain.ReviewDetail, error) {
 	status, err := h.store.Get(ctx, jobID)
 	if err != nil {
@@ -145,10 +149,8 @@ func (h *History) Get(ctx context.Context, jobID string) (domain.ReviewDetail, e
 	return detail, nil
 }
 
-// Delete は、1 件分のオブジェクトをすべて削除します。
-//
-// ジョブのプレフィックスを走査して消すため、消す側は「そのジョブが何を作ったか」を
-// 知らずに済みます。成果物の種類が増えてもここを直す必要はありません
+// Delete は、ジョブのプレフィックスを走査して消します。そのため、消す側は
+// 「そのジョブが何を作ったか」を知らずに済み、成果物の種類が増えてもここは直りません
 // （進行状況も同じプレフィックス配下にあるので、まとめて消えます）。
 func (h *History) Delete(ctx context.Context, jobID string) error {
 	safeJobID, err := jobid.Sanitize(jobID)
@@ -161,7 +163,7 @@ func (h *History) Delete(ctx context.Context, jobID string) error {
 	}
 
 	// 消したジョブが一覧に残らないよう、ID 一覧のキャッシュを捨てます。
-	// 捨てないと、読めない ID がジョブIDだけの空行として TTL の間並びます。
+	// 捨てないと、読めない ID がジョブ ID だけの空行として TTL の間並びます。
 	h.Invalidate()
 	return nil
 }
@@ -192,7 +194,7 @@ func (h *History) deletePrefix(ctx context.Context, prefix string) error {
 	return errors.Join(errs...)
 }
 
-// Invalidate は、ジョブ ID 一覧のキャッシュを捨てます。
+// Invalidate は、レビュープレフィックスの ID 一覧をキャッシュから落とします。
 func (h *History) Invalidate() {
 	h.ids.Invalidate(h.layout.ReviewPrefixURI())
 }
@@ -202,7 +204,7 @@ func (h *History) Invalidate() {
 // まだ記録が無い ID は一覧から落とさず、ジョブ ID だけの行として残します。
 // 一覧から消えると、投入したはずのレビューを画面から追えなくなるためです。
 //
-// ★ ただしそれは **ErrNotFound のときだけ** です。読み取り自体が失敗した場合
+// ★ ただしそれは ErrNotFound のときだけです。読み取り自体が失敗した場合
 // （権限剥奪・ストレージ障害）まで同じ扱いにすると、一覧が「ジョブ ID だけの空行が
 // 並ぶ 200 OK」になり、障害が障害に見えなくなります。store は両者を別のエラーとして
 // 返すので、後者は呼び出し元へ持ち上げます。
@@ -221,28 +223,18 @@ func (h *History) loadStatus(ctx context.Context, jobID string) (domain.JobStatu
 
 // listJobIDs はプレフィックス直下のジョブ ID を集めます。
 //
-// 区切り文字を指定して、ジョブ 1 件を 1 エントリとして受け取ります。指定しないと配下の
-// オブジェクトが全件返るため、1 ジョブにつきファイル数分の結果を受け取ったうえで、
-// 呼び出し側でジョブ ID の重複を潰すことになります。
+// 走査そのものは joblist.Collect が持ちます。区切り文字を指定してジョブ 1 件を
+// 1 エントリとして受け取る形は兄弟アプリと共通で、この走査を集めるために
+// 切り出されたのが joblist です。ここで書き直すと、重複潰しやプレフィックスの
+// 末尾補正といった細部が黙って抜け落ちます。
+//
+// 集めた ID の絞り込みは行いません。採番より前に作られたディレクトリを一覧から
+// 消すかどうかは読み込み側の判断で、ここでは判断材料を落とさずに渡します。
 func (h *History) listJobIDs(ctx context.Context) ([]string, error) {
 	prefix := h.layout.ReviewPrefixURI()
 
 	return h.ids.Load(ctx, prefix, func(ctx context.Context) ([]string, error) {
-		var jobIDs []string
-		for entry, err := range h.storage.List(ctx, prefix, remoteio.WithDelimiter("/")) {
-			if err != nil {
-				return nil, err
-			}
-			// 疑似ディレクトリだけを拾います。プレフィックス直下に置かれたオブジェクトは
-			// ジョブではないため対象外です。
-			if !entry.IsPrefix {
-				continue
-			}
-			if jobID := path.Base(strings.TrimSuffix(entry.Name, "/")); jobID != "" {
-				jobIDs = append(jobIDs, jobID)
-			}
-		}
-		return jobIDs, nil
+		return joblist.Collect(ctx, h.storage, prefix)
 	})
 }
 

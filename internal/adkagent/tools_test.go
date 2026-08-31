@@ -3,6 +3,7 @@ package adkagent
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -392,7 +393,7 @@ func TestToolsStopOnCanceledContext(t *testing.T) {
 
 // ★ 範囲を指定して読めること。
 //
-// **全文を読ませないための機能です。** 読んだ内容は以降のやり取りすべてに残り、
+// 全文を読ませないための機能です。読んだ内容は以降のやり取りすべてに残り、
 // そのたびに読み直されるので、1 回の無駄が実行の終わりまで効き続けます。
 func TestReadFileRange(t *testing.T) {
 	dir := t.TempDir()
@@ -439,7 +440,7 @@ func TestReadFileRange(t *testing.T) {
 }
 
 // ファイルの末尾より後ろを指定しても、エラーにせず総行数だけ返すこと。
-// **総行数が分かれば、モデルは自分で指定し直せます。**
+// 総行数が分かれば、モデルは自分で指定し直せます。
 func TestReadFileRangePastEndReportsTotal(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("a\nb\n"), 0o600); err != nil {
@@ -485,7 +486,7 @@ func TestSearchTextContext(t *testing.T) {
 }
 
 // 近いヒットの文脈が重なっても、同じ行を二度並べないこと。
-// **潰さないと、総量の上限を重複で食い潰します。**
+// 潰さないと、総量の上限を重複で食い潰します。
 func TestSearchTextContextDoesNotRepeatLines(t *testing.T) {
 	dir := t.TempDir()
 	body := "a\nTARGET\nb\nTARGET\nc\n"
@@ -525,5 +526,151 @@ func TestSearchTextWithoutContextReturnsOnlyMatches(t *testing.T) {
 	}
 	if !slices.Equal(got.Hits, []string{"f.txt:2: TARGET"}) {
 		t.Errorf("Hits = %v", got.Hits)
+	}
+}
+
+// from と lines はモデルが書く JSON なので、int の上限に近い値が届き得ます。
+// 足してから比べていた頃は桁溢れで end が from を下回り、切り出しで panic しました。
+func TestReadFileHandlesOutOfRangeArguments(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args readFileArgs
+	}{
+		{"lines が極端に大きい", readFileArgs{Path: "chapter1.md", From: 2, Lines: math.MaxInt}},
+		{"from も lines も極端に大きい", readFileArgs{Path: "chapter1.md", From: math.MaxInt, Lines: math.MaxInt}},
+		{"lines が負", readFileArgs{Path: "chapter1.md", From: 1, Lines: math.MinInt}},
+		{"from が負", readFileArgs{Path: "chapter1.md", From: math.MinInt, Lines: 1}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := newTestToolbox(t, 10).readFile(t.Context(), tt.args)
+			if err != nil {
+				t.Fatalf("readFile が error を返した: %v", err)
+			}
+			if got.To < got.From {
+				t.Errorf("範囲が逆転しています: from=%d to=%d", got.From, got.To)
+			}
+		})
+	}
+}
+
+// 打ち切ったとき、To は「全部返せた最後の行」であること。
+//
+// 1 行でも多く申告すると、モデルは次にその先から読むので、渡していない行が黙って
+// 飛ばされます。切り口が行の途中に来る場合と、改行のちょうど直後に来る場合の両方を見ます
+// （後者では、申告した行が 1 バイトも入っていません）。
+func TestReadFileTruncationReportsOnlyCompleteLines(t *testing.T) {
+	t.Parallel()
+
+	for _, width := range []int{99, 98} {
+		t.Run(fmt.Sprintf("行長%dバイト", width), func(t *testing.T) {
+			t.Parallel()
+
+			lines := make([]string, 3000)
+			for i := range lines {
+				lines[i] = strings.Repeat("x", width)
+			}
+
+			dir := t.TempDir()
+			body := strings.Join(lines, "\n") + "\n"
+			if err := os.WriteFile(filepath.Join(dir, "long.txt"), []byte(body), 0o600); err != nil {
+				t.Fatalf("ファイルの作成に失敗: %v", err)
+			}
+			tb, err := newToolbox(dir, 10)
+			if err != nil {
+				t.Fatalf("toolbox の生成に失敗: %v", err)
+			}
+
+			got, err := tb.readFile(t.Context(), readFileArgs{Path: "long.txt"})
+			if err != nil {
+				t.Fatalf("readFile が error を返した: %v", err)
+			}
+			if !got.Truncated {
+				t.Fatalf("上限超えなのに Truncated が false")
+			}
+			if got.From != 1 || got.To < 1 || got.To > len(lines) {
+				t.Fatalf("範囲が不正です: from=%d to=%d total=%d", got.From, got.To, got.TotalLines)
+			}
+
+			// 申告した From..To が、返した内容にすべて完全な形で入っていること。
+			want := strings.Join(lines[got.From-1:got.To], "\n")
+			if !strings.HasPrefix(got.Content, want) {
+				t.Errorf("to=%d と申告した行が返り切っていません（内容 %d バイト、申告分 %d バイト）",
+					got.To, len(got.Content), len(want))
+			}
+		})
+	}
+}
+
+// 1 行が上限を超える場合は、その行を返したことにして先へ進ませること。
+// 範囲を空にすると、同じ行を読み直すだけのやり取りが呼び出し回数ぶん繰り返されます。
+func TestReadFileSingleLineLongerThanLimit(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "minified.js"), []byte(strings.Repeat("x", maxFileBytes+1024)), 0o600); err != nil {
+		t.Fatalf("ファイルの作成に失敗: %v", err)
+	}
+	tb, err := newToolbox(dir, 10)
+	if err != nil {
+		t.Fatalf("toolbox の生成に失敗: %v", err)
+	}
+
+	got, err := tb.readFile(t.Context(), readFileArgs{Path: "minified.js"})
+	if err != nil {
+		t.Fatalf("readFile が error を返した: %v", err)
+	}
+	if !got.Truncated {
+		t.Fatal("上限超えなのに Truncated が false")
+	}
+	if got.From != 1 || got.To != 1 {
+		t.Errorf("from=%d to=%d, want どちらも 1（進めなくなります）", got.From, got.To)
+	}
+}
+
+// 一覧は件数だけでなく総量でも打ち切ること。深く入れ子になったパスは 1 本で数 KiB
+// あり、件数の上限だけでは数 MB のツール結果になり得ます。
+func TestListFilesCapsTotalBytes(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	deep := filepath.Join(strings.Repeat("d", 100), strings.Repeat("e", 100))
+	if err := os.MkdirAll(filepath.Join(dir, deep), 0o750); err != nil {
+		t.Fatalf("ディレクトリの作成に失敗: %v", err)
+	}
+	// 1 本およそ 210 バイト。件数の上限（500）より先に総量の上限へ当たる本数を置きます。
+	for i := range maxListEntries {
+		name := filepath.Join(dir, deep, fmt.Sprintf("f%03d.md", i))
+		if err := os.WriteFile(name, []byte("x"), 0o600); err != nil {
+			t.Fatalf("ファイルの作成に失敗: %v", err)
+		}
+	}
+	tb, err := newToolbox(dir, 10)
+	if err != nil {
+		t.Fatalf("toolbox の生成に失敗: %v", err)
+	}
+
+	got, err := tb.listFiles(t.Context(), listFilesArgs{})
+	if err != nil {
+		t.Fatalf("listFiles が error を返した: %v", err)
+	}
+	if !got.Truncated {
+		t.Fatal("上限超えなのに Truncated が false")
+	}
+	if len(got.Files) >= maxListEntries {
+		t.Errorf("件数の上限で止まっています（%d 件）。総量の上限が効いていません", len(got.Files))
+	}
+
+	total := 0
+	for _, f := range got.Files {
+		total += len(f)
+	}
+	if total > maxListResultBytes {
+		t.Errorf("総量 = %d バイト, 上限 %d バイト", total, maxListResultBytes)
 	}
 }

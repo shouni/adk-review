@@ -108,10 +108,8 @@ func TestHandleJobStatus_ReturnsStatus(t *testing.T) {
 	}
 }
 
-// 「まだ無い」と「読めなかった」を別の状態コードへ割り当てること。
-//
-// 同一視すると、権限剥奪やストレージ障害が「そんなレビューはありません」として返り、
-// 呼び出し元は再試行すべき場面で諦めます。
+// 「まだ無い」と「読めなかった」を別の状態コードへ割り当てること
+// （同一視したときに何が起きるかは recordErrorStatus の doc）。
 func TestHandleJobStatus_SeparatesMissingFromUnreadable(t *testing.T) {
 	t.Parallel()
 

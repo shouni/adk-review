@@ -118,6 +118,43 @@ func TestPromptsDoNotDuplicateSharedPolicy(t *testing.T) {
 		if strings.Contains(body, "hunk") {
 			t.Errorf("%s: 行番号の算出規則がプロンプトに写されています", key)
 		}
+		// evidence の使い方は findings_format と instruction が持ちます。写しが戻ると
+		// 同じ指示が 1 レビューにつき 3 回現れ、モードごとに文言だけ古くなります。
+		if strings.Contains(body, "`evidence` に挙げ") {
+			t.Errorf("%s: evidence の指示がプロンプトに写されています", key)
+		}
+		// 「差分の外を見ることこそが価値」は instruction が言います。プロンプト側が
+		// 言うべきなのは、そのモードで何を開くかだけです。
+		if strings.Contains(body, "こそがこのレビューの価値です") {
+			t.Errorf("%s: 差分の外を見る意義が instruction と二重になっています", key)
+		}
+	}
+}
+
+// ツールで確かめられないことを、観点として要求しないこと。
+//
+// このレビュアーのツールは作業ディレクトリしか読めません（read_file / list_files /
+// search_text）。リンク切れの検査を頼むと、指摘の方針の「確かめられないなら出さない」と
+// 衝突し、モデルは黙るか捏造するかのどちらかになります。
+func TestPromptsDoNotAskForUnverifiableChecks(t *testing.T) {
+	prompts, err := LoadPrompts()
+	if err != nil {
+		t.Fatalf("LoadPrompts failed: %v", err)
+	}
+
+	for key, body := range prompts {
+		for _, ng := range []string{"公式ドキュメントへのリンク", "一次情報の明示"} {
+			if strings.Contains(body, ng) {
+				t.Errorf("%s: ツールで確かめられない %q を求めています", key, ng)
+			}
+		}
+		// 「リンク切れ」は、出すなと断る文脈でだけ書けます。観点や重大度の例として
+		// 挙がっていないことを、同じ行に断り書きがあるかで見ます。
+		for _, line := range strings.Split(body, "\n") {
+			if strings.Contains(line, "リンク切れ") && !strings.Contains(line, "推測で書かず") {
+				t.Errorf("%s: リンク切れの検査を求めています: %s", key, line)
+			}
+		}
 	}
 }
 

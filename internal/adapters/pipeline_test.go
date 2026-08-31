@@ -424,10 +424,8 @@ func TestReviewPipeline_打ち切り後も結末を記録する(t *testing.T) {
 	}
 }
 
-// ★ 計測値は失敗した実行にも記録すること。
-//
-// **上限が厳しすぎるかどうかを判断する材料は、通った実行より弾かれた実行の側にあります。**
-// 成功時だけ残す作りだと、いちばん見たい裾が履歴から欠けます。
+// ★ 計測値は失敗した実行にも記録すること。成功時だけ残す作りだと、上限を決め直す
+// のにいちばん見たい裾が履歴から欠けます（理由は buildOutcomeStatus の中）。
 func TestBuildOutcomeStatusRecordsMetrics(t *testing.T) {
 	t.Parallel()
 

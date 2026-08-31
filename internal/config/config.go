@@ -61,13 +61,13 @@ type TasksConfig struct {
 	CallerServiceAccountEmail string `env:"TASK_CALLER_SERVICE_ACCOUNT_EMAIL"`
 	// DispatchDeadline は、投入するタスクに載せる応答待ちの上限です。
 	//
-	// 「待つ時間」ではなく **ワーカーの実行時間の実効上限** です。これを超えると
+	// 「待つ時間」ではなくワーカーの実行時間の実効上限です。これを超えると
 	// ワーカーがまだ処理中でも Cloud Tasks が待受を打ち切り、review-queue は
 	// max_attempts = 1 なので再試行も来ません。Cloud Run の timeout をいくら伸ばしても
 	// この上限は動きません。定数ではなく env なのは、エージェントレビューの所要時間が
 	// リポジトリの大きさで変わり、再ビルドなしで伸ばせる必要があるためです。
 	//
-	// **既定値は持ちません。** 三段のタイムアウトはデプロイ先の事情で決まる値なので、
+	// 既定値は持ちません。三段のタイムアウトはデプロイ先の事情で決まる値なので、
 	// 出どころは Terraform 1 箇所に閉じます。アプリが既定を持つと同じ数字が 2 箇所に
 	// 現れ、設定漏れが「誰も選んでいない値」で動いてしまいます。
 	DispatchDeadline time.Duration `env:"TASK_DISPATCH_DEADLINE"`
@@ -107,7 +107,7 @@ type GitConfig struct {
 type PipelineConfig struct {
 	// Timeout はレビュー 1 件（clone〜AI〜公開）の実行時間の上限です。
 	//
-	// **既定値は持ちません。** TASK_DISPATCH_DEADLINE と同じく三段のタイムアウトの一部で、
+	// 既定値は持ちません。TASK_DISPATCH_DEADLINE と同じく三段のタイムアウトの一部で、
 	// 出どころはデプロイ設定（Terraform）1 箇所に閉じます。既定を持つと同じ数字が
 	// 2 箇所に現れ、設定漏れが「誰も選んでいない値」で動いてしまいます。
 	// 渡されるのは worker 面だけなので、必須なのも worker 面だけです。
@@ -116,14 +116,14 @@ type PipelineConfig struct {
 	// MaxDiffBytes は、AI へ送る差分の上限（バイト）です。超えるとレビューを実行せず
 	// 失敗します。0 で無制限。
 	//
-	// **三段のタイムアウトと違い、こちらは既定値を持ちます。** あちらが既定を持たないのは
+	// 三段のタイムアウトと違い、こちらは既定値を持ちます。あちらが既定を持たないのは
 	// 同じ数字がデプロイ設定と 2 箇所に現れるからですが、この上限にインフラ側の対応物は
 	// ありません。未設定を無制限にすると、いちばん高くつく壊れ方——モデルを呼び終えてから
 	// 出力の途中切れで失敗する——が既定になります。
 	//
 	// 既定の 320 KiB は実測から決めました。30 日分のログで、成功した最大の差分が 304 KiB、
-	// 出力上限で落ちた唯一の差分が 480 KiB です。**上限は正常系の目標ではなく、
-	// 壊れ方を捕まえる網です**（三段のタイムアウトと同じ考え方）。締めるにしても緩めるにしても、
+	// 出力上限で落ちた唯一の差分が 480 KiB です。上限は正常系の目標ではなく、
+	// 壊れ方を捕まえる網です（三段のタイムアウトと同じ考え方）。締めるにしても緩めるにしても、
 	// 判断の材料はログの diff_bytes です。
 	MaxDiffBytes int `env:"MAX_DIFF_BYTES" envDefault:"327680"`
 }
@@ -133,7 +133,7 @@ type StorageConfig struct {
 	// GCSBucket は成果物の置き場です。ProjectID と同じ理由で既定値は持ちません。
 	// プレースホルダのままだと、Gemini 呼び出しを終えた最後の保存で初めて落ちます。
 	//
-	// **バケット「名」であって URI ではありません。** コンソールから `gs://bucket/` の形で
+	// バケット「名」であって URI ではありません。コンソールから `gs://bucket/` の形で
 	// 貼られることがあるため、normalize で接頭辞と末尾スラッシュを落とします。
 	GCSBucket string `env:"GCS_REVIEW_BUCKET"`
 }
@@ -145,7 +145,7 @@ type HTTPConfig struct {
 	Timeout time.Duration `env:"HTTP_TIMEOUT" envDefault:"30s"`
 }
 
-// AuthConfig は認証と認可の設定です。Web 面だけが読みます。
+// AuthConfig は認証と認可の設定です。web 面だけが読みます。
 type AuthConfig struct {
 	GoogleClientID     string `env:"GOOGLE_CLIENT_ID"`
 	GoogleClientSecret string `env:"GOOGLE_CLIENT_SECRET"`
@@ -156,7 +156,7 @@ type AuthConfig struct {
 	AllowedEmails     []string `env:"ALLOWED_EMAILS"`
 	AllowedDomains    []string `env:"ALLOWED_DOMAINS"`
 	// AllowedM2MServiceAccounts は、JSON API をサーバー間通信（OIDC Bearer）で呼べる
-	// サービスアカウントです。**空なら M2M は無効**で、web 面は人間の OAuth だけで動きます
+	// サービスアカウントです。空なら M2M は無効で、web 面は人間の OAuth だけで動きます
 	// （web 面は画面が使えれば成立するため、ワーカー面のように必須にはしません）。
 	//
 	// Cloud Tasks の ALLOWED_TASK_SERVICE_ACCOUNTS とは別の変数です。役割が

@@ -58,7 +58,7 @@ func (p *ReviewPipeline) Execute(ctx context.Context, req domain.ReviewRequest) 
 	)
 
 	// ログの相関に加えて、pprof のゴルーチンラベルにも同じ値を載せます。
-	// Go 1.27 以降、ラベルは**パニックのトレースバックの見出し行にも出る**ため、
+	// Go 1.27 以降、ラベルはパニックのトレースバックの見出し行にも出るため、
 	// 落ちたときにどのジョブだったかがスタックだけで分かります。slogctx は
 	// panic の経路では効かないので、そこを埋めるのがこちらの役目です。
 	// ラベルは子ゴルーチン（並列生成など）へも継承されます。
@@ -116,7 +116,7 @@ func buildOutcomeStatus(
 		status.ReportURI = req.StorageURI
 	}
 
-	// ★ 計測値は**失敗した実行にも**載せます。上限が厳しすぎるかどうかを判断する材料は、
+	// ★ 計測値は失敗した実行にも載せます。上限が厳しすぎるかどうかを判断する材料は、
 	// 通った実行より弾かれた実行の側にあります。
 	status.Truncated = result.Run.Truncated
 	status.Metrics = domain.Metrics{

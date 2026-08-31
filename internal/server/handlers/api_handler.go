@@ -58,14 +58,13 @@ func (h *Handler) HandleModes(w http.ResponseWriter, r *http.Request) {
 
 // HandleJobStatus は、ジョブ 1 件の進行状況だけを返します。
 //
-// 詳細（HandleReviewDetail）と分けているのは、**完了検知のポーリング先だから**です。
+// 詳細（HandleReviewDetail）と分けているのは、完了検知のポーリング先だからです。
 // 詳細は指摘の全文を含むので、状態を確かめるたびに返すには重すぎます。
 //
 // このルートも HTML を持ちません。人間向けには履歴の詳細画面があります。
 func (h *Handler) HandleJobStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// ジョブ ID はストレージのパス要素になるため、受け取った時点で正規化します。
 	safeJobID, err := jobid.Sanitize(chi.URLParam(r, "jobID"))
 	if err != nil {
 		slog.WarnContext(ctx, "不正なジョブIDを受け取りました", "error", err)

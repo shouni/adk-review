@@ -270,7 +270,7 @@ func TestHandleReviewDetail_WithoutReport(t *testing.T) {
 	}
 }
 
-// ジョブIDはストレージのパス要素になるため、受け取った時点で正規化します。
+// ジョブ ID はストレージのパス要素になるため、受け取った時点で正規化します。
 // jobid.Sanitize は末尾要素だけを取り出すので、パス要素は下流へ渡りません。
 func TestHandleReviewDetail_StripsPathTraversal(t *testing.T) {
 	history := &recordingHistory{}
@@ -369,8 +369,8 @@ func TestHandleReviewDelete(t *testing.T) {
 	}
 }
 
-// 実行中のものを消すと、ワーカーがあとから status.json を書き戻して復活します。
-// 画面にボタンが出ていなくても、直接呼ばれた場合に弾けること。
+// 画面にボタンが出ていなくても、直接呼ばれた実行中の削除を弾くこと
+// （消せない理由は domain.JobStatus.Deletable）。
 func TestHandleReviewDeleteRejectsRunning(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -473,6 +473,40 @@ func TestReviewDetailShowsDeleteButtonOnlyWhenDeletable(t *testing.T) {
 	}
 }
 
+// 再依頼のリンクは、もう動いていない依頼にだけ出すこと。
+//
+// queued / running に出すと、結果を待っているレビューがもう 1 本走ります。
+// 依頼内容が記録されていないジョブに出さないのは、開いても埋まらないためです。
+func TestReviewDetailShowsRerunLinkOnlyWhenRerunnable(t *testing.T) {
+	tests := []struct {
+		name    string
+		state   jobstatus.State
+		repoURL string
+		want    bool
+	}{
+		{"完了", jobstatus.StateSucceeded, "git@github.com:org/repo.git", true},
+		{"失敗", jobstatus.StateFailed, "git@github.com:org/repo.git", true},
+		{"実行中", jobstatus.StateRunning, "git@github.com:org/repo.git", false},
+		{"受付済み", jobstatus.StateQueued, "git@github.com:org/repo.git", false},
+		{"依頼内容の記録が無い", jobstatus.StateFailed, "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status := sampleStatus(tt.state, "")
+			status.RepoURL = tt.repoURL
+			history := &recordingHistory{detail: domain.ReviewDetail{Status: status}}
+
+			w := httptest.NewRecorder()
+			buildHistoryHandler(t, history).HandleReviewDetail(w, detailRequest("20260810-213000-a1b2c3d4"))
+
+			if got := strings.Contains(w.Body.String(), "/?from="+status.JobID); got != tt.want {
+				t.Errorf("再依頼リンクの表示 = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // 削除ボタンと一緒に、送信に使う CSRF トークンが実際に埋まること。
 //
 // ボタンの有無だけを見ていたため、トークンが空のまま描画される不具合を見逃していました。
@@ -520,7 +554,7 @@ func TestReviewDetailRendersCSRFTokenForDelete(t *testing.T) {
 
 // ★ 途中で切れたレビューは、画面でそれと分かること。
 //
-// **不完全な結果を黙って完全なものとして見せない**、が要点です。ここが無いと、
+// 不完全な結果を黙って完全なものとして見せない、が要点です。ここが無いと、
 // 読む側は「指摘 1 件のレビュー」として受け取り、切れた先にあったものを知る手段を失います。
 func TestHandleReviewDetail_ShowsTruncatedAndMetrics(t *testing.T) {
 	status := sampleStatus(jobstatus.StateSucceeded, review.StatusSucceeded)

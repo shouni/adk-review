@@ -37,7 +37,7 @@ const agentName = "workspace_reviewer"
 // プロンプト側（review.PromptGenerator）の責務なので、ここには調査の進め方だけを書きます。
 //
 // 書式引数は「ツール呼び出しの上限」「まとめに入る目安」「指摘件数の上限」です。
-// **数字を文章に直書きせず実際の予算から埋めます。** 予算を変えたときに指示だけ古い数字を
+// 数字を文章に直書きせず実際の予算から埋めます。予算を変えたときに指示だけ古い数字を
 // 語り続けると、モデルは残り 3 回のつもりで調査を続け、budgetExhaustedMsg で不意に
 // 打ち切られます。件数も同じで、スキーマと指示がずれると、モデルは指示のほうを信じて
 // スキーマを超える件数を書き始めます。
@@ -145,7 +145,7 @@ func New(cfg Config) *Reviewer {
 // 1 回きりのジョブで、実行をまたいで残したい状態が無いためです（in-memory セッションは
 // そのための選択です）。
 //
-// 戻り値の review.RunInfo には、使用量・ツール呼び出し回数と、**出力が途中で切れたか**が
+// 戻り値の review.RunInfo には、使用量・ツール呼び出し回数と、出力が途中で切れたかが
 // 入ります。失敗する経路でも、そこまでに分かったぶんは返します（トークンは既に消費済みです）。
 func (r *Reviewer) Review(
 	ctx context.Context, modelName, prompt string, ws review.Workspace,
@@ -170,11 +170,11 @@ func (r *Reviewer) Review(
 		return review.Report{}, review.RunInfo{}, err
 	}
 
-	// OutputSchema とツールは併用できます。ただし経路は 2 通りあり、**Vertex AI の
-	// Gemini 2.0+ では ADK は素通しで、モデルが応答本文としてスキーマ準拠の JSON を書きます**
+	// OutputSchema とツールは併用できます。ただし経路は 2 通りあり、Vertex AI の
+	// Gemini 2.0+ では ADK は素通しで、モデルが応答本文としてスキーマ準拠の JSON を書きます
 	// （set_model_response ツールへ差し替わるのは Gemini API 側だけです）。本番は Vertex
-	// 一択なので、最終イベントの Text はモデルが生で書いた JSON です。**途中で切れることが
-	// あるのはこのためで**、解釈の前に終了理由を確かめます。
+	// 一択なので、最終イベントの Text はモデルが生で書いた JSON です。途中で切れることが
+	// あるのはこのためで、解釈の前に終了理由を確かめます。
 	ag, err := llmagent.New(llmagent.Config{
 		Name:         agentName,
 		Description:  "作業ディレクトリを調査しながら Git 差分をレビューするエージェント",
@@ -199,7 +199,7 @@ func (r *Reviewer) Review(
 	info := final.runInfo(tb.used())
 
 	// 途中切れ以外の理由（安全性フィルタなど）で止まった場合はここで落とします。
-	// **上限で切り詰められた出力も「正常な最終応答」として降ってきます**（ADK の
+	// 上限で切り詰められた出力も「正常な最終応答」として降ってきます（ADK の
 	// converters は FinishReason を見ずに Content をそのまま通します）。
 	if err := final.finishError(); err != nil {
 		slog.ErrorContext(ctx, "モデルが最後まで出力しませんでした", final.logAttrs()...)
@@ -212,11 +212,11 @@ func (r *Reviewer) Review(
 	info.Truncated = info.Truncated || parsed.Truncated
 
 	if err != nil {
-		// ★ 生の応答を残します。**これが無いと解析失敗は原因不明のまま終わります。**
+		// ★ 生の応答を残します。これが無いと解析失敗は原因不明のまま終わります。
 		// エージェントレビューは数分かかるので、失敗のたびに同じ時間を払って再現を
 		// 試みることになります。
 		//
-		// **頭と末尾の両方を残すのが要点です。** 頭だけだと、最後まで律儀に書いた末に
+		// 頭と末尾の両方を残すのが要点です。頭だけだと、最後まで律儀に書いた末に
 		// 切れたのか、途中から同じ出力を繰り返して膨らんだのかが区別できません
 		// （212 KB の出力を頭 2 KB だけ見て判断できなかった例があります）。
 		slog.ErrorContext(ctx, "レビュー結果を解釈できませんでした",
@@ -231,8 +231,8 @@ func (r *Reviewer) Review(
 		return review.Report{}, info, fmt.Errorf("adkagent: %w", err)
 	}
 
-	// 補修と切り出しが要ったかを残します。**黙って直して成功するので、ここで見ないと
-	// 効いているのか出番が無いのか区別が付きません。**
+	// 補修と切り出しが要ったかを残します。黙って直して成功するので、ここで見ないと
+	// 効いているのか出番が無いのか区別が付きません。
 	if parsed.Repaired {
 		slog.WarnContext(ctx, "モデルの出力が壊れていたので補修しました",
 			"response_bytes", len(final.text),
@@ -247,7 +247,7 @@ func (r *Reviewer) Review(
 
 	// 並びはここで確定させます。プロンプトでも重い順を指示していますが、守られる保証は
 	// ありません。画面も Slack も返ってきた順にそのまま出すので、Blocker が Minor の
-	// 後ろに埋もれると**いちばん読ませたい指摘が最後になります。**
+	// 後ろに埋もれるといちばん読ませたい指摘が最後になります。
 	report.SortFindings()
 	return report, info, nil
 }
@@ -274,8 +274,8 @@ func headForLog(s string, limit int) string {
 
 // tailForLog は、ログへ載せる応答の末尾を文字境界で切り出します。
 //
-// 頭だけで全文が載る短い応答では空を返します。**同じ内容を 2 つのキーで二重に載せると、
-// 「末尾が付いている＝切れている」という見た目の手掛かりが消えます。**
+// 頭だけで全文が載る短い応答では空を返します。同じ内容を 2 つのキーで二重に載せると、
+// 「末尾が付いている＝切れている」という見た目の手掛かりが消えます。
 func tailForLog(s string, limit int) string {
 	if len(s) <= limit {
 		return ""
@@ -289,8 +289,8 @@ func tailForLog(s string, limit int) string {
 
 // finalResponse は、エージェントの最終応答から解釈に必要なものを取り出したものです。
 //
-// テキストだけでなく終了理由と使用量も持ち帰ります。**テキストだけを見ると、出力上限で
-// 切れた JSON は「モデルが壊れた JSON を返した」としか読めません。** 区別できるのは
+// テキストだけでなく終了理由と使用量も持ち帰ります。テキストだけを見ると、出力上限で
+// 切れた JSON は「モデルが壊れた JSON を返した」としか読めません。区別できるのは
 // 終了理由だけで、量の当たりを付けられるのは使用量だけです。
 type finalResponse struct {
 	text         string
@@ -304,14 +304,14 @@ func (f finalResponse) truncated() bool {
 	return f.finishReason == genai.FinishReasonMaxTokens
 }
 
-// finishError は、途中切れ**以外**の理由で止まった場合にその理由を返します。
+// finishError は、途中切れ以外の理由で止まった場合にその理由を返します。
 //
-// ★ MAX_TOKENS はここで落としません。**そこまでに書けていた指摘は救えます**
+// ★ MAX_TOKENS はここで落としません。そこまでに書けていた指摘は救えます
 // （review.ParseReport が完結している範囲を拾います）。全損にしていた頃は、完成した
 // Blocker の指摘ごと失っていました。拾えなかった場合だけ、呼び出し元がエラーにします。
 //
 // 終了理由が空のときも成功として扱います。最終イベントに載るとは限らず（バックエンドや
-// 経路によって欠けます）、空を失敗にすると**正常なレビューまで落とします。**
+// 経路によって欠けます）、空を失敗にすると正常なレビューまで落とします。
 func (f finalResponse) finishError() error {
 	switch f.finishReason {
 	case "", genai.FinishReasonStop, genai.FinishReasonMaxTokens:
@@ -324,7 +324,7 @@ func (f finalResponse) finishError() error {
 // runInfo は、この実行の計測値を組み立てます。
 //
 // 使用量は最終応答を出した 1 回ぶんで、ループ全体の合計ではありません（ADK は各回の
-// メタデータを合算しません）。**それでも上限との距離は測れます。** 出力が切り詰められるのは
+// メタデータを合算しません）。それでも上限との距離は測れます。出力が切り詰められるのは
 // 最後の 1 回だからです。
 func (f finalResponse) runInfo(toolCalls int) review.RunInfo {
 	info := review.RunInfo{Truncated: f.truncated(), ToolCalls: toolCalls}
@@ -385,7 +385,7 @@ func (r *Reviewer) collectFinal(ctx context.Context, run *runner.Runner, prompt 
 			text.WriteString(part.Text)
 		}
 		// テキストと同じイベントから採ります。別のイベントの終了理由を混ぜると、
-		// **採用していない応答の理由でレビューを落とすことになります。**
+		// 採用していない応答の理由でレビューを落とすことになります。
 		final.finishReason = event.FinishReason
 		final.usage = event.UsageMetadata
 	}

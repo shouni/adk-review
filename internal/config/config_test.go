@@ -129,7 +129,6 @@ func TestValidateEssentialConfig(t *testing.T) {
 			wantErr: "TASK_CALLER_SERVICE_ACCOUNT_EMAIL",
 		},
 		{
-			// 空だと検証器が fail-closed になり、全タスクが失敗し続けます。
 			name:    "missing allowed sa on worker",
 			mutate:  func(c *Config) { c.Tasks.AllowedServiceAccounts = nil },
 			wantErr: "ALLOWED_TASK_SERVICE_ACCOUNTS",
@@ -343,14 +342,13 @@ func TestDefaultsMatchEnvDefaults(t *testing.T) {
 	if cfg.Server.ShutdownTimeout != DefaultShutdownTimeout {
 		t.Errorf("ShutdownTimeout = %s, want %s", cfg.Server.ShutdownTimeout, DefaultShutdownTimeout)
 	}
-	// ★ ここは既定値を持つ側です。未設定を無制限にすると、いちばん高くつく壊れ方
-	// （モデルを呼び終えてから出力の途中切れで失敗する）が既定になります。
+	// ★ 三段のタイムアウトと違い、ここは既定値を持つ側です（理由は MaxDiffBytes の doc）。
 	if cfg.Pipeline.MaxDiffBytes != DefaultMaxDiffBytes {
 		t.Errorf("MAX_DIFF_BYTES の既定 = %d, want %d", cfg.Pipeline.MaxDiffBytes, DefaultMaxDiffBytes)
 	}
 }
 
-// 差分の上限は、実測から締めたり緩めたりする値です。**再ビルドなしで動かせること**と、
+// 差分の上限は、実測から締めたり緩めたりする値です。再ビルドなしで動かせることと、
 // 狭めたつもりの入力が「無制限」で通らないことを見ます。
 func TestMaxDiffBytesFromEnv(t *testing.T) {
 	t.Run("env で上書きできる", func(t *testing.T) {

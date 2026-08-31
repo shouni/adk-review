@@ -18,10 +18,10 @@ const geminiLocationID = "global"
 
 // Vertex AI の一時障害に対する再試行の設定です。
 //
-// ★ **明示しないと再試行は一度も行われません。** genai は RetryOptions が nil のとき
+// ★ 明示しないと再試行は一度も行われません。genai は RetryOptions が nil のとき
 // 素通しで 1 回だけ投げます（common.go の retryHTTPRequest）。ADK もクライアント設定へ
 // これを入れないため、既定では 5xx が 1 回返っただけでレビューがそこまでの作業ごと
-// 失われます。**review-queue は max_attempts = 1 なのでタスクの再試行も来ません**
+// 失われます。review-queue は max_attempts = 1 なのでタスクの再試行も来ません
 // （実測で、Vertex の 504 で 1 件そのまま失われています）。
 //
 // 回数と待ちを既定（5 回・最大 60 秒）より絞るのは、待ち時間が PIPELINE_TIMEOUT を
@@ -32,9 +32,9 @@ const geminiLocationID = "global"
 // 対象のステータスは genai の既定（408・429・5xx）に任せます。写すと、向こうが増やしたときに
 // こちらだけ古い一覧を持ち続けます。
 const (
-	retryAttempts     = 4
-	retryInitialDelay = 1.0
-	retryMaxDelay     = 8.0
+	retryAttempts     int32   = 4
+	retryInitialDelay float64 = 1.0
+	retryMaxDelay     float64 = 8.0
 )
 
 // NewAgentReviewer は、ADK エージェントの review.WorkspaceReviewer を構築します。
@@ -55,9 +55,9 @@ func geminiClientConfig(cfg *config.Config) genai.ClientConfig {
 		Location: geminiLocationID,
 		HTTPOptions: genai.HTTPOptions{
 			RetryOptions: &genai.HTTPRetryOptions{
-				Attempts:     new(int32(retryAttempts)),
-				InitialDelay: new(float64(retryInitialDelay)),
-				MaxDelay:     new(float64(retryMaxDelay)),
+				Attempts:     new(retryAttempts),
+				InitialDelay: new(retryInitialDelay),
+				MaxDelay:     new(retryMaxDelay),
 			},
 		},
 	}
