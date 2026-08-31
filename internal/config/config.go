@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -105,26 +106,17 @@ type GitConfig struct {
 
 // PipelineConfig はレビュー 1 件の実行に関する設定です。
 type PipelineConfig struct {
-	// Timeout はレビュー 1 件（clone〜AI〜公開）の実行時間の上限です。
-	//
-	// 既定値は持ちません。TASK_DISPATCH_DEADLINE と同じく三段のタイムアウトの一部で、
-	// 出どころはデプロイ設定（Terraform）1 箇所に閉じます。既定を持つと同じ数字が
-	// 2 箇所に現れ、設定漏れが「誰も選んでいない値」で動いてしまいます。
-	// 渡されるのは worker 面だけなので、必須なのも worker 面だけです。
+	// Timeout はレビュー 1 件（clone〜AI〜公開）の実行時間の上限です。三段のタイムアウトの
+	// 一部なので既定値は持たず、出どころは Terraform 1 箇所です（CLAUDE.md）。
+	// 渡されるのは worker 面だけです。
 	Timeout time.Duration `env:"PIPELINE_TIMEOUT"`
 
 	// MaxDiffBytes は、AI へ送る差分の上限（バイト）です。超えるとレビューを実行せず
 	// 失敗します。0 で無制限。
 	//
-	// 三段のタイムアウトと違い、こちらは既定値を持ちます。あちらが既定を持たないのは
-	// 同じ数字がデプロイ設定と 2 箇所に現れるからですが、この上限にインフラ側の対応物は
-	// ありません。未設定を無制限にすると、いちばん高くつく壊れ方——モデルを呼び終えてから
-	// 出力の途中切れで失敗する——が既定になります。
-	//
-	// 既定の 320 KiB は実測から決めました。30 日分のログで、成功した最大の差分が 304 KiB、
-	// 出力上限で落ちた唯一の差分が 480 KiB です。上限は正常系の目標ではなく、
-	// 壊れ方を捕まえる網です（三段のタイムアウトと同じ考え方）。締めるにしても緩めるにしても、
-	// 判断の材料はログの diff_bytes です。
+	// こちらは既定値を持ちます。インフラ側に対応物が無く、無制限にすると「モデルを
+	// 呼び終えてから出力の途中切れで失敗する」がいちばん高くつく既定になるためです。
+	// 320 KiB は実測から（成功した最大の差分が 304 KiB、出力上限で落ちたのが 480 KiB）。
 	MaxDiffBytes int `env:"MAX_DIFF_BYTES" envDefault:"327680"`
 }
 
@@ -212,10 +204,11 @@ func (c *Config) normalize() error {
 	c.Server.ServiceURL = strings.TrimSpace(c.Server.ServiceURL)
 	c.Server.ShutdownTimeout = DefaultShutdownTimeout
 
-	c.Tasks.WorkerURL = strings.TrimSpace(c.Tasks.WorkerURL)
-	if c.Tasks.WorkerURL == "" {
-		c.Tasks.WorkerURL = c.Server.ServiceURL
+	workerURL, err := normalizeWorkerURL(c.Server.Role, c.Tasks.WorkerURL, c.Server.ServiceURL)
+	if err != nil {
+		return err
 	}
+	c.Tasks.WorkerURL = workerURL
 	c.Tasks.TaskAudienceURL = strings.TrimSpace(c.Tasks.TaskAudienceURL)
 	if c.Tasks.TaskAudienceURL == "" {
 		c.Tasks.TaskAudienceURL = c.Server.ServiceURL
@@ -237,4 +230,31 @@ func (c *Config) normalize() error {
 	c.Storage.GCSBucket = remoteio.NormalizeBucketName(c.Storage.GCSBucket)
 
 	return nil
+}
+
+// normalizeWorkerURL は配送先の worker サービス URL を整えます。返すのはサービスの
+// URL までで、タスクのパスは投入の直前（internal/builder）で継ぎ足します。
+//
+// SERVICE_URL から導出するのは Worker 面を担うプロセスだけです。分割デプロイの
+// SERVICE_URL は公開側に固定されているため、web 専用で導出すると全件 404 になります。
+func normalizeWorkerURL(role serverrole.Role, workerURL string, serviceURL string) (string, error) {
+	workerURL = strings.TrimSpace(workerURL)
+	if workerURL != "" {
+		if _, err := url.Parse(workerURL); err != nil {
+			return "", fmt.Errorf("invalid worker URL %q: %w", workerURL, err)
+		}
+		return workerURL, nil
+	}
+	if !role.ServesWorker() {
+		return "", nil
+	}
+
+	serviceURL = strings.TrimSpace(serviceURL)
+	if serviceURL == "" {
+		return "", nil
+	}
+	if _, err := url.Parse(serviceURL); err != nil {
+		return "", fmt.Errorf("invalid service URL %q: %w", serviceURL, err)
+	}
+	return serviceURL, nil
 }

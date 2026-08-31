@@ -143,7 +143,7 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 		r.Use(auth.Require(h.TaskAuth))
 
 		if h.Worker != nil {
-			r.Post(domain.TaskExecuteReviewPath, h.Worker.ProcessTask)
+			r.Post(domain.WorkerTaskPath, h.Worker.ProcessTask)
 		}
 	})
 }

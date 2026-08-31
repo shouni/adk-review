@@ -209,7 +209,7 @@ Gemini のロケーションは `adapters.geminiLocationID`（`global`）に固�
 
 ### ワーカーのルートは 1 箇所で定義する
 
-`domain.TaskExecuteReviewPath` を投入側（`internal/builder`）と受信側（`internal/server`）の
+`domain.WorkerTaskPath` を投入側（`internal/builder`）と受信側（`internal/server`）の
 両方が使います。リテラルを二重に持つと、片方だけ変えたときに**投入したタスクが全部 404 に
 なり、再試行もされず黙って消えます。**
 
