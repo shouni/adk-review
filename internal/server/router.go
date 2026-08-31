@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/shouni/gcp-kit/auth"
 	"github.com/shouni/gcp-kit/cloudlog"
 	"github.com/shouni/gcp-kit/cloudrun"
 	"github.com/shouni/go-serve-kit/secureheaders"
@@ -18,7 +19,6 @@ import (
 	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/builder"
 	"github.com/shouni/adk-review/internal/domain"
-	"github.com/shouni/gcp-kit/auth"
 )
 
 const (
