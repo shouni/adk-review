@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"path"
 	"strings"
 	"sync"
 
 	"github.com/shouni/go-job-kit/cache"
+	"github.com/shouni/go-job-kit/joblist"
 	"github.com/shouni/go-job-kit/jobstatus"
 	"github.com/shouni/go-job-kit/paging"
 	"github.com/shouni/go-remote-io/remoteio"
@@ -221,28 +221,18 @@ func (h *History) loadStatus(ctx context.Context, jobID string) (domain.JobStatu
 
 // listJobIDs はプレフィックス直下のジョブ ID を集めます。
 //
-// 区切り文字を指定して、ジョブ 1 件を 1 エントリとして受け取ります。指定しないと配下の
-// オブジェクトが全件返るため、1 ジョブにつきファイル数分の結果を受け取ったうえで、
-// 呼び出し側でジョブ ID の重複を潰すことになります。
+// 走査そのものは joblist.Collect が持ちます。区切り文字を指定してジョブ 1 件を
+// 1 エントリとして受け取る形は兄弟アプリと共通で、この走査を集めるために
+// 切り出されたのが joblist です。ここで書き直すと、重複潰しやプレフィックスの
+// 末尾補正といった細部が黙って抜け落ちます。
+//
+// 集めた ID の絞り込みは行いません。採番より前に作られたディレクトリを一覧から
+// 消すかどうかは読み込み側の判断で、ここでは判断材料を落とさずに渡します。
 func (h *History) listJobIDs(ctx context.Context) ([]string, error) {
 	prefix := h.layout.ReviewPrefixURI()
 
 	return h.ids.Load(ctx, prefix, func(ctx context.Context) ([]string, error) {
-		var jobIDs []string
-		for entry, err := range h.storage.List(ctx, prefix, remoteio.WithDelimiter("/")) {
-			if err != nil {
-				return nil, err
-			}
-			// 疑似ディレクトリだけを拾います。プレフィックス直下に置かれたオブジェクトは
-			// ジョブではないため対象外です。
-			if !entry.IsPrefix {
-				continue
-			}
-			if jobID := path.Base(strings.TrimSuffix(entry.Name, "/")); jobID != "" {
-				jobIDs = append(jobIDs, jobID)
-			}
-		}
-		return jobIDs, nil
+		return joblist.Collect(ctx, h.storage, prefix)
 	})
 }
 
