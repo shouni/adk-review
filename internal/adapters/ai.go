@@ -32,9 +32,9 @@ const geminiLocationID = "global"
 // 対象のステータスは genai の既定（408・429・5xx）に任せます。写すと、向こうが増やしたときに
 // こちらだけ古い一覧を持ち続けます。
 const (
-	retryAttempts     = 4
-	retryInitialDelay = 1.0
-	retryMaxDelay     = 8.0
+	retryAttempts     int32   = 4
+	retryInitialDelay float64 = 1.0
+	retryMaxDelay     float64 = 8.0
 )
 
 // NewAgentReviewer は、ADK エージェントの review.WorkspaceReviewer を構築します。
@@ -55,9 +55,9 @@ func geminiClientConfig(cfg *config.Config) genai.ClientConfig {
 		Location: geminiLocationID,
 		HTTPOptions: genai.HTTPOptions{
 			RetryOptions: &genai.HTTPRetryOptions{
-				Attempts:     new(int32(retryAttempts)),
-				InitialDelay: new(float64(retryInitialDelay)),
-				MaxDelay:     new(float64(retryMaxDelay)),
+				Attempts:     new(retryAttempts),
+				InitialDelay: new(retryInitialDelay),
+				MaxDelay:     new(retryMaxDelay),
 			},
 		},
 	}
