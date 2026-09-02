@@ -133,10 +133,13 @@ type HTTPConfig struct {
 type AuthConfig struct {
 	GoogleClientID     string `env:"GOOGLE_CLIENT_ID"`
 	GoogleClientSecret string `env:"GOOGLE_CLIENT_SECRET"`
-	// SessionSecret はセッションデータのHMAC署名用シークレットキーです。
-	SessionSecret string `env:"SESSION_SECRET"`
-	// SessionEncryptKey はセッションデータのAES暗号化用シークレットキーです。 16, 24, 32 バイトのいずれかである必要があります。
-	SessionEncryptKey string   `env:"SESSION_ENCRYPT_KEY"`
+	// SessionDatabase は、セッションを置く Firestore データベースです。
+	//
+	// ジョブ状態用とは別に取ります。データベース名は識別子で後から変えられないため、
+	// 兼ねると片方で名前が実態と合わなくなります。
+	SessionDatabase string `env:"SESSION_FIRESTORE_DATABASE" envDefault:"sessions"`
+	// SessionCollection は、セッションを置くコレクションです。
+	SessionCollection string   `env:"SESSION_FIRESTORE_COLLECTION" envDefault:"sessions"`
 	AllowedEmails     []string `env:"ALLOWED_EMAILS"`
 	AllowedDomains    []string `env:"ALLOWED_DOMAINS"`
 	// AllowedM2MServiceAccounts は、JSON API をサーバー間通信（OIDC Bearer）で呼べる

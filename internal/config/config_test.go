@@ -40,8 +40,6 @@ func validBase() *Config {
 		Auth: AuthConfig{
 			GoogleClientID:     "client-id",
 			GoogleClientSecret: "client-secret",
-			SessionSecret:      "session-secret",
-			SessionEncryptKey:  "1234567890123456",
 			AllowedEmails:      []string{"user@example.com"},
 		},
 	}
@@ -82,11 +80,6 @@ func TestValidateEssentialConfig(t *testing.T) {
 				c.Auth.AllowedDomains = nil
 			},
 			wantErr: "認可リスト",
-		},
-		{
-			name:    "invalid encrypt key length",
-			mutate:  func(c *Config) { c.Auth.SessionEncryptKey = "short" },
-			wantErr: "長さが不正",
 		},
 		{
 			// 既定値へ黙って落ちると、古いモデルを指したまま動き続けます。

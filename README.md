@@ -162,8 +162,7 @@ API キー経路は配線していません。
   `GCP_PROJECT_ID` / `GCS_REVIEW_BUCKET` / `TASK_DISPATCH_DEADLINE`
 - **web 面**: `GCP_LOCATION_ID` / `CLOUD_TASKS_QUEUE_ID` / `WORKER_URL` /
   `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` と OAuth 一式（`GOOGLE_CLIENT_ID` /
-  `GOOGLE_CLIENT_SECRET` / `SESSION_SECRET` / `SESSION_ENCRYPT_KEY` /
-  `ALLOWED_EMAILS` か `ALLOWED_DOMAINS`）
+  `GOOGLE_CLIENT_SECRET` / `ALLOWED_EMAILS` か `ALLOWED_DOMAINS`）
 - **worker 面**: `PIPELINE_TIMEOUT` / `ALLOWED_TASK_SERVICE_ACCOUNTS`
 
 **worker 面は OAuth 系を要求しません。** 面ごとにサービスを分けた意味（worker の env を
@@ -218,8 +217,8 @@ Google のリリース周期であってこのリポジトリの都合ではな�
 | :--- | :--- | :--- |
 | `GOOGLE_CLIENT_ID` | OAuth クライアント ID（リダイレクト URI は `<SERVICE_URL>/auth/callback`） | `xxxx.apps.googleusercontent.com` |
 | `GOOGLE_CLIENT_SECRET` | OAuth シークレット | `GOCSPX-xxxx...` |
-| `SESSION_SECRET` | セッションの HMAC 署名用シークレット | `openssl rand -base64 32` |
-| `SESSION_ENCRYPT_KEY` | セッションの AES 暗号化用シークレット（16/24/32 バイト。長さが違うと起動時に落ちます） | `openssl rand -base64 24`（32 文字になります） |
+| `SESSION_FIRESTORE_DATABASE` | セッションを置く Firestore データベース（既定 `sessions`）。**ジョブ状態用とは別に取ります** | `sessions` |
+| `SESSION_FIRESTORE_COLLECTION` | セッションを置くコレクション（既定 `sessions`） | `sessions` |
 | `ALLOWED_EMAILS` / `ALLOWED_DOMAINS` | アクセスを許可するメールまたはドメイン。**どちらか一方は必要**（両方空だと誰もログインできません） | `user@example.com,user2@example.com` / `example.com` |
 
 ### 2. 必要なIAMロールの設定
@@ -231,7 +230,8 @@ web 面が `TASK_CALLER_SERVICE_ACCOUNT_EMAIL`（署名者 = web SA）を指定�
 IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必要な権限は次のとおりです。
 
 - **web 面の SA**: GCS バケットの読み書き（受付記録・履歴表示・削除）、Cloud Tasks キューへの
-  タスク投入と `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` を指定した OIDC トークンの発行（ActAs）
+  タスク投入と `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` を指定した OIDC トークンの発行（ActAs）、
+  **セッション用 Firestore データベースの読み書き**
 - **worker 面の SA**: GCS バケットの読み書き（結果保存・進行状況）、Vertex AI の呼び出し
 - 共通: 使用するシークレットの読み取り
 
@@ -241,6 +241,8 @@ IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必�
   操作まで許します。プロジェクトレベルで付けると、無関係なバケットにも到達します
 - **シークレットはシークレット単位で付けてください。** プロジェクトレベルだと全シークレットに
   到達します
+- **セッション用の Firestore には TTL ポリシーが要ります**（対象は `expiresAt`）。クッキーと違い
+  保存した実体は自分では消えないため、設定しないとセッションが無期限に溜まります
 
 設定が不足していると `403 Forbidden` になります。
 

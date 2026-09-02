@@ -57,7 +57,7 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 	role := appCtx.Config.Server.Role
 
 	if role.ServesWeb() {
-		authHandler, err := createAuthHandler(appCtx.Config)
+		authHandler, err := createAuthHandler(appCtx.Config, appCtx.SessionStore)
 		if err != nil {
 			return nil, err
 		}
@@ -102,22 +102,25 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 }
 
 // createAuthHandler は、提供された設定(Config)に基づいて認証ハンドラーを初期化して返します。
-func createAuthHandler(cfg *config.Config) (*session.Handler, error) {
+//
+// セッションの保存先は呼び出し元が渡します。既定を持たないのは gcp-kit 側の判断で、
+// プロセス内に持つ実装へ黙って倒れると、Cloud Run のインスタンスが替わるたびに
+// 利用者がログアウトされ、開発中は 1 インスタンスなので気付けないためです。
+func createAuthHandler(cfg *config.Config, store session.Store) (*session.Handler, error) {
 	redirectURL, err := url.JoinPath(cfg.Server.ServiceURL, "/auth/callback")
 	if err != nil {
 		return nil, fmt.Errorf("リダイレクトURLの構築失敗: %w", err)
 	}
 
 	return session.New(session.Config{
-		ClientID:          cfg.Auth.GoogleClientID,
-		ClientSecret:      cfg.Auth.GoogleClientSecret,
-		RedirectURL:       redirectURL,
-		SessionAuthKey:    cfg.Auth.SessionSecret,
-		SessionEncryptKey: cfg.Auth.SessionEncryptKey,
-		SessionName:       defaultSessionName,
-		IsSecureCookie:    cfg.IsSecureServiceURL(),
-		AllowedEmails:     cfg.Auth.AllowedEmails,
-		AllowedDomains:    cfg.Auth.AllowedDomains,
+		ClientID:       cfg.Auth.GoogleClientID,
+		ClientSecret:   cfg.Auth.GoogleClientSecret,
+		RedirectURL:    redirectURL,
+		SessionName:    defaultSessionName,
+		Store:          store,
+		IsSecureCookie: cfg.IsSecureServiceURL(),
+		AllowedEmails:  cfg.Auth.AllowedEmails,
+		AllowedDomains: cfg.Auth.AllowedDomains,
 	})
 }
 
