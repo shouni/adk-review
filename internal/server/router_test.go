@@ -14,7 +14,6 @@ import (
 	"github.com/shouni/gcp-kit/auth/session"
 	"github.com/shouni/gcp-kit/worker"
 
-	"github.com/gorilla/sessions"
 	"github.com/shouni/adk-review/internal/builder"
 	"github.com/shouni/adk-review/internal/config"
 	"github.com/shouni/adk-review/internal/domain"
@@ -37,14 +36,13 @@ func newTestAuthHandler(t *testing.T) *session.Handler {
 	t.Helper()
 
 	h, err := session.New(session.Config{
-		ClientID:          "client-id",
-		ClientSecret:      "client-secret",
-		RedirectURL:       "https://service.example.com/auth/callback",
-		SessionAuthKey:    "1234567890abcdef",
-		SessionEncryptKey: "1234567890123456",
-		SessionName:       "test-session",
-		IsSecureCookie:    true,
-		AllowedEmails:     []string{"tester@example.com"},
+		ClientID:       "client-id",
+		ClientSecret:   "client-secret",
+		RedirectURL:    "https://service.example.com/auth/callback",
+		Store:          session.NewMemoryStore(session.StoreConfig{}),
+		SessionName:    "test-session",
+		IsSecureCookie: true,
+		AllowedEmails:  []string{"tester@example.com"},
 	})
 	if err != nil {
 		t.Fatalf("session.New() error = %v", err)
@@ -64,21 +62,18 @@ func newRouterForTest(t *testing.T) http.Handler {
 		Auth: config.AuthConfig{
 			GoogleClientID:     "client-id",
 			GoogleClientSecret: "client-secret",
-			SessionSecret:      "1234567890abcdef",
-			SessionEncryptKey:  "1234567890123456",
 			AllowedEmails:      []string{"tester@example.com"},
 		},
 	}
 
 	authHandler, err := session.New(session.Config{
-		ClientID:          cfg.Auth.GoogleClientID,
-		ClientSecret:      cfg.Auth.GoogleClientSecret,
-		RedirectURL:       cfg.Server.ServiceURL + "/auth/callback",
-		SessionAuthKey:    cfg.Auth.SessionSecret,
-		SessionEncryptKey: cfg.Auth.SessionEncryptKey,
-		SessionName:       "test-session",
-		IsSecureCookie:    true,
-		AllowedEmails:     cfg.Auth.AllowedEmails,
+		ClientID:       cfg.Auth.GoogleClientID,
+		ClientSecret:   cfg.Auth.GoogleClientSecret,
+		RedirectURL:    cfg.Server.ServiceURL + "/auth/callback",
+		Store:          session.NewMemoryStore(session.StoreConfig{}),
+		SessionName:    "test-session",
+		IsSecureCookie: true,
+		AllowedEmails:  cfg.Auth.AllowedEmails,
 	})
 	if err != nil {
 		t.Fatalf("failed to create auth handler: %v", err)
@@ -165,7 +160,7 @@ func TestCSRFAutoGenPopulatesContextOnGet(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(loggedInCookie(t))
+	req.AddCookie(loggedInCookie(t, authHandler))
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 
 	if token == "" {
@@ -186,7 +181,7 @@ func TestCSRFAutoGenSkipsPost(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodPost, "/submit_review", nil)
-	req.AddCookie(loggedInCookie(t))
+	req.AddCookie(loggedInCookie(t, authHandler))
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 
 	if token != "" {
@@ -209,10 +204,11 @@ func TestFormRendersCSRFTokenFromMiddleware(t *testing.T) {
 		t.Fatalf("failed to create web handler: %v", err)
 	}
 
-	handler := auth.Require(newTestAuthHandler(t))(http.HandlerFunc(webHandler.HandleReviewForm))
+	authHandler := newTestAuthHandler(t)
+	handler := auth.Require(authHandler)(http.HandlerFunc(webHandler.HandleReviewForm))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(loggedInCookie(t))
+	req.AddCookie(loggedInCookie(t, authHandler))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -389,26 +385,17 @@ func TestResponsesCarrySecurityHeaders(t *testing.T) {
 	}
 }
 
-// loggedInCookie は、ログイン済みセッションを表すクッキーを返します。
+// loggedInCookie は、h でログイン済みのセッションを作り、そのクッキーを返します。
 //
 // CSRF トークンの発行は認証を通ったあとに行われるため、OAuth のコールバックを
-// 経ずにログイン状態を作ります。newTestAuthHandler と同じ鍵・セッション名で
-// 組み立てないと Handler 側が読めません。
-func loggedInCookie(t *testing.T) *http.Cookie {
+// 経ずにログイン状態を作ります。クッキーは h 自身に焼かせます。自前でストアを
+// 組み立てると、セッションの実体は h の側にあるので読めません。
+func loggedInCookie(t *testing.T, h *session.Handler) *http.Cookie {
 	t.Helper()
 
-	store := sessions.NewCookieStore([]byte("1234567890abcdef"), []byte("1234567890123456"))
-	store.Options = &sessions.Options{Path: "/", MaxAge: 3600, HttpOnly: true, SameSite: http.SameSiteLaxMode}
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
-	sess, err := store.Get(req, "test-session")
-	if err != nil {
-		t.Fatalf("store.Get() error = %v", err)
-	}
-	sess.Values[session.DefaultUserSessionKey] = "tester@example.com"
-	if err := sess.Save(req, rec); err != nil {
-		t.Fatalf("sess.Save() error = %v", err)
+	if err := h.IssueSession(rec, httptest.NewRequest(http.MethodGet, "/", nil), "tester@example.com"); err != nil {
+		t.Fatalf("IssueSession() error = %v", err)
 	}
 
 	cookies := rec.Result().Cookies()

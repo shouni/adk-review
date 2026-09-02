@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/shouni/gcp-kit/auth/session"
 	"github.com/shouni/go-remote-io/remoteio"
 	"github.com/shouni/go-review-kit/review"
 
@@ -24,6 +25,8 @@ type Container struct {
 	History     domain.HistoryRepository
 	// 非同期タスクの投入
 	TaskEnqueuer TaskEnqueuer
+	// SessionStore はログインセッションの保存先です。web 面だけが持ちます。
+	SessionStore session.Store
 	// レビューの実行
 	Pipeline domain.Pipeline
 	// 外部アダプター

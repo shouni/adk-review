@@ -514,13 +514,12 @@ func TestReviewDetailShowsRerunLinkOnlyWhenRerunnable(t *testing.T) {
 // 通したうえで値の中身まで確かめます。
 func TestReviewDetailRendersCSRFTokenForDelete(t *testing.T) {
 	authHandler, err := session.New(session.Config{
-		ClientID:          "client-id",
-		ClientSecret:      "client-secret",
-		RedirectURL:       "https://service.example.com/auth/callback",
-		SessionAuthKey:    "1234567890abcdef",
-		SessionEncryptKey: "1234567890123456",
-		SessionName:       "test-session",
-		AllowedEmails:     []string{"tester@example.com"},
+		ClientID:      "client-id",
+		ClientSecret:  "client-secret",
+		RedirectURL:   "https://service.example.com/auth/callback",
+		Store:         session.NewMemoryStore(session.StoreConfig{}),
+		SessionName:   "test-session",
+		AllowedEmails: []string{"tester@example.com"},
 	})
 	if err != nil {
 		t.Fatalf("session.New() error = %v", err)

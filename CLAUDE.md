@@ -99,6 +99,20 @@ JSON を返します（`negotiate.WantsJSON`）。分けると同じ取得処理
   呼び出し元は再試行すべき場面で諦めます。
 - `GET /jobs/{jobID}` と `GET /history/{jobID}` を分けているのは、後者が指摘の全文を
   含むためです。完了検知のたびに全文を返すのは重すぎます。
+- **セッションの実体は Firestore にあり、クッキーが運ぶのは不透明な ID だけです。**
+  そのためセッション鍵（`SESSION_SECRET` / `SESSION_ENCRYPT_KEY`）はもうありません。
+  置き場所は `SESSION_FIRESTORE_DATABASE`（既定 `sessions`）で、**ジョブ状態用とは
+  別のデータベースを指します。** データベース名は識別子で後から変えられないので、
+  兼ねると片方で名前が実態と合わなくなります。
+  - **TTL ポリシー（`expiresAt`）はインフラ側の必須設定です。** クッキーと違い保存した
+    実体は自分では消えないため、無いとセッションが無期限に溜まります。読み出し側でも
+    期限を見ているので、遅延しても期限切れが通ることはありません（gcp-kit の責務）。
+  - テストは `session.NewMemoryStore` を使います。**プロセス内に持つ実装なので本番では
+    使えません**（Cloud Run のインスタンスが替わるたびに全員ログアウトされ、しかも
+    開発中は 1 インスタンスなので気付けません）。
+  - `loggedInCookie` は `Handler.IssueSession` にクッキーを焼かせます。**自前でストアを
+    組み立てないでください。** 実体はハンドラー側にあるので読めません（以前は同じ鍵で
+    CookieStore を組み直しており、gcp-kit の内部形式の写しになっていました）。
 - 認証は `auth.Protected(M2M, Auth)` で、ブラウザはセッション + CSRF、サーバー間は
   OIDC Bearer です。**`CrossOriginProtection` はヘッダーを持たない呼び出しを素通しします**
   （Go の仕様。`Sec-Fetch-Site` も `Origin` も無ければ非ブラウザとみなす）。ここが変わると

@@ -3,23 +3,23 @@ module github.com/shouni/adk-review
 go 1.27
 
 require (
+	cloud.google.com/go/firestore v1.25.0
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/go-cmp v0.7.0
-	github.com/gorilla/sessions v1.4.0
-	github.com/shouni/gcp-kit v1.14.1
+	github.com/shouni/gcp-kit v1.15.0
 	github.com/shouni/go-http-kit v1.11.0
 	github.com/shouni/go-job-kit v1.3.1
 	github.com/shouni/go-notify v1.4.0
 	github.com/shouni/go-prompt-kit v1.7.0
-	github.com/shouni/go-remote-io v1.11.0
+	github.com/shouni/go-remote-io v1.11.2
 	github.com/shouni/go-review-kit v1.9.0
 	github.com/shouni/go-serve-kit v1.0.0
 	github.com/shouni/go-utils v1.7.1
 	github.com/shouni/netarmor v1.4.0
 	go.yaml.in/yaml/v3 v3.0.5
-	google.golang.org/adk/v2 v2.2.0
-	google.golang.org/genai v1.70.0
+	google.golang.org/adk/v2 v2.3.0
+	google.golang.org/genai v1.71.0
 )
 
 require (
@@ -30,8 +30,9 @@ require (
 	cloud.google.com/go/cloudtasks v1.19.0 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.13.0 // indirect
+	cloud.google.com/go/longrunning v1.2.0 // indirect
 	cloud.google.com/go/monitoring v1.30.0 // indirect
-	cloud.google.com/go/storage v1.65.1 // indirect
+	cloud.google.com/go/storage v1.66.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.36.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.60.0 // indirect
@@ -60,7 +61,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.21 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.0 // indirect
-	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jellydator/ttlcache/v3 v3.4.1 // indirect
@@ -79,12 +79,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 // indirect
 	go.opentelemetry.io/otel v1.46.0 // indirect
-	// v0.21.0 で log.Value / log.KeyValue が消え（attribute.Value / attribute.KeyValue へ
-	// 統合されました）、それを呼ぶ adk v2.2.0（最新）の internal/telemetry がビルドできません。
-	// adk が追従するまで上げられないため、go get -u の後もここは戻してください。
-	// v0.21.0 は log.Value / log.KeyValue を落としており、google.golang.org/adk/v2 v2.2.0
-	// （最新）がビルドできなくなります。adk 側が追随するまで v0.20.0 に固定します。
-	go.opentelemetry.io/otel/log v0.20.0 // indirect
+	go.opentelemetry.io/otel/log v0.21.0 // indirect
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.46.0 // indirect
