@@ -29,7 +29,7 @@ var _ review.Notifier = (*SlackAdapter)(nil)
 
 // NewSlackAdapter は新しいアダプターインスタンスを作成します。
 // webhookURL が空の場合は通知を行わないアダプターを返します。
-func NewSlackAdapter(httpClient httpkit.Requester, webhookURL string) (*SlackAdapter, error) {
+func NewSlackAdapter(httpClient httpkit.Poster, webhookURL string) (*SlackAdapter, error) {
 	notifier, err := slack.NewNotifier(httpClient, webhookURL)
 	if err != nil {
 		return nil, fmt.Errorf("slackクライアントの初期化に失敗しました: %w", err)

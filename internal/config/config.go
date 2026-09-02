@@ -16,12 +16,7 @@ import (
 const (
 	// DefaultHTTPTimeout は外部 HTTP 通信のタイムアウトの既定値です。
 	// HTTPConfig.Timeout の envDefault と同じ値で、ズレはテストが検知します。
-	DefaultHTTPTimeout = 30 * time.Second
-
-	// DefaultShutdownTimeout は SIGTERM 後にサーバーの停止を待つ上限の既定値です。
-	// Cloud Run が SIGKILL するまでの猶予より長く取っても待ち切れないため、
-	// 兄弟アプリと同じく短めに置きます。
-	DefaultShutdownTimeout = 15 * time.Second
+	DefaultHTTPTimeout = 10 * time.Second
 
 	// DefaultMaxDiffBytes は、AI へ送る差分の上限の既定値です（320 KiB）。
 	// PipelineConfig.MaxDiffBytes の envDefault と同じ値で、ズレはテストが検知します。
@@ -41,9 +36,6 @@ type ServerConfig struct {
 	// 同じく明示が必須で、未設定・未知の値は起動時（LoadConfig）にエラーになります。
 	// 面ごとに別サービスとしてデプロイし、both はローカル開発でのみ使います。
 	Role serverrole.Role `env:"SERVER_ROLE"`
-	// ShutdownTimeout は SIGTERM 後に停止を待つ上限です。env からは読まず、
-	// normalize が既定値で埋めます。
-	ShutdownTimeout time.Duration `env:"-"`
 }
 
 // TasksConfig は Cloud Tasks キューの設定と、受信時の OIDC 検証の設定です。
@@ -134,7 +126,7 @@ type StorageConfig struct {
 type HTTPConfig struct {
 	// Timeout は Slack 通知など外部 HTTP 呼び出しの上限です。
 	// 遅い相手に当たったときに再ビルドなしで伸ばせるよう env にしてあります。
-	Timeout time.Duration `env:"HTTP_TIMEOUT" envDefault:"30s"`
+	Timeout time.Duration `env:"HTTP_TIMEOUT" envDefault:"10s"`
 }
 
 // AuthConfig は認証と認可の設定です。web 面だけが読みます。
@@ -202,7 +194,6 @@ func (c *Config) normalize() error {
 	c.Server.Role = role
 
 	c.Server.ServiceURL = strings.TrimSpace(c.Server.ServiceURL)
-	c.Server.ShutdownTimeout = DefaultShutdownTimeout
 
 	workerURL, err := normalizeWorkerURL(c.Server.Role, c.Tasks.WorkerURL, c.Server.ServiceURL)
 	if err != nil {
