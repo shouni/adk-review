@@ -35,8 +35,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	// WriteTimeout を置かないのも既定どおりです。レビューの実行は worker 側で数分
 	// かかることがあり、置くと正常な応答を途中で切ります。
 	return cloudrun.Serve(ctx, cloudrun.Config{
-		Port:            cfg.Server.Port,
-		Handler:         NewRouter(appHandlers, cfg.GCP.ProjectID),
-		ShutdownTimeout: cfg.Server.ShutdownTimeout,
+		Port:    cfg.Server.Port,
+		Handler: NewRouter(appHandlers, cfg.GCP.ProjectID),
 	})
 }

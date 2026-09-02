@@ -339,9 +339,6 @@ func TestDefaultsMatchEnvDefaults(t *testing.T) {
 	if cfg.HTTP.Timeout != DefaultHTTPTimeout {
 		t.Errorf("HTTP_TIMEOUT の既定 = %s, want %s", cfg.HTTP.Timeout, DefaultHTTPTimeout)
 	}
-	if cfg.Server.ShutdownTimeout != DefaultShutdownTimeout {
-		t.Errorf("ShutdownTimeout = %s, want %s", cfg.Server.ShutdownTimeout, DefaultShutdownTimeout)
-	}
 	// ★ 三段のタイムアウトと違い、ここは既定値を持つ側です（理由は MaxDiffBytes の doc）。
 	if cfg.Pipeline.MaxDiffBytes != DefaultMaxDiffBytes {
 		t.Errorf("MAX_DIFF_BYTES の既定 = %d, want %d", cfg.Pipeline.MaxDiffBytes, DefaultMaxDiffBytes)
