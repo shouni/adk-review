@@ -2,10 +2,13 @@ package adapters
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"runtime/pprof"
 	"time"
 
+	"github.com/shouni/gcp-kit/worker"
 	"github.com/shouni/go-job-kit/jobstatus"
 	"github.com/shouni/go-review-kit/review"
 	"github.com/shouni/go-utils/slogctx"
@@ -74,6 +77,37 @@ func (p *ReviewPipeline) Execute(ctx context.Context, req domain.ReviewRequest) 
 	result, report, err := p.runner.Run(ctx, toReviewRequest(req))
 	p.recordOutcome(ctx, req, result, report, err)
 
+	return classifyForRetry(err)
+}
+
+// permanentCauses は、同じ依頼を配り直しても結果が変わらない失敗です。
+//
+// いずれも入力そのものが原因で、時間を置いても同じところで落ちます。ここに
+// 挙げていない失敗（モデルの空応答・壊れた出力・Vertex や GCS の一時障害）は
+// 再配信で直り得るので、再試行に任せます。
+var permanentCauses = []error{
+	review.ErrInvalidRequest,
+	review.ErrEmptyDiff,
+	review.ErrDiffTooLarge,
+	review.ErrRefNotFound,
+	review.ErrUnsupportedRepoURL,
+}
+
+// classifyForRetry は、再配信しても直らない失敗に worker.ErrPermanent を被せます。
+//
+// これが無いと、恒久的な失敗も 500 として再配信の対象になります。差分が上限を
+// 超えている依頼を配り直しても同じ場所で落ちるだけで、利用者には同じ失敗通知が
+// 2 通届きます。被せた場合は 2xx で打ち切られますが、失敗として記録も通知も
+// 済んでいるので、利用者から見た結果は変わりません。
+func classifyForRetry(err error) error {
+	if err == nil {
+		return nil
+	}
+	for _, cause := range permanentCauses {
+		if errors.Is(err, cause) {
+			return fmt.Errorf("%w: %w", worker.ErrPermanent, err)
+		}
+	}
 	return err
 }
 

@@ -3,11 +3,13 @@ package adapters
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/shouni/gcp-kit/worker"
 	"github.com/shouni/go-job-kit/jobstatus"
 	"github.com/shouni/go-review-kit/pipeline"
 	"github.com/shouni/go-review-kit/review"
@@ -481,4 +483,50 @@ func TestBuildOutcomeStatusRecordsMetrics(t *testing.T) {
 			t.Errorf("失敗なのに成果物の URI が入っています: %q", got.ReportURI)
 		}
 	})
+}
+
+// TestClassifyForRetry は、再配信で直る失敗と直らない失敗の仕分けを固定します。
+//
+// 取り違えるとどちらも静かに壊れます。恒久的な失敗を再試行に回すと同じ通知が
+// 2 通届き、一時的な失敗を恒久扱いにすると、再配信で直ったはずのジョブが
+// 成功扱いで打ち切られて二度と実行されません。
+func TestClassifyForRetry(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		err           error
+		wantPermanent bool
+	}{
+		"成功":       {err: nil},
+		"依頼が不正":    {err: review.ErrInvalidRequest, wantPermanent: true},
+		"差分が空":     {err: review.ErrEmptyDiff, wantPermanent: true},
+		"差分が大きすぎる": {err: review.ErrDiffTooLarge, wantPermanent: true},
+		"ref が無い":  {err: review.ErrRefNotFound, wantPermanent: true},
+		"対応していないリポジトリ URL":  {err: review.ErrUnsupportedRepoURL, wantPermanent: true},
+		"包まれていても仕分ける":       {err: fmt.Errorf("差分の取得に失敗: %w", review.ErrDiffTooLarge), wantPermanent: true},
+		"モデルの空応答は再試行に回す":    {err: review.ErrEmptyResponse},
+		"壊れた出力は再試行に回す":      {err: review.ErrInvalidReport},
+		"素性の分からない失敗は再試行に回す": {err: errors.New("vertex ai: 503")},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got := classifyForRetry(tt.err)
+			if tt.err == nil {
+				if got != nil {
+					t.Fatalf("classifyForRetry(nil) = %v, want nil", got)
+				}
+				return
+			}
+			if permanent := errors.Is(got, worker.ErrPermanent); permanent != tt.wantPermanent {
+				t.Errorf("permanent = %v, want %v", permanent, tt.wantPermanent)
+			}
+			// 仕分けても元の原因は辿れること（記録と通知が理由を出せなくなります）。
+			if !errors.Is(got, tt.err) {
+				t.Errorf("原因が失われました: %v", got)
+			}
+		})
+	}
 }
