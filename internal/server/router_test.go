@@ -118,7 +118,7 @@ func TestNewRouter_RouteReachabilityAndGuards(t *testing.T) {
 		{
 			name:         "worker route requires oidc",
 			method:       http.MethodPost,
-			path:         "/tasks/execute_review",
+			path:         domain.WorkerTaskPath,
 			expectedCode: http.StatusUnauthorized,
 		},
 		{
@@ -178,7 +178,7 @@ func TestCSRFAutoGenSkipsPost(t *testing.T) {
 		token = handlers.CSRFTokenFromContext(r.Context())
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "/submit_review", nil)
+	req := httptest.NewRequest(http.MethodPost, "/jobs", nil)
 	req.AddCookie(loggedInCookie(t, authHandler))
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -203,7 +203,7 @@ func TestFormRendersCSRFTokenFromMiddleware(t *testing.T) {
 	}
 
 	authHandler := newTestAuthHandler(t)
-	handler := auth.Require(authHandler)(http.HandlerFunc(webHandler.HandleReviewForm))
+	handler := auth.Require(authHandler)(http.HandlerFunc(webHandler.HandleForm))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(loggedInCookie(t, authHandler))
@@ -247,7 +247,7 @@ func TestDeleteRequiresAuth(t *testing.T) {
 	r := newRouterForTest(t)
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/history/20260810-213000-a1b2c3d4", nil))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/jobs/20260810-213000-a1b2c3d4", nil))
 
 	if w.Code == http.StatusNoContent {
 		t.Fatal("未認証の削除が通っています")

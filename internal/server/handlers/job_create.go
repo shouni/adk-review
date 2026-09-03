@@ -8,14 +8,11 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 
-	"github.com/shouni/go-utils/jobid"
-
 	"github.com/shouni/adk-review/internal/domain"
-
 	"github.com/shouni/go-serve-kit/respond"
+	"github.com/shouni/go-utils/jobid"
 )
 
 // maxSubmitBody は、JSON で受け取る投入内容の上限です。
@@ -47,11 +44,11 @@ type submitResponse struct {
 	DetailURL string `json:"detail_url"`
 }
 
-// HandleReviewSubmit は POST リクエストを処理します。
+// HandleJobCreate は、レビューを投入します（POST /jobs）。
 //
 // フォームと JSON body の両方を受け付けます。処理の中身は同じで、入力の読み取りと
 // 応答の形だけが分かれます。
-func (h *Handler) HandleReviewSubmit(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) HandleJobCreate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// 1. 入力の取得（フォーム / JSON）
@@ -95,7 +92,11 @@ func (h *Handler) HandleReviewSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 6. 成功応答を返します
+	//
+	// Location は進捗のポーリング先です。JSON の本文を読まなくても次に叩く URL が
+	// 分かるよう、画面向けの応答にも同じヘッダを付けます。
 	slog.InfoContext(ctx, "レビュータスク投入成功", "repo", req.RepoURL, "job_id", req.JobID)
+	w.Header().Set("Location", req.PublicURL)
 	if respond.WantsJSON(w, r) {
 		respond.JSON(w, r, http.StatusAccepted, submitResponse{JobID: req.JobID, DetailURL: req.PublicURL})
 		return
@@ -164,9 +165,9 @@ func (h *Handler) assignJob(req *domain.ReviewRequest) error {
 		return err
 	}
 
-	detailURL, err := url.JoinPath(h.cfg.Server.ServiceURL, historyBasePath, jobID)
-	if err != nil {
-		return fmt.Errorf("詳細URLの構築に失敗しました: %w", err)
+	detailURL := h.jobURL(jobID)
+	if detailURL == "" {
+		return errors.New("詳細URLの構築に失敗しました")
 	}
 
 	req.JobID = jobID
@@ -204,21 +205,4 @@ func (h *Handler) discardQueued(ctx context.Context, jobID string) {
 // newJobID はジョブ ID を採番します。
 func newJobID() (string, error) {
 	return jobid.New("")
-}
-
-func defaultReviewFormPageData() ReviewFormPageData {
-	return ReviewFormPageData{
-		BaseBranch:    defaultBaseBranch,
-		FeatureBranch: defaultFeatureBranch,
-		ReviewMode:    defaultReviewMode,
-	}
-}
-
-func reviewFormPageData(req domain.ReviewRequest, data ReviewFormPageData) ReviewFormPageData {
-	data.RepoURL = req.RepoURL
-	data.BaseBranch = req.BaseBranch
-	data.FeatureBranch = req.FeatureBranch
-	data.ReviewMode = req.Mode
-	data.ModelName = req.ModelName
-	return data
 }

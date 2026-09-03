@@ -58,7 +58,7 @@ func TestAppHandlersValidate(t *testing.T) {
 			wantErr: "web 面",
 		},
 		{
-			// ★ これを通すと /tasks/execute_review が無認証で開くか、
+			// ★ これを通すと /tasks/execute-review が無認証で開くか、
 			// あるいは登録されずタスクが 404 で捨てられます。
 			name:    "worker ハンドラーだけで OIDC 検証が無い",
 			h:       AppHandlers{Worker: workerHandler},

@@ -90,15 +90,16 @@ Slack 通知も残りません。** `review-queue` は `max_attempts = 1` なの
 JSON を返します（`negotiate.WantsJSON`）。分けると同じ取得処理が 2 本になり、片方だけ
 直したときに画面の表示と機械可読な結果が食い違います。
 
-- `POST /submit_review` は JSON body も受け付けますが、**`domain.ReviewRequest` を直接
+- `POST /jobs` は JSON body も受け付けますが、**`domain.ReviewRequest` を直接
   デコードしません**（`submitInput` を挟みます）。呼び出し元に `StorageURI` を決めさせると、
   成果物をバケット内の任意のパスへ書かせられます。知らない項目は黙って捨てず
   エラーにします（捨てると、送った側が効いたと思い込みます）。
 - **`jobstatus.ErrNotFound` は 404、`ErrUnavailable` は 502 です**（`recordErrorStatus`）。
   同一視すると、権限剥奪やストレージ障害が「そんなレビューはありません」として返り、
   呼び出し元は再試行すべき場面で諦めます。
-- `GET /jobs/{jobID}` と `GET /history/{jobID}` を分けているのは、後者が指摘の全文を
-  含むためです。完了検知のたびに全文を返すのは重すぎます。
+- **ジョブは `/jobs/{jobID}` 一本で指します**（public-docs の URL 命名規約）。JSON は
+  進行状況と `report_url` だけで、指摘の全文は `GET /jobs/{jobID}/report` です。
+  完了検知のたびに全文を返すのは重すぎます。
 - **セッションの実体は Firestore にあり、クッキーが運ぶのは不透明な ID だけです。**
   そのためセッション鍵（`SESSION_SECRET` / `SESSION_ENCRYPT_KEY`）はもうありません。
   置き場所は `SESSION_FIRESTORE_DATABASE`（既定 `sessions`）で、**ジョブ状態用とは
