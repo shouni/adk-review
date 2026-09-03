@@ -122,13 +122,6 @@ func TestNewRouter_RouteReachabilityAndGuards(t *testing.T) {
 			expectedCode: http.StatusUnauthorized,
 		},
 		{
-			// 改名前に積まれたタスクの受け口。同じ保護を受けていること。
-			name:         "legacy worker route requires oidc",
-			method:       http.MethodPost,
-			path:         domain.LegacyWorkerTaskPath,
-			expectedCode: http.StatusUnauthorized,
-		},
-		{
 			name:         "unknown route is 404",
 			method:       http.MethodGet,
 			path:         "/not-found",
@@ -253,16 +246,11 @@ func TestDeleteRequiresAuth(t *testing.T) {
 
 	r := newRouterForTest(t)
 
-	// 旧パスも同じハンドラへ流すので、同じ保護を受けていること。
-	for _, path := range []string{"/jobs/20260810-213000-a1b2c3d4", "/history/20260810-213000-a1b2c3d4"} {
-		t.Run(path, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, path, nil))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/jobs/20260810-213000-a1b2c3d4", nil))
 
-			if w.Code == http.StatusNoContent {
-				t.Fatal("未認証の削除が通っています")
-			}
-		})
+	if w.Code == http.StatusNoContent {
+		t.Fatal("未認証の削除が通っています")
 	}
 }
 

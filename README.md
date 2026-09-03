@@ -266,8 +266,7 @@ IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必�
 | `/jobs` | GET | ✅ | — | 履歴一覧（`?page=` / `?per_page=`） |
 | `/jobs/{jobID}` | GET / DELETE | ✅ | — | 詳細。JSON は進行状況と `report_url`（完了検知のポーリング先を兼ねる）。削除は実行中なら 409 |
 | `/jobs/{jobID}/report` | GET | ✅ | — | 指摘の全文（JSON のみ。実行中は 409、成果物なしは 404） |
-| `/submit_review`, `/history`, `/history/{jobID}` | POST / GET / DELETE | ✅ | — | 旧パス。同じ処理へ流す。MCP サーバーが `/jobs` へ切り替わったら消す |
-| `/tasks/execute-review` | POST | — | ✅ | Cloud Tasks からの実行（OIDC 検証）。旧 `/tasks/execute_review` も改名前に積まれたタスクのために受ける |
+| `/tasks/execute-review` | POST | — | ✅ | Cloud Tasks からの実行（OIDC 検証） |
 
 担当しない面のルートは登録しません。役割とハンドラが噛み合わない構成は、
 ルーターが 404 を返す前に起動時に落とします（`builder.AppHandlers.Validate`）。

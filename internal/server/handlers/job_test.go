@@ -575,7 +575,7 @@ func TestJobDetailRendersCSRFTokenForDelete(t *testing.T) {
 	// 見たいのは「コンテキストのトークンがテンプレートへ届くか」なので、
 	// 認証を一往復させず直接載せます（発行そのものは gcp-kit 側のテストが見ます）。
 	_ = authHandler
-	handler := http.HandlerFunc(buildHandlerWithHistory(t, history).HandleLegacyReviewDetail)
+	handler := http.HandlerFunc(buildHandlerWithHistory(t, history).HandleJob)
 
 	req := detailRequest("20260810-213000-a1b2c3d4")
 	req = req.WithContext(session.WithCSRFToken(req.Context(), "csrf-test-token"))

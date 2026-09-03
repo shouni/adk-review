@@ -164,7 +164,7 @@ func detailFailure(ctx context.Context, jobID string, err error) (int, string) {
 	return code, "レビューを取得できませんでした。"
 }
 
-// HandleJobDelete は、レビュー履歴を削除します（DELETE /jobs/{jobID}。旧パス /history/{jobID} も同じ）。
+// HandleJobDelete は、レビュー履歴を削除します（DELETE /jobs/{jobID}）。
 //
 // メソッドを DELETE にし、応答を本文なしで返すのは兄弟アプリと揃えるためです
 // （ブラウザ側は assets/static/js/app.js の App.deleteResource が呼びます）。

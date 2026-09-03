@@ -24,7 +24,7 @@ type JobListPageData struct {
 	Error string
 }
 
-// HandleJobList はジョブ一覧を表示します（GET /jobs。旧パス /history も同じ）。
+// HandleJobList はジョブ一覧を表示します（GET /jobs）。
 func (h *Handler) HandleJobList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

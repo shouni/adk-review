@@ -17,7 +17,6 @@ import (
 	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/builder"
 	"github.com/shouni/adk-review/internal/domain"
-	"github.com/shouni/adk-review/internal/server/handlers"
 )
 
 // compressionLevel は gzip の圧縮レベルです。
@@ -97,7 +96,6 @@ func registerRoutes(r chi.Router, h *builder.AppHandlers) {
 			r.Delete("/{jobID}", h.Web.HandleJobDelete)
 		})
 
-		registerLegacyRoutes(r, h.Web)
 	})
 
 	// C. ワーカー専用ルート (OIDC認証)
@@ -113,7 +111,6 @@ func registerRoutes(r chi.Router, h *builder.AppHandlers) {
 
 		if h.Worker != nil {
 			r.Post(domain.WorkerTaskPath, h.Worker.ProcessTask)
-			r.Post(domain.LegacyWorkerTaskPath, h.Worker.ProcessTask)
 		}
 	})
 }
@@ -131,15 +128,4 @@ func registerStaticRoutes(r chi.Router) {
 		panic(fmt.Sprintf("static assets: %v", err))
 	}
 	r.Handle("/static/*", files)
-}
-
-// registerLegacyRoutes は、/jobs へ寄せる前のパスを同じハンドラへ流します。
-//
-// MCP サーバーが /jobs 配下へ切り替わり、そのデプロイが済んだら関数ごと消します。
-// GET /history/{jobID} だけは JSON の形も旧いままです（HandleLegacyReviewDetail の項）。
-func registerLegacyRoutes(r chi.Router, web *handlers.Handler) {
-	r.Post("/submit_review", web.HandleJobCreate)
-	r.Get("/history", web.HandleJobList)
-	r.Get("/history/{jobID}", web.HandleLegacyReviewDetail)
-	r.Delete("/history/{jobID}", web.HandleJobDelete)
 }

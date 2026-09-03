@@ -44,7 +44,7 @@ type submitResponse struct {
 	DetailURL string `json:"detail_url"`
 }
 
-// HandleJobCreate は、レビューを投入します（POST /jobs。旧パス /submit_review も同じ）。
+// HandleJobCreate は、レビューを投入します（POST /jobs）。
 //
 // フォームと JSON body の両方を受け付けます。処理の中身は同じで、入力の読み取りと
 // 応答の形だけが分かれます。

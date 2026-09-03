@@ -99,8 +99,7 @@ JSON を返します（`negotiate.WantsJSON`）。分けると同じ取得処理
   呼び出し元は再試行すべき場面で諦めます。
 - **ジョブは `/jobs/{jobID}` 一本で指します**（public-docs の URL 命名規約）。JSON は
   進行状況と `report_url` だけで、指摘の全文は `GET /jobs/{jobID}/report` です。
-  完了検知のたびに全文を返すのは重すぎます。`/submit_review` と `/history` は旧パスで、
-  同じハンドラへ流しています。MCP サーバーが `/jobs` へ切り替わったら消します。
+  完了検知のたびに全文を返すのは重すぎます。
 - **セッションの実体は Firestore にあり、クッキーが運ぶのは不透明な ID だけです。**
   そのためセッション鍵（`SESSION_SECRET` / `SESSION_ENCRYPT_KEY`）はもうありません。
   置き場所は `SESSION_FIRESTORE_DATABASE`（既定 `sessions`）で、**ジョブ状態用とは
