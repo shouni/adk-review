@@ -2,9 +2,7 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 
@@ -19,11 +17,6 @@ import (
 	"github.com/shouni/adk-review/assets"
 	"github.com/shouni/adk-review/internal/builder"
 	"github.com/shouni/adk-review/internal/domain"
-)
-
-const (
-	layoutTemplatePath           = "templates/layout.html"
-	crossOriginErrorTemplatePath = "templates/cross_origin_error.html"
 )
 
 // NewRouter は、ミドルウェアとルーティングを統合した http.Handler を構築します。
@@ -84,10 +77,6 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 		return
 	}
 
-	// 同一オリジンのブラウザ送信だけを許可する。
-	crossOriginProtection := http.NewCrossOriginProtection()
-	crossOriginProtection.SetDenyHandler(crossOriginErrorHandler())
-
 	// A. 公開ルート（認証もCSRFも不要なログイン周り）。worker 面では Auth ごと無いため
 	// 登録しません。
 	if h.Auth != nil {
@@ -111,10 +100,6 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 		//
 		// セッション経路では Authenticate が CSRF の検証と発行もまとめて行います。
 		r.Use(auth.Protected(h.M2M, h.Auth))
-
-		// ヘッダーを持たないリクエスト（Sec-Fetch-Site も Origin も無い）は
-		// 非ブラウザとみなされて通ります。M2M クライアントはここを素通りします。
-		r.Use(crossOriginProtection.Handler)
 
 		r.Get("/", h.Web.HandleReviewForm)
 		r.Post("/submit_review", h.Web.HandleReviewSubmit)
@@ -140,37 +125,6 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 			r.Post(domain.WorkerTaskPath, h.Worker.ProcessTask)
 		}
 	})
-}
-
-// crossOriginErrorHandler は、越境送信として弾いたリクエストに返すハンドラーです。
-func crossOriginErrorHandler() http.Handler {
-	tmpl := template.Must(template.ParseFS(
-		assets.Templates,
-		layoutTemplatePath,
-		crossOriginErrorTemplatePath,
-	))
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeCrossOriginErrorResponse(w, r, tmpl)
-	})
-}
-
-// writeCrossOriginErrorResponse は、越境送信を弾いたことを 403 で返します。
-func writeCrossOriginErrorResponse(w http.ResponseWriter, r *http.Request, tmpl *template.Template) {
-	slog.WarnContext(r.Context(), "cross-origin request blocked", "method", r.Method, "path", r.URL.Path)
-
-	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "layout.html", nil); err != nil {
-		slog.ErrorContext(r.Context(), "failed to render cross-origin error template", "error", err)
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte("送信元を確認できなかったため、リクエストをブロックしました。ページを開き直して再送信してください。"))
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusForbidden)
-	_, _ = buf.WriteTo(w)
 }
 
 // compressionLevel は gzip の圧縮レベルです。
