@@ -70,13 +70,13 @@
 ジョブID採番              Git 差分 → ADK エージェント → report.json 保存
   ↓                     ↘ status.json 記録 / Slack 通知
 受付を記録（queued）
-  ↓                       履歴 /history → /history/{jobID}
+  ↓                       履歴 /jobs → /jobs/{jobID}
 Cloud Tasks 投入    →
 ```
 
 **受付の記録は投入より先です。** 逆にすると、Cloud Tasks の配送が数十ミリ秒で届くため
 「ワーカーが running を書く → web が queued で踏み潰す」順序が起こり、実行中のジョブが
-履歴では受付済みのまま止まって見えます（`internal/server/handlers/submit_handler.go`）。
+履歴では受付済みのまま止まって見えます（`internal/server/handlers/job_create.go`）。
 
 * **非同期実行**: 重い解析を Cloud Tasks へ逃がし、Web 側のタイムアウトを回避します。
 * **依存性注入**: `internal/builder` が全コンポーネントを組み立てます。通知先や保存先を
@@ -99,7 +99,7 @@ gs://{GCS_REVIEW_BUCKET}/reviews/{jobID}/
   同じ配下に置いているため、実行中・失敗・スキップのジョブも一覧に並びます。
 * **一覧用のメタと結果の全文を分けています。** 一覧は 1 行につき 1 回 `status.json` を
   読むため、指摘の全文を同じファイルへ入れると読み取り量が指摘件数に比例して増えます。
-* **結果は JSON で保存し、表示は `/history/{jobID}` が行います。** 整形済みの HTML を
+* **結果は JSON で保存し、表示は `/jobs/{jobID}` が行います。** 整形済みの HTML を
   置いて署名付き URL で配ると、アプリの認証を迂回できてしまううえ、同じ内容の見た目が
   詳細画面と 2 系統に分かれます。
 * **削除はプレフィックスの一括走査で行います。** 消す側は「そのジョブが何を作ったか」を
@@ -261,18 +261,19 @@ IAM の定義はインフラ管理リポジトリ（Terraform）が正で、必�
 | `/static/*` | GET | ✅ | ✅ | CSS / JS と `vendor/` の Bootstrap（認証の外側）。CDN を参照しないため CSP は `default-src 'self'`。バージョンがパスに入る `vendor/` は `Cache-Control: public, max-age=31536000, immutable`、自前アセットは `public, max-age=300, must-revalidate` |
 | `/auth/login`, `/auth/callback` | GET | ✅ | — | Google OAuth |
 | `/` | GET | ✅ | — | レビュー依頼フォーム。`?from={jobID}` でそのレビューの依頼内容を引き継ぎます（詳細画面の「同じ内容で再依頼」） |
-| `/submit_review` | POST | ✅ | — | 依頼の受付とタスク投入 |
 | `/modes` | GET | ✅ | — | 選べるレビューモード一覧（JSON のみ） |
-| `/jobs/{jobID}` | GET | ✅ | — | 進行状況だけを返す（JSON のみ。完了検知用） |
-| `/history` | GET | ✅ | — | 履歴一覧 |
-| `/history/{jobID}` | GET / DELETE | ✅ | — | 詳細表示 / 削除（実行中は 409） |
-| `/tasks/execute_review` | POST | — | ✅ | Cloud Tasks からの実行（OIDC 検証） |
+| `/jobs` | POST | ✅ | — | 依頼の受付とタスク投入。`202` と `Location: /jobs/{jobID}` を返す |
+| `/jobs` | GET | ✅ | — | 履歴一覧（`?page=` / `?per_page=`） |
+| `/jobs/{jobID}` | GET / DELETE | ✅ | — | 詳細。JSON は進行状況と `report_url`（完了検知のポーリング先を兼ねる）。削除は実行中なら 409 |
+| `/jobs/{jobID}/report` | GET | ✅ | — | 指摘の全文（JSON のみ。実行中は 409、成果物なしは 404） |
+| `/submit_review`, `/history`, `/history/{jobID}` | POST / GET / DELETE | ✅ | — | 旧パス。同じ処理へ流す。MCP サーバーが `/jobs` へ切り替わったら消す |
+| `/tasks/execute-review` | POST | — | ✅ | Cloud Tasks からの実行（OIDC 検証）。旧 `/tasks/execute_review` も改名前に積まれたタスクのために受ける |
 
 担当しない面のルートは登録しません。役割とハンドラが噛み合わない構成は、
 ルーターが 404 を返す前に起動時に落とします（`builder.AppHandlers.Validate`）。
 
 **web 面のルートは、ブラウザと機械の両方から使えます。** `Accept: application/json` を
-付けると同じルートが JSON を返し、`POST /submit_review` は JSON body も受け付けます
+付けると同じルートが JSON を返し、`POST /jobs` は JSON body も受け付けます
 （項目名はフォームと同じで、`domain.ReviewRequest` の json タグに揃えてあります）。
 別ルートを立てないのは、同じ取得処理を 2 本持つと画面と API が食い違うためです。
 

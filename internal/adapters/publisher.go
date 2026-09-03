@@ -15,7 +15,7 @@ const contentTypeJSON = "application/json; charset=utf-8"
 
 // ReportPublisher は、レビュー結果全文を report.json として保存する review.Publisher です。
 //
-// HTML へ整形せず JSON のまま置くのは、表示を詳細画面（/history/{jobID}）が受け持つ
+// HTML へ整形せず JSON のまま置くのは、表示を詳細画面（/jobs/{jobID}）が受け持つ
 // ためです。整形済みの HTML も置くと、同じ内容の見た目が 2 系統に分かれるうえ、
 // 署名付き URL 経由でアプリの認証を迂回して読めてしまいます。
 type ReportPublisher struct {

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"errors"
 	"html"
 	"net/http"
@@ -9,109 +8,120 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/shouni/adk-review/internal/config"
-	"github.com/shouni/adk-review/internal/domain"
 )
 
-// fakeStatusStore は進行状況の記録先のフェイクです。
-type fakeStatusStore struct {
-	err   error
-	saved []domain.JobStatus
+// --- POST /jobs (JSON) ---
 
-	// getStatus / getErr は Get の応答です。getErr が nil のときだけ getStatus を返します。
-	getStatus domain.JobStatus
-	getErr    error
+func newJSONSubmitRequest(body string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	return req
 }
 
-func (f *fakeStatusStore) Get(_ context.Context, _ string) (domain.JobStatus, error) {
-	if f.getErr != nil {
-		return domain.JobStatus{}, f.getErr
-	}
-	if f.getStatus.JobID == "" {
-		return domain.JobStatus{}, errors.New("not recorded")
-	}
-	return f.getStatus, nil
-}
+func TestHandleJobCreate_AcceptsJSON(t *testing.T) {
+	t.Parallel()
 
-func (f *fakeStatusStore) Save(_ context.Context, jobID string, status domain.JobStatus) error {
-	if f.err != nil {
-		return f.err
-	}
-	status.JobID = jobID
-	f.saved = append(f.saved, status)
-	return nil
-}
+	h, enq, _, _ := buildTestHandler(t, nil, nil)
+	rec := httptest.NewRecorder()
+	h.HandleJobCreate(rec, newJSONSubmitRequest(`{
+		"repo_url": "git@github.com:org/repo.git",
+		"base_branch": "main",
+		"feature_branch": "develop",
+		"mode": "code",
+		"model_name": "gemini-2.5-pro"
+	}`))
 
-// fakeHistory は履歴のフェイクです。投入直後にキャッシュが捨てられたかだけを見ます。
-type fakeHistory struct {
-	invalidated int
-}
-
-func (f *fakeHistory) List(context.Context, int, int) (domain.HistoryPage, error) {
-	return domain.HistoryPage{}, nil
-}
-
-func (f *fakeHistory) Get(context.Context, string) (domain.ReviewDetail, error) {
-	return domain.ReviewDetail{}, nil
-}
-
-func (f *fakeHistory) Delete(context.Context, string) error { return nil }
-
-func (f *fakeHistory) Invalidate() { f.invalidated++ }
-
-type fakeEnqueuer struct {
-	err      error
-	called   bool
-	received domain.ReviewRequest
-}
-
-func (f *fakeEnqueuer) Enqueue(_ context.Context, payload domain.ReviewRequest) error {
-	f.called = true
-	f.received = payload
-	return f.err
-}
-
-// testJobID は、テストで採番されるジョブ ID です。
-const testJobID = "20260415-102030-abcdef123456"
-
-func buildTestHandler(t *testing.T, jobIDErr, enqueueErr error) (*Handler, *fakeEnqueuer, *fakeStatusStore, *fakeHistory) {
-	t.Helper()
-
-	enq := &fakeEnqueuer{err: enqueueErr}
-	store := &fakeStatusStore{}
-	history := &fakeHistory{}
-
-	h, err := NewHandler(Deps{
-		Config: &config.Config{
-			Server:  config.ServerConfig{ServiceURL: "https://service.example.com"},
-			AI:      config.AIConfig{GeminiModels: []string{"gemini-2.5-flash", "gemini-2.5-pro"}},
-			Storage: config.StorageConfig{GCSBucket: "bucket-a"},
-		},
-		TaskEnqueuer: enq,
-		Layout:       domain.NewStorageLayout("bucket-a"),
-		StatusStore:  store,
-		History:      history,
-	})
-	if err != nil {
-		t.Fatalf("failed to build handler: %v", err)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202\n%s", rec.Code, rec.Body.String())
 	}
 
-	h.now = func() time.Time {
-		return time.Date(2026, 4, 15, 10, 20, 30, 0, time.UTC)
+	got := decodeJSON[submitResponse](t, rec)
+	if got.JobID != testJobID {
+		t.Errorf("job_id = %q, want %q", got.JobID, testJobID)
 	}
-	h.newJobID = func() (string, error) {
-		if jobIDErr != nil {
-			return "", jobIDErr
-		}
-		return testJobID, nil
+	wantURL := "https://service.example.com/jobs/" + testJobID
+	if got.DetailURL != wantURL {
+		t.Errorf("detail_url = %q, want %q", got.DetailURL, wantURL)
 	}
-	return h, enq, store, history
+	// 本文を読まなくてもポーリング先が分かるように、Location にも同じ URL を載せます。
+	if loc := rec.Header().Get("Location"); loc != wantURL {
+		t.Errorf("Location = %q, want %q", loc, wantURL)
+	}
+	if !enq.called || enq.received.Mode != "code" {
+		t.Errorf("キューへ渡った内容が違います: %+v", enq.received)
+	}
+}
+
+// 呼び出し元に保存先を決めさせないこと。
+//
+// storage_uri を受け付けると、成果物をバケット内の任意のパスへ書かせられます。
+// 黙って捨てるのではなくエラーにするのは、送った側が効いたと思い込まないためです。
+func TestHandleJobCreate_RejectsCallerSuppliedStorageURI(t *testing.T) {
+	t.Parallel()
+
+	h, enq, _, _ := buildTestHandler(t, nil, nil)
+	rec := httptest.NewRecorder()
+	h.HandleJobCreate(rec, newJSONSubmitRequest(`{
+		"repo_url": "git@github.com:org/repo.git",
+		"base_branch": "main",
+		"feature_branch": "develop",
+		"mode": "code",
+		"model_name": "gemini-2.5-pro",
+		"storage_uri": "gs://other-bucket/anywhere.json"
+	}`))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400\n%s", rec.Code, rec.Body.String())
+	}
+	if enq.called {
+		t.Error("不正な入力なのにキューへ投入されました")
+	}
+}
+
+func TestHandleJobCreate_JSONValidationError(t *testing.T) {
+	t.Parallel()
+
+	h, enq, _, _ := buildTestHandler(t, nil, nil)
+	rec := httptest.NewRecorder()
+	h.HandleJobCreate(rec, newJSONSubmitRequest(`{
+		"repo_url": "https://github.com/org/repo.git",
+		"base_branch": "main",
+		"feature_branch": "develop",
+		"mode": "code",
+		"model_name": "gemini-2.5-pro"
+	}`))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400\n%s", rec.Code, rec.Body.String())
+	}
+	// 画面ではなく理由だけを返します（HTML が混ざっていないこと）。
+	if got := decodeJSON[errorBody](t, rec); got.Error == "" {
+		t.Error("エラー本文が空です")
+	}
+	if enq.called {
+		t.Error("不正な入力なのにキューへ投入されました")
+	}
+}
+
+// フォーム投入は JSON を求めない限り従来どおり HTML を返すこと。
+func TestHandleJobCreate_FormStillRendersHTML(t *testing.T) {
+	t.Parallel()
+
+	h, _, _, _ := buildTestHandler(t, nil, nil)
+	rec := httptest.NewRecorder()
+	h.HandleJobCreate(rec, newSubmitRequest(validFormBody()))
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html", ct)
+	}
 }
 
 func newSubmitRequest(body string) *http.Request {
-	req := httptest.NewRequest(http.MethodPost, "/submit_review", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return req
 }
@@ -126,10 +136,10 @@ func validFormBody() string {
 	return v.Encode()
 }
 
-func TestHandleReviewSubmit_ParseError(t *testing.T) {
+func TestHandleJobCreate_ParseError(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, nil, nil)
 	w := httptest.NewRecorder()
-	h.HandleReviewSubmit(w, newSubmitRequest("%zz"))
+	h.HandleJobCreate(w, newSubmitRequest("%zz"))
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", w.Code)
@@ -139,7 +149,7 @@ func TestHandleReviewSubmit_ParseError(t *testing.T) {
 	}
 }
 
-func TestHandleReviewSubmit_ValidationError(t *testing.T) {
+func TestHandleJobCreate_ValidationError(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, nil, nil)
 	w := httptest.NewRecorder()
 
@@ -150,7 +160,7 @@ func TestHandleReviewSubmit_ValidationError(t *testing.T) {
 	v.Set("mode", "invalid-mode")
 	v.Set("model_name", "gemini-2.5-flash")
 
-	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
+	h.HandleJobCreate(w, newSubmitRequest(v.Encode()))
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", w.Code)
@@ -160,7 +170,7 @@ func TestHandleReviewSubmit_ValidationError(t *testing.T) {
 	}
 }
 
-func TestHandleReviewSubmit_ValidationErrorPreservesSelectedModelName(t *testing.T) {
+func TestHandleJobCreate_ValidationErrorPreservesSelectedModelName(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, nil, nil)
 	w := httptest.NewRecorder()
 
@@ -171,7 +181,7 @@ func TestHandleReviewSubmit_ValidationErrorPreservesSelectedModelName(t *testing
 	v.Set("mode", "code")
 	v.Set("model_name", "gemini-2.5-pro")
 
-	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
+	h.HandleJobCreate(w, newSubmitRequest(v.Encode()))
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", w.Code)
@@ -185,7 +195,7 @@ func TestHandleReviewSubmit_ValidationErrorPreservesSelectedModelName(t *testing
 	}
 }
 
-func TestHandleReviewSubmit_ValidationErrorPreservesFormValues(t *testing.T) {
+func TestHandleJobCreate_ValidationErrorPreservesFormValues(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, nil, nil)
 	w := httptest.NewRecorder()
 
@@ -196,7 +206,7 @@ func TestHandleReviewSubmit_ValidationErrorPreservesFormValues(t *testing.T) {
 	v.Set("mode", "novel")
 	v.Set("model_name", "gemini-2.5-pro")
 
-	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
+	h.HandleJobCreate(w, newSubmitRequest(v.Encode()))
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", w.Code)
@@ -222,7 +232,7 @@ func TestHandleReviewSubmit_ValidationErrorPreservesFormValues(t *testing.T) {
 	}
 }
 
-func TestHandleReviewSubmit_InvalidModelName(t *testing.T) {
+func TestHandleJobCreate_InvalidModelName(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, nil, nil)
 	w := httptest.NewRecorder()
 
@@ -233,7 +243,7 @@ func TestHandleReviewSubmit_InvalidModelName(t *testing.T) {
 	v.Set("mode", "code")
 	v.Set("model_name", "gemini-invalid")
 
-	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
+	h.HandleJobCreate(w, newSubmitRequest(v.Encode()))
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", w.Code)
@@ -244,10 +254,10 @@ func TestHandleReviewSubmit_InvalidModelName(t *testing.T) {
 }
 
 // ジョブ ID を採番できなければ保存先も閲覧先も決まらないため、投入まで進みません。
-func TestHandleReviewSubmit_JobIDError(t *testing.T) {
+func TestHandleJobCreate_JobIDError(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, errors.New("entropy failure"), nil)
 	w := httptest.NewRecorder()
-	h.HandleReviewSubmit(w, newSubmitRequest(validFormBody()))
+	h.HandleJobCreate(w, newSubmitRequest(validFormBody()))
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d", w.Code)
@@ -257,10 +267,10 @@ func TestHandleReviewSubmit_JobIDError(t *testing.T) {
 	}
 }
 
-func TestHandleReviewSubmit_EnqueueError(t *testing.T) {
+func TestHandleJobCreate_EnqueueError(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, nil, errors.New("queue unavailable"))
 	w := httptest.NewRecorder()
-	h.HandleReviewSubmit(w, newSubmitRequest(validFormBody()))
+	h.HandleJobCreate(w, newSubmitRequest(validFormBody()))
 
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected status 503, got %d", w.Code)
@@ -270,10 +280,10 @@ func TestHandleReviewSubmit_EnqueueError(t *testing.T) {
 	}
 }
 
-func TestHandleReviewSubmit_Success(t *testing.T) {
+func TestHandleJobCreate_Success(t *testing.T) {
 	h, enq, store, history := buildTestHandler(t, nil, nil)
 	w := httptest.NewRecorder()
-	h.HandleReviewSubmit(w, newSubmitRequest(validFormBody()))
+	h.HandleJobCreate(w, newSubmitRequest(validFormBody()))
 
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("expected status 202, got %d", w.Code)
@@ -293,7 +303,7 @@ func TestHandleReviewSubmit_Success(t *testing.T) {
 	if enq.received.StorageURI != wantURI {
 		t.Fatalf("storage uri = %s, want %s", enq.received.StorageURI, wantURI)
 	}
-	wantURL := "https://service.example.com/history/" + testJobID
+	wantURL := "https://service.example.com/jobs/" + testJobID
 	if enq.received.PublicURL != wantURL {
 		t.Fatalf("public url = %s, want %s", enq.received.PublicURL, wantURL)
 	}
@@ -314,12 +324,12 @@ func TestHandleReviewSubmit_Success(t *testing.T) {
 }
 
 // 記録に失敗しても投入は成立しているため、受付は成功として返します。
-func TestHandleReviewSubmit_StatusRecordFailureStillAccepts(t *testing.T) {
+func TestHandleJobCreate_StatusRecordFailureStillAccepts(t *testing.T) {
 	h, enq, store, history := buildTestHandler(t, nil, nil)
 	store.err = errors.New("gcs unavailable")
 
 	w := httptest.NewRecorder()
-	h.HandleReviewSubmit(w, newSubmitRequest(validFormBody()))
+	h.HandleJobCreate(w, newSubmitRequest(validFormBody()))
 
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("expected status 202, got %d", w.Code)
@@ -332,7 +342,7 @@ func TestHandleReviewSubmit_StatusRecordFailureStillAccepts(t *testing.T) {
 	}
 }
 
-func TestHandleReviewSubmit_SuccessPreservesFormValues(t *testing.T) {
+func TestHandleJobCreate_SuccessPreservesFormValues(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, nil, nil)
 	w := httptest.NewRecorder()
 
@@ -346,7 +356,7 @@ func TestHandleReviewSubmit_SuccessPreservesFormValues(t *testing.T) {
 	v.Set("mode", "article")
 	v.Set("model_name", "gemini-2.5-pro")
 
-	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
+	h.HandleJobCreate(w, newSubmitRequest(v.Encode()))
 
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("expected status 202, got %d", w.Code)
@@ -372,7 +382,7 @@ func TestHandleReviewSubmit_SuccessPreservesFormValues(t *testing.T) {
 	}
 }
 
-func TestHandleReviewSubmit_UsesSelectedModelName(t *testing.T) {
+func TestHandleJobCreate_UsesSelectedModelName(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, nil, nil)
 	w := httptest.NewRecorder()
 
@@ -382,7 +392,7 @@ func TestHandleReviewSubmit_UsesSelectedModelName(t *testing.T) {
 	}
 	v.Set("model_name", "gemini-2.5-pro")
 
-	h.HandleReviewSubmit(w, newSubmitRequest(v.Encode()))
+	h.HandleJobCreate(w, newSubmitRequest(v.Encode()))
 
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("expected status 202, got %d", w.Code)

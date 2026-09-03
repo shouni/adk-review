@@ -101,13 +101,25 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 		// セッション経路では Authenticate が CSRF の検証と発行もまとめて行います。
 		r.Use(auth.Protected(h.M2M, h.Auth))
 
-		r.Get("/", h.Web.HandleReviewForm)
-		r.Post("/submit_review", h.Web.HandleReviewSubmit)
+		r.Get("/", h.Web.HandleForm)
 		r.Get("/modes", h.Web.HandleModes)
-		r.Get("/jobs/{jobID}", h.Web.HandleJobStatus)
-		r.Get("/history", h.Web.HandleHistory)
-		r.Get("/history/{jobID}", h.Web.HandleReviewDetail)
-		r.Delete("/history/{jobID}", h.Web.HandleReviewDelete)
+
+		// ジョブが唯一の主リソースです。投入から削除まで同じ /jobs/{jobID} で指し、
+		// 履歴は完了したジョブの一覧ビューです（public-docs の URL 命名規約）。
+		r.Route("/jobs", func(r chi.Router) {
+			r.Post("/", h.Web.HandleJobCreate)
+			r.Get("/", h.Web.HandleJobList)
+			r.Get("/{jobID}", h.Web.HandleJob)
+			r.Get("/{jobID}/report", h.Web.HandleJobReport)
+			r.Delete("/{jobID}", h.Web.HandleJobDelete)
+		})
+
+		// 旧パス。MCP サーバーが /jobs 配下へ切り替わり、そのデプロイが済んだら消します。
+		// GET /history/{jobID} だけは JSON の形も旧いままです（HandleLegacyReviewDetail の項）。
+		r.Post("/submit_review", h.Web.HandleJobCreate)
+		r.Get("/history", h.Web.HandleJobList)
+		r.Get("/history/{jobID}", h.Web.HandleLegacyReviewDetail)
+		r.Delete("/history/{jobID}", h.Web.HandleJobDelete)
 	})
 
 	// C. ワーカー専用ルート (OIDC認証)
@@ -123,6 +135,7 @@ func setupRoutes(r chi.Router, h *builder.AppHandlers) {
 
 		if h.Worker != nil {
 			r.Post(domain.WorkerTaskPath, h.Worker.ProcessTask)
+			r.Post(domain.LegacyWorkerTaskPath, h.Worker.ProcessTask)
 		}
 	})
 }

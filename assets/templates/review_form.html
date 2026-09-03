@@ -34,7 +34,7 @@
     </div>
     {{end}}
 
-    <form action="/submit_review" method="POST" id="reviewForm" class="card p-4 shadow-sm border-0">
+    <form action="/jobs" method="POST" id="reviewForm" class="card p-4 shadow-sm border-0">
         {{if .CSRFToken}}
         <input type="hidden" name="{{.CSRFTokenField}}" value="{{.CSRFToken}}">
         {{end}}
