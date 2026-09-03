@@ -516,8 +516,8 @@ func TestReviewDetailRendersCSRFTokenForDelete(t *testing.T) {
 	authHandler, err := session.New(session.Config{
 		ClientID:      "client-id",
 		ClientSecret:  "client-secret",
-		RedirectURL:   "https://service.example.com/auth/callback",
-		Store:         session.NewMemoryStore(session.StoreConfig{}),
+		ServiceURL:    "https://service.example.com",
+		Store:         session.NewMemoryStore(),
 		SessionName:   "test-session",
 		AllowedEmails: []string{"tester@example.com"},
 	})

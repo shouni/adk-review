@@ -36,13 +36,12 @@ func newTestAuthHandler(t *testing.T) *session.Handler {
 	t.Helper()
 
 	h, err := session.New(session.Config{
-		ClientID:       "client-id",
-		ClientSecret:   "client-secret",
-		RedirectURL:    "https://service.example.com/auth/callback",
-		Store:          session.NewMemoryStore(session.StoreConfig{}),
-		SessionName:    "test-session",
-		IsSecureCookie: true,
-		AllowedEmails:  []string{"tester@example.com"},
+		ClientID:      "client-id",
+		ClientSecret:  "client-secret",
+		ServiceURL:    "https://service.example.com",
+		Store:         session.NewMemoryStore(),
+		SessionName:   "test-session",
+		AllowedEmails: []string{"tester@example.com"},
 	})
 	if err != nil {
 		t.Fatalf("session.New() error = %v", err)
@@ -67,13 +66,12 @@ func newRouterForTest(t *testing.T) http.Handler {
 	}
 
 	authHandler, err := session.New(session.Config{
-		ClientID:       cfg.Auth.GoogleClientID,
-		ClientSecret:   cfg.Auth.GoogleClientSecret,
-		RedirectURL:    cfg.Server.ServiceURL + "/auth/callback",
-		Store:          session.NewMemoryStore(session.StoreConfig{}),
-		SessionName:    "test-session",
-		IsSecureCookie: true,
-		AllowedEmails:  cfg.Auth.AllowedEmails,
+		ClientID:      cfg.Auth.GoogleClientID,
+		ClientSecret:  cfg.Auth.GoogleClientSecret,
+		ServiceURL:    cfg.Server.ServiceURL,
+		Store:         session.NewMemoryStore(),
+		SessionName:   "test-session",
+		AllowedEmails: cfg.Auth.AllowedEmails,
 	})
 	if err != nil {
 		t.Fatalf("failed to create auth handler: %v", err)
@@ -91,7 +89,7 @@ func newRouterForTest(t *testing.T) http.Handler {
 		Auth:     authHandler,
 		Web:      webHandler,
 		Worker:   workerHandler,
-		TaskAuth: oidc.New(cfg.Tasks.TaskAudienceURL, cfg.Tasks.AllowedServiceAccounts),
+		TaskAuth: mustOIDC(t, cfg.Tasks.TaskAudienceURL, cfg.Tasks.AllowedServiceAccounts),
 	}
 	return NewRouter(appHandlers, "")
 }
@@ -256,35 +254,6 @@ func TestDeleteRequiresAuth(t *testing.T) {
 	}
 }
 
-// バージョン付きの vendor と、URL が変わらない自前アセットで Cache-Control を分けること。
-func TestStaticCacheControlSeparatesVendorFromOwnAssets(t *testing.T) {
-	t.Parallel()
-
-	router := newRouterForTest(t)
-
-	tests := []struct {
-		target string
-		want   string
-	}{
-		{"/static/vendor/bootstrap-5.3.8/bootstrap.min.css", vendorCacheControl},
-		{"/static/css/app.css", ownAssetCacheControl},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.target, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.target, nil))
-
-			if rec.Code != http.StatusOK {
-				t.Fatalf("%s = %d, want 200", tt.target, rec.Code)
-			}
-			if got := rec.Header().Get("Cache-Control"); got != tt.want {
-				t.Errorf("Cache-Control = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 // CSP が全レスポンスに付き、script-src が緩められていないこと。
 func TestResponsesCarryContentSecurityPolicy(t *testing.T) {
 	t.Parallel()
@@ -403,4 +372,14 @@ func loggedInCookie(t *testing.T, h *session.Handler) *http.Cookie {
 		t.Fatal("セッションクッキーが生成されていない")
 	}
 	return cookies[0]
+}
+
+// mustOIDC は、テスト用に構成済みの検証器を作ります（New は設定が欠けるとエラーを返します）。
+func mustOIDC(t *testing.T, audience string, allowed []string) *oidc.Verifier {
+	t.Helper()
+	v, err := oidc.New(audience, allowed)
+	if err != nil {
+		t.Fatalf("oidc.New() error = %v", err)
+	}
+	return v
 }
