@@ -8,7 +8,7 @@ import (
 
 // Pipeline は、レビュー要求 1 件を最後まで処理する実行面です。
 //
-// 実体は internal/adapters の ReviewPipeline（go-review-kit のパイプラインの ACL）で、
+// 実体は internal/pipeline の Runner（go-review-kit のパイプラインの ACL）で、
 // worker 面だけが持ちます。
 type Pipeline interface {
 	Execute(ctx context.Context, payload ReviewRequest) error

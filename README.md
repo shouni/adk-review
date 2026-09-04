@@ -121,12 +121,13 @@ adk-review/
 │   └── assets.go      #   - embed.FS の定義と front matter の解析
 ├── internal/
 │   ├── adkagent/      # 【頭脳】ADK エージェント（llmagent + ツール + 出力スキーマ）
-│   ├── adapters/      # 【接続】Git / Slack / 結果保存 / プロンプト / パイプライン ACL
+│   ├── adapters/      # 【接続】Git / Slack / 結果保存 / プロンプト
 │   ├── app/           # 【基盤】Container による依存の保持とライフサイクル管理
 │   ├── builder/       # 【構築】役割（SERVER_ROLE）に応じた初期化と組み立て
 │   ├── config/        # 【設定】環境変数・定数・バリデーション
 │   ├── domain/        # 【中心】モデル、保存先の規約、ポート定義、ワーカーのルート定数
 │   ├── giturl/        # 【変換】リポジトリURLの解析と表示用パス
+│   ├── pipeline/      # 【本体】ワーカーの入口（worker.Lifecycle に go-review-kit を載せる ACL）
 │   ├── repository/    # 【読み取り】GCS 上のレビュー履歴
 │   └── server/        # 【玄関】HTTP サーバー、ルーティング、ハンドラ
 └── main.go            # 【起点】起動とシグナルハンドリング

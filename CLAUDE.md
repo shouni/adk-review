@@ -74,7 +74,7 @@ Slack 通知も残りません。** `review-queue` は `max_attempts = 1` なの
 
 **出力の上限（64Ki トークン）に当たっても全損にしません。** `review.ParseReport` が完結して
 いた範囲を拾い、`ParseInfo.Truncated` で知らせます。`adkagent` はそれを `review.RunInfo` へ、
-`ReviewPipeline` が `JobStatus.Truncated` へ流します。**`FinishReasonMaxTokens` を
+`pipeline.Runner` が `JobStatus.Truncated` へ流します。**`FinishReasonMaxTokens` を
 そこで失敗にしないでください。** 戻すと、完成していた Blocker の指摘ごと失う形に戻ります
 （実際に 1 件失っています）。拾える範囲が無かった場合だけエラーです。
 
@@ -233,7 +233,8 @@ Gemini のロケーションは `adapters.geminiLocationID`（`global`）に固�
 `internal/builder/pipeline.go` が `pipeline.WithRunTimeout` へ `PIPELINE_TIMEOUT` を渡します。
 **`Run` へ渡す context に自前で締切を被せないでください。** ライブラリが公開・通知のために
 行う切り離しより外側に掛かるため、打ち切りと同時に失敗通知まで落ちます
-（ACL 側で `context.WithTimeout` していた頃の形には戻さないこと）。
+（ACL 側で `context.WithTimeout` していた頃の形には戻さないこと。`worker.Lifecycle.Timeout` も
+同じ理由で 0 のままです）。
 
 ### ログは context に載せる
 
@@ -251,12 +252,13 @@ Gemini のロケーションは `adapters.geminiLocationID`（`global`）に固�
 ```text
 internal/
   adkagent/   ADK エージェント（llmagent + ツール + 出力スキーマ）※ genai 直接依存はここだけ
-  adapters/   Git / Slack / 保存 / プロンプト / パイプライン ACL
+  adapters/   Git / Slack / 保存 / プロンプト
   app/        Container（依存の保持とライフサイクル）
   builder/    SERVER_ROLE に応じた組み立て
   config/     環境変数・既定値・起動時検証
   domain/     モデル、保存先の規約、ポート定義、ワーカーのルート定数
   giturl/     リポジトリ URL の解析
+  pipeline/   ワーカーの入口。gcp-kit/worker.Lifecycle に go-review-kit を載せる ACL（public-docs のワーカー規約）
   repository/ GCS 上の履歴の読み取り
   server/     HTTP サーバー、ルーティング、ハンドラ
 ```
