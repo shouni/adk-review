@@ -143,8 +143,10 @@ type AuthConfig struct {
 	AllowedEmails     []string `env:"ALLOWED_EMAILS"`
 	AllowedDomains    []string `env:"ALLOWED_DOMAINS"`
 	// AllowedM2MServiceAccounts は、JSON API をサーバー間通信（OIDC Bearer）で呼べる
-	// サービスアカウントです。空なら M2M は無効で、web 面は人間の OAuth だけで動きます
-	// （web 面は画面が使えれば成立するため、ワーカー面のように必須にはしません）。
+	// サービスアカウントです。web 面では必須で、空だと起動しません（builder.newM2MVerifier →
+	// oidc.New が空の許可リストを拒みます）。M2M の経路は無効化できず、未設定でも検証が
+	// 必ず失敗してセッション認証へ落ちるため、設定漏れは「MCP ゲートウェイだけログイン画面を
+	// 受け取る」という形でしか現れません。意図的な無効化と区別できないので、空は設定漏れとして扱います。
 	//
 	// Cloud Tasks の ALLOWED_TASK_SERVICE_ACCOUNTS とは別の変数です。役割が
 	// 「他サービスからの呼び出し元」と「タスクの発行元」で反転するため、
