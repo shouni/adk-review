@@ -1,4 +1,4 @@
-package adapters
+package pipeline
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/shouni/gcp-kit/worker"
 	"github.com/shouni/go-job-kit/jobstatus"
-	"github.com/shouni/go-review-kit/pipeline"
+	reviewpipeline "github.com/shouni/go-review-kit/pipeline"
 	"github.com/shouni/go-review-kit/review"
 
 	"github.com/shouni/adk-review/internal/domain"
@@ -107,18 +107,25 @@ func (n *stubNotifier) result() (int, error) {
 type stubStore struct {
 	mu    sync.Mutex
 	saved []domain.JobStatus
+	// getErr を置くと、読み取りがその失敗になります（読めない事態の再現）。
+	getErr error
 }
 
 func (s *stubStore) Get(_ context.Context, jobID string) (domain.JobStatus, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.getErr != nil {
+		return domain.JobStatus{}, s.getErr
+	}
 	for _, v := range slices.Backward(s.saved) {
 		if v.JobID == jobID {
 			return v, nil
 		}
 	}
-	return domain.JobStatus{}, jobNotFound
+	// 未記録は本物の store と同じ ErrNotFound で返します。Recorder.Begin はこれを
+	// 「初回」として進み、それ以外の失敗は「読めない」として実行を見送ります。
+	return domain.JobStatus{}, jobstatus.ErrNotFound
 }
 
 func (s *stubStore) Save(_ context.Context, jobID string, status domain.JobStatus) error {
@@ -141,15 +148,8 @@ func (s *stubStore) states() []string {
 	return states
 }
 
-// jobNotFound は「未記録」を表すテスト用のエラーです。
-var jobNotFound = errNotRecorded{}
-
-type errNotRecorded struct{}
-
-func (errNotRecorded) Error() string { return "not recorded" }
-
 // newTestPipeline は、観察用フックを差し込んだパイプラインを組み立てます。
-func newTestPipeline(t *testing.T, source stubSource, publisher stubPublisher, opts ...pipeline.Option) reviewRunner {
+func newTestPipeline(t *testing.T, source stubSource, publisher stubPublisher, opts ...reviewpipeline.Option) reviewRunner {
 	t.Helper()
 	return newTestPipelineWith(t, source, publisher, &stubNotifier{}, opts...)
 }
@@ -159,11 +159,11 @@ func newTestPipelineWith(
 	source stubSource,
 	publisher stubPublisher,
 	notifier review.Notifier,
-	opts ...pipeline.Option,
+	opts ...reviewpipeline.Option,
 ) reviewRunner {
 	t.Helper()
 
-	p, err := pipeline.New(pipeline.Deps{
+	p, err := reviewpipeline.New(reviewpipeline.Deps{
 		Sources:           stubFactory{source: source},
 		Prompts:           stubPrompts{},
 		WorkspaceReviewer: stubReviewer{},
@@ -190,10 +190,10 @@ func testDomainRequest() domain.ReviewRequest {
 
 // ★ PIPELINE_TIMEOUT がレビューに効いていること。
 //
-// 締切を持つのはライブラリ（pipeline.WithRunTimeout）ですが、渡し忘れると
+// 締切を持つのはライブラリ（reviewpipeline.WithRunTimeout）ですが、渡し忘れると
 // Cloud Tasks の dispatch deadline が先に来て、プロセスごと SIGTERM になり
 // 失敗の記録も Slack 通知も残りません。配線されていることをここで固定します。
-func TestReviewPipeline_レビューに締切を被せる(t *testing.T) {
+func TestRunner_レビューに締切を被せる(t *testing.T) {
 	t.Parallel()
 
 	var reviewDeadline time.Time
@@ -202,11 +202,11 @@ func TestReviewPipeline_レビューに締切を被せる(t *testing.T) {
 	runner := newTestPipeline(t,
 		stubSource{seen: func(ctx context.Context) { reviewDeadline, hasDeadline = ctx.Deadline() }},
 		stubPublisher{},
-		pipeline.WithRunTimeout(timeout),
+		reviewpipeline.WithRunTimeout(timeout),
 	)
 
 	before := time.Now()
-	if err := NewReviewPipeline(runner, &stubStore{}).Execute(context.Background(), testDomainRequest()); err != nil {
+	if err := NewRunner(runner, &stubStore{}).Execute(context.Background(), testDomainRequest()); err != nil {
 		t.Fatalf("Execute() failed: %v", err)
 	}
 
@@ -219,7 +219,7 @@ func TestReviewPipeline_レビューに締切を被せる(t *testing.T) {
 }
 
 // 0 以下は無制限。ローカルでの長時間デバッグ用の逃げ道が塞がっていないこと。
-func TestReviewPipeline_ゼロなら無制限(t *testing.T) {
+func TestRunner_ゼロなら無制限(t *testing.T) {
 	t.Parallel()
 
 	var hasDeadline bool
@@ -228,7 +228,7 @@ func TestReviewPipeline_ゼロなら無制限(t *testing.T) {
 		stubPublisher{},
 	)
 
-	if err := NewReviewPipeline(runner, &stubStore{}).Execute(context.Background(), testDomainRequest()); err != nil {
+	if err := NewRunner(runner, &stubStore{}).Execute(context.Background(), testDomainRequest()); err != nil {
 		t.Fatalf("Execute() failed: %v", err)
 	}
 	if hasDeadline {
@@ -240,7 +240,7 @@ func TestReviewPipeline_ゼロなら無制限(t *testing.T) {
 //
 // 打ち切られた場合、保存する結果が無いので Publisher は呼ばれません。報告が要るのは
 // まさにこの場面なので、Notifier が期限切れでない context で呼ばれることを確かめます。
-func TestReviewPipeline_打ち切り後も通知は走る(t *testing.T) {
+func TestRunner_打ち切り後も通知は走る(t *testing.T) {
 	t.Parallel()
 
 	notifier := &stubNotifier{}
@@ -250,10 +250,10 @@ func TestReviewPipeline_打ち切り後も通知は走る(t *testing.T) {
 		}},
 		stubPublisher{},
 		notifier,
-		pipeline.WithRunTimeout(10*time.Millisecond),
+		reviewpipeline.WithRunTimeout(10*time.Millisecond),
 	)
 
-	if err := NewReviewPipeline(runner, &stubStore{}).Execute(context.Background(), testDomainRequest()); err == nil {
+	if err := NewRunner(runner, &stubStore{}).Execute(context.Background(), testDomainRequest()); err == nil {
 		t.Fatal("打ち切りがエラーとして返っていません")
 	}
 
@@ -270,13 +270,13 @@ func TestReviewPipeline_打ち切り後も通知は走る(t *testing.T) {
 }
 
 // 実行開始が記録され、試行回数が加算されること。
-func TestReviewPipeline_実行開始を記録する(t *testing.T) {
+func TestRunner_実行開始を記録する(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
 	runner := newTestPipeline(t, stubSource{}, stubPublisher{})
 
-	if err := NewReviewPipeline(runner, store).Execute(context.Background(), testDomainRequest()); err != nil {
+	if err := NewRunner(runner, store).Execute(context.Background(), testDomainRequest()); err != nil {
 		t.Fatalf("Execute() failed: %v", err)
 	}
 
@@ -291,7 +291,7 @@ func TestReviewPipeline_実行開始を記録する(t *testing.T) {
 
 // 完了済みのタスクが再配信されたら、レビューを実行せずに打ち切ること。
 // Cloud Tasks は at-least-once 配信のため、これが無いと AI の呼び出しが二重に走ります。
-func TestReviewPipeline_完了済みの再配信は打ち切る(t *testing.T) {
+func TestRunner_完了済みの再配信は打ち切る(t *testing.T) {
 	t.Parallel()
 
 	req := testDomainRequest()
@@ -306,7 +306,7 @@ func TestReviewPipeline_完了済みの再配信は打ち切る(t *testing.T) {
 		stubPublisher{},
 	)
 
-	if err := NewReviewPipeline(runner, store).Execute(context.Background(), req); err != nil {
+	if err := NewRunner(runner, store).Execute(context.Background(), req); err != nil {
 		t.Fatalf("Execute() failed: %v", err)
 	}
 	if reviewed {
@@ -314,9 +314,39 @@ func TestReviewPipeline_完了済みの再配信は打ち切る(t *testing.T) {
 	}
 }
 
+// 状態を読めなければレビューを実行せず、エラーを返して再配信に委ねること
+// （ワーカー規約 2.1 の 5）。以前は「二重実行のほうが回復可能」として進んでいましたが、
+// 進むと完了済みのジョブを作り直し、このガードが防ぐはずの費用を自分で払います。
+func TestRunner_状態を読めなければ実行しない(t *testing.T) {
+	t.Parallel()
+
+	unavailable := errors.New("gcs unavailable")
+	store := &stubStore{getErr: unavailable}
+
+	reviewed := false
+	runner := newTestPipeline(t,
+		stubSource{seen: func(context.Context) { reviewed = true }},
+		stubPublisher{},
+	)
+
+	err := NewRunner(runner, store).Execute(context.Background(), testDomainRequest())
+	if !errors.Is(err, unavailable) {
+		t.Fatalf("Execute() error = %v, want %v", err, unavailable)
+	}
+	if errors.Is(err, worker.ErrPermanent) {
+		t.Error("読めない事態が Permanent になっている（再配信で直り得るので 500 のまま）")
+	}
+	if reviewed {
+		t.Error("状態を読めないのにレビューが実行されている")
+	}
+	if states := store.states(); len(states) != 0 {
+		t.Errorf("読めないのに記録している: %v", states)
+	}
+}
+
 // 結末は Run の戻り値から記録します。以前は通知フックへ相乗りしていましたが、
 // Run が Report を返すようになったため直接組み立てられます。
-func TestReviewPipeline_結末を記録する(t *testing.T) {
+func TestRunner_結末を記録する(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -358,7 +388,7 @@ func TestReviewPipeline_結末を記録する(t *testing.T) {
 			store := &stubStore{}
 			runner := newTestPipeline(t, tt.source, tt.publisher)
 
-			_ = NewReviewPipeline(runner, store).Execute(context.Background(), testDomainRequest())
+			_ = NewRunner(runner, store).Execute(context.Background(), testDomainRequest())
 
 			// 1 件目は running、最後が結末です。
 			if len(store.saved) < 2 {
@@ -383,14 +413,14 @@ func TestReviewPipeline_結末を記録する(t *testing.T) {
 }
 
 // 成功時はレビューの中身（題目・判定）まで記録します。履歴一覧の 1 行になります。
-func TestReviewPipeline_結末にレビューの中身を載せる(t *testing.T) {
+func TestRunner_結末にレビューの中身を載せる(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
 	runner := newTestPipeline(t, stubSource{}, stubPublisher{})
 
 	req := testDomainRequest()
-	if err := NewReviewPipeline(runner, store).Execute(context.Background(), req); err != nil {
+	if err := NewRunner(runner, store).Execute(context.Background(), req); err != nil {
 		t.Fatalf("Execute() failed: %v", err)
 	}
 
@@ -408,17 +438,17 @@ func TestReviewPipeline_結末にレビューの中身を載せる(t *testing.T)
 
 // レビューが締切で打ち切られても結末は記録されること。
 // 記録まで期限切れの context で行うと、いちばん記録が要る場面で残りません。
-func TestReviewPipeline_打ち切り後も結末を記録する(t *testing.T) {
+func TestRunner_打ち切り後も結末を記録する(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
 	runner := newTestPipeline(t,
 		stubSource{seen: func(ctx context.Context) { <-ctx.Done() }},
 		stubPublisher{},
-		pipeline.WithRunTimeout(10*time.Millisecond),
+		reviewpipeline.WithRunTimeout(10*time.Millisecond),
 	)
 
-	_ = NewReviewPipeline(runner, store).Execute(context.Background(), testDomainRequest())
+	_ = NewRunner(runner, store).Execute(context.Background(), testDomainRequest())
 
 	states := store.states()
 	if len(states) < 2 || states[len(states)-1] != "failed" {

@@ -1,4 +1,4 @@
-package adapters
+package pipeline
 
 import (
 	"github.com/shouni/go-review-kit/review"
