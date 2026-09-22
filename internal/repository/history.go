@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 	"sync"
 
 	"github.com/shouni/go-job-kit/cache"
@@ -158,7 +157,7 @@ func (h *History) Delete(ctx context.Context, jobID string) error {
 		return err
 	}
 
-	if err := h.deletePrefix(ctx, h.layout.JobPrefixURI(safeJobID)); err != nil {
+	if _, err := remoteio.DeletePrefix(ctx, h.storage, h.layout.JobPrefixURI(safeJobID)); err != nil {
 		return err
 	}
 
@@ -166,32 +165,6 @@ func (h *History) Delete(ctx context.Context, jobID string) error {
 	// 捨てないと、読めない ID がジョブ ID だけの空行として TTL の間並びます。
 	h.Invalidate()
 	return nil
-}
-
-// deletePrefix はプレフィックス配下のオブジェクトをすべて削除します。
-//
-// プレフィックスが空、あるいは区切りで終わっていない場合は拒否します。ここを取り違えると
-// バケットの広い範囲を消すことになるため、呼び出し側の組み立てを信用しません。
-func (h *History) deletePrefix(ctx context.Context, prefix string) error {
-	if prefix == "" || !strings.HasSuffix(prefix, "/") {
-		return fmt.Errorf("範囲を限定できないプレフィックスの削除は拒否します: %q", prefix)
-	}
-
-	var uris []string
-	for entry, err := range h.storage.List(ctx, prefix) {
-		if err != nil {
-			return fmt.Errorf("削除対象の一覧取得に失敗しました (%s): %w", prefix, err)
-		}
-		uris = append(uris, entry.URI)
-	}
-
-	var errs []error
-	for _, uri := range uris {
-		if err := h.storage.Delete(ctx, uri); err != nil {
-			errs = append(errs, fmt.Errorf("%s の削除に失敗しました: %w", uri, err))
-		}
-	}
-	return errors.Join(errs...)
 }
 
 // Invalidate は、レビュープレフィックスの ID 一覧をキャッシュから落とします。

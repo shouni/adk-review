@@ -180,15 +180,17 @@ func TestDeleteWithNoObjects(t *testing.T) {
 	}
 }
 
-// プレフィックスが区切りで終わっていない場合は拒否します。
-// ここを取り違えると、バケットの広い範囲を消すことになります。
-func TestDeletePrefixRefusesUnboundedPrefix(t *testing.T) {
+// バケットの根は拒否します。ここを取り違えると、バケットの広い範囲を消すことになります。
+// 末尾の区切りは要求しません（remoteio の List がプレフィックスを正規化するため、
+// "reviews" と "reviews-old/" は混同されません）。判定は remoteio.DeletePrefix が持ち、
+// ここではこの層のストレージに対して効いていることだけを確かめます。
+func TestDeletePrefixRefusesBucketRoot(t *testing.T) {
 	fake := &fakeIO{}
 	history := newTestHistory(t, fake)
 
-	for _, prefix := range []string{"", "gs://review-bucket/reviews"} {
-		if err := history.deletePrefix(context.Background(), prefix); err == nil {
-			t.Errorf("prefix=%q を拒否していません", prefix)
+	for _, prefix := range []string{"gs://review-bucket", "gs://review-bucket/"} {
+		if _, err := remoteio.DeletePrefix(context.Background(), history.storage, prefix); !errors.Is(err, remoteio.ErrInvalidURI) {
+			t.Errorf("prefix=%q: err = %v, want ErrInvalidURI", prefix, err)
 		}
 	}
 	if len(fake.deleted) != 0 {
