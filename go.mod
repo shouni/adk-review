@@ -7,16 +7,16 @@ require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/go-cmp v0.7.0
-	github.com/shouni/gcp-kit v1.17.3
-	github.com/shouni/go-http-kit v1.11.1
-	github.com/shouni/go-job-kit v1.3.3
-	github.com/shouni/go-notify v1.4.1
+	github.com/shouni/gcp-kit v1.17.5
+	github.com/shouni/go-http-kit v1.12.0
+	github.com/shouni/go-job-kit v1.3.6
+	github.com/shouni/go-notify v1.4.3
 	github.com/shouni/go-prompt-kit v1.7.1
-	github.com/shouni/go-remote-io v1.11.5
+	github.com/shouni/go-remote-io v1.11.9
 	github.com/shouni/go-review-kit v1.9.1
-	github.com/shouni/go-serve-kit v1.2.0
+	github.com/shouni/go-serve-kit v1.2.1
 	github.com/shouni/go-utils v1.7.1
-	github.com/shouni/netarmor v1.4.1
+	github.com/shouni/netarmor v1.4.2
 	go.yaml.in/yaml/v3 v3.0.5
 	google.golang.org/adk/v2 v2.4.0
 	google.golang.org/genai v1.71.0
@@ -91,7 +91,7 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	google.golang.org/api v0.297.0 // indirect
+	google.golang.org/api v0.298.0 // indirect
 	google.golang.org/genproto v0.0.0-20260831171406-18b4a7587f8a // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260831171406-18b4a7587f8a // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260831171406-18b4a7587f8a // indirect
