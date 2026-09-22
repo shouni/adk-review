@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"log/slog"
 	"net/http"
 
 	"github.com/shouni/adk-review/assets"
@@ -33,8 +32,7 @@ func (h *Handler) HandleModes(w http.ResponseWriter, r *http.Request) {
 	modes, err := assets.AvailableModes()
 	if err != nil {
 		// プロンプト資産の破損なので、起動していれば通常は起きません。
-		slog.ErrorContext(r.Context(), "レビューモード一覧の読み込みに失敗しました", "error", err)
-		respond.ErrorJSON(w, r, http.StatusInternalServerError, "レビューモードを読み込めませんでした。")
+		respond.ServerErrorJSON(w, r, http.StatusInternalServerError, err, "レビューモード一覧の読み込みに失敗しました")
 		return
 	}
 

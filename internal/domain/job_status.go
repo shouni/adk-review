@@ -82,15 +82,6 @@ func (s JobStatus) HasReport() bool {
 	return s.ReportURI != ""
 }
 
-// Finished は、ワーカーがもう status.json にも成果物にも触らない状態かどうかを返します。
-//
-// jobstatus.Status.IsTerminal と違って failed も含めます。あちらは Cloud Tasks の
-// 再試行を見込んで failed を終了扱いしませんが、review-queue は max_attempts = 1 で
-// 再試行が来ないため、このアプリでは failed も動かなくなった状態です。
-func (s JobStatus) Finished() bool {
-	return s.State == jobstatus.StateSucceeded || s.State == jobstatus.StateFailed
-}
-
 // Deletable は、履歴から削除してよい状態かどうかを返します。
 //
 // queued / running を消せないようにしているのは、消したあとでワーカーが status.json を

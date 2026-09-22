@@ -201,8 +201,7 @@ func (h *Handler) HandleJobDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.history.Delete(ctx, safeJobID); err != nil {
-		slog.ErrorContext(ctx, "レビュー履歴の削除に失敗しました", "job_id", safeJobID, "error", err)
-		respond.Error(w, r, http.StatusInternalServerError, "削除に失敗しました。")
+		respond.ServerError(w, r, http.StatusInternalServerError, err, "レビュー履歴の削除に失敗しました", "job_id", safeJobID)
 		return
 	}
 

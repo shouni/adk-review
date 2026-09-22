@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 
-	"cloud.google.com/go/firestore"
 	"github.com/shouni/gcp-kit/auth/session"
 	"github.com/shouni/go-http-kit/httpkit"
 	"github.com/shouni/go-remote-io/remoteio/gcs"
@@ -66,20 +65,13 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 	// 4. web 面だけの依存: セッションの保存先と Task Enqueuer（レビュー依頼の投入口）
 	if cfg.Server.Role.ServesWeb() {
 		// セッションはジョブ状態とは別のデータベースに置きます（SessionDatabase）。
-		fsClient, err := firestore.NewClientWithDatabase(ctx, cfg.GCP.ProjectID, cfg.Auth.SessionDatabase)
-		if err != nil {
-			return nil, fmt.Errorf("セッション用 Firestore の初期化に失敗しました: %w", err)
-		}
-		resources = append(resources, fsClient)
-		appCtx.Closers = append(appCtx.Closers, fsClient)
-
-		sessionStore, err := session.NewFirestoreStore(session.FirestoreConfig{
-			Client:     fsClient,
-			Collection: cfg.Auth.SessionCollection,
-		})
+		// クライアントの寿命はストアが持つので、Closers にはストアを登録します。
+		sessionStore, err := session.OpenFirestoreStore(ctx, cfg.GCP.ProjectID, cfg.Auth.SessionDatabase, cfg.Auth.SessionCollection)
 		if err != nil {
 			return nil, fmt.Errorf("セッションストアの構築に失敗しました: %w", err)
 		}
+		resources = append(resources, sessionStore)
+		appCtx.Closers = append(appCtx.Closers, sessionStore)
 		appCtx.SessionStore = sessionStore
 
 		enqueuer, err := buildTaskEnqueuer(ctx, cfg)
