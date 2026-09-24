@@ -196,8 +196,8 @@ github.com/ryszard/goskiplist v0.0.0-20150312221310-2dfbae5fcf46 h1:GHRpF1pTW19a
 github.com/ryszard/goskiplist v0.0.0-20150312221310-2dfbae5fcf46/go.mod h1:uAQ5PCi+MFsC7HjREoAz1BU+Mq60+05gifQSsHSDG/8=
 github.com/sergi/go-diff v1.4.0 h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=
 github.com/sergi/go-diff v1.4.0/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
-github.com/shouni/gcp-kit v1.20.0 h1:1sjX4cBGLNgi1kADAyQpLQFyd2FAESKeYfUVjcf7ZHc=
-github.com/shouni/gcp-kit v1.20.0/go.mod h1:mSt4wfOvQWR+CLWgnGS3xvq/Usg+ql+OOrl4FuyRFLA=
+github.com/shouni/gcp-kit v1.20.1 h1:6XsxgCPPwj1Ct2F8HVfpgemeMUVS/5K4O7gL9Fkfn/k=
+github.com/shouni/gcp-kit v1.20.1/go.mod h1:wXg6epggXnAOnf0s0VJMURSpqh8QAkrnfRetiH76vFU=
 github.com/shouni/go-http-kit v1.13.0 h1:VEf+ctSYuvVCRHXPaooPBKwGI+STOkkRIYRrGgERSrw=
 github.com/shouni/go-http-kit v1.13.0/go.mod h1:jh/hCYrakDWTFdMxSZPH++TEqDBf1RYEREFLJmYgBe8=
 github.com/shouni/go-job-kit v1.5.0 h1:RWZ4Z/yPFA3FqtFhwPfOlL3QhG6U5nNJs+0T6z7xUdM=
