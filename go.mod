@@ -17,8 +17,8 @@ require (
 	github.com/shouni/go-utils v1.8.1
 	github.com/shouni/netarmor v1.4.2
 	go.yaml.in/yaml/v3 v3.0.5
-	google.golang.org/adk/v2 v2.4.0
-	google.golang.org/genai v1.71.0
+	google.golang.org/adk/v2 v2.5.0
+	google.golang.org/genai v1.72.0
 )
 
 require (
