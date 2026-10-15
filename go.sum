@@ -196,8 +196,8 @@ github.com/shouni/gcp-kit v1.20.3 h1:QBHH6ODCMkxQjYVxG+FKvoqOlihSGfgpa0Dp6e8kImk
 github.com/shouni/gcp-kit v1.20.3/go.mod h1:SRscBOimzYaEO8KflMJ4gsv9G0eGtW1vRQ9rvHFIdp4=
 github.com/shouni/go-http-kit v1.13.1 h1:g4lZXaFcOZWG+wztbMlcSKxbL4aar26S7a8pKejEboo=
 github.com/shouni/go-http-kit v1.13.1/go.mod h1:nXhV9hnrO4mhJ4KDMgaywUmrsxG1ocpHtmyDFSkcEwc=
-github.com/shouni/go-job-kit v1.5.0 h1:RWZ4Z/yPFA3FqtFhwPfOlL3QhG6U5nNJs+0T6z7xUdM=
-github.com/shouni/go-job-kit v1.5.0/go.mod h1:wkc2ipxXC7GM70Rmoy57mb4i/KjYXuM/LGkBX35BOGw=
+github.com/shouni/go-job-kit v1.5.1 h1:GSnnr6+lWPZJfN0h6aKD/bDmho1CvCgUjBTkaVYa1r0=
+github.com/shouni/go-job-kit v1.5.1/go.mod h1:VEfNlHZUYw82s1FPR0Kyr+DcL78di706oAnKDAk8nEw=
 github.com/shouni/go-notify v1.6.2 h1:gVxhFYbAYkK7tn8CP21grgkZmE6kUB4sjTDFxUPyUnY=
 github.com/shouni/go-notify v1.6.2/go.mod h1:z2uIafrH7sRwz5xev01UF5D4d1cuAHOBWAtrw5eTbVo=
 github.com/shouni/go-prompt-kit v1.7.1 h1:Vx+NF7iNMyE8xhD5bvfNdOUwfCg9bUEVZ0Ly+mx3pnc=
