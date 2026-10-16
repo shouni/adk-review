@@ -6,12 +6,12 @@ require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/google/go-cmp v0.7.0
-	github.com/shouni/gcp-kit v1.20.3
+	github.com/shouni/gcp-kit v1.21.0
 	github.com/shouni/go-http-kit v1.13.3
 	github.com/shouni/go-job-kit v1.5.1
 	github.com/shouni/go-notify v1.6.3
 	github.com/shouni/go-prompt-kit v1.7.1
-	github.com/shouni/go-remote-io v1.13.6
+	github.com/shouni/go-remote-io v1.13.7
 	github.com/shouni/go-review-kit v1.9.4
 	github.com/shouni/go-serve-kit v1.3.0
 	github.com/shouni/go-utils v1.8.1
