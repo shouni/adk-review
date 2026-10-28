@@ -8,7 +8,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/shouni/gcp-kit v1.21.0
 	github.com/shouni/go-http-kit v1.13.3
-	github.com/shouni/go-job-kit v1.5.3
+	github.com/shouni/go-job-kit v1.5.4
 	github.com/shouni/go-notify v1.6.3
 	github.com/shouni/go-prompt-kit v1.7.1
 	github.com/shouni/go-remote-io v1.13.10
