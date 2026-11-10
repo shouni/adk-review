@@ -9,49 +9,49 @@ import (
 	"github.com/shouni/adk-review/assets"
 )
 
-// reviewData はレビュープロンプトのテンプレートに渡すデータです。
+// reviewData is the data passed to the review prompt template.
 //
-// 共有断片（指摘の方針・出力フォーマット）は文字列として渡さず、テンプレート集の
-// partial として本文から参照します。
+// The shared fragments (finding policy, output format) are not passed as strings; the body
+// references them as partials of the template set.
 type reviewData struct {
 	DiffContent string
 }
 
-// promptBuilder は、フォーマット済みのプロンプトを作成するためのインターフェース
+// promptBuilder is the interface for producing a formatted prompt
 type promptBuilder interface {
 	Build(mode string, data any) (string, error)
 }
 
-// PromptAdapter は、モードに応じたレビュープロンプトを組み立てます。
+// PromptAdapter builds the review prompt for a mode.
 type PromptAdapter struct {
 	builder promptBuilder
 }
 
 var _ review.PromptGenerator = (*PromptAdapter)(nil)
 
-// NewPromptAdapter は動的に読み込んだテンプレートを使用して Builder を構築します。
+// NewPromptAdapter builds the Builder from the dynamically loaded templates.
 func NewPromptAdapter() (*PromptAdapter, error) {
 	templates, err := assets.PromptTemplates()
 	if err != nil {
-		return nil, fmt.Errorf("レビューテンプレートの読み込みに失敗: %w", err)
+		return nil, fmt.Errorf("failed to load the review templates: %w", err)
 	}
 
-	// WithTrimPartials を付けるのは、断片を箇条書きの途中へ差し込むためです。
-	// ファイル末尾の改行が残ると、差し込んだ位置に空行が入り、後ろに続くモード固有の
-	// 方針が別のリストとして分かれて見えます。
+	// WithTrimPartials is set because fragments are inserted in the middle of bullet lists.
+	// A leftover trailing newline puts a blank line at the insertion point, and the
+	// mode-specific policy that follows reads as a separate list.
 	builder, err := prompts.NewBuilder(templates, prompts.WithTrimPartials())
 	if err != nil {
-		return nil, fmt.Errorf("レビュービルダーの構築に失敗: %w", err)
+		return nil, fmt.Errorf("failed to build the review builder: %w", err)
 	}
 
 	return &PromptAdapter{builder: builder}, nil
 }
 
-// Generate はレビューのプロンプトを生成します。
+// Generate produces the review prompt.
 func (pa *PromptAdapter) Generate(mode, diff string) (string, error) {
 	prompt, err := pa.builder.Build(mode, reviewData{DiffContent: diff})
 	if err != nil {
-		return "", fmt.Errorf("レビューテンプレートの実行に失敗: %w", err)
+		return "", fmt.Errorf("failed to execute the review template: %w", err)
 	}
 	return prompt, nil
 }

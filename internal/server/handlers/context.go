@@ -1,9 +1,9 @@
-// Package handlers は、Web UI（フォーム表示・履歴閲覧等）の HTTP ハンドラーを提供します。
+// Package handlers provides the HTTP handlers of the web UI (the form, browsing the history and so on).
 //
-// 外から受け取ったジョブ ID は、使う前に必ず jobid.Sanitize を通します。ID は
-// ストレージのパス要素になるため、traversal を含んだ値をそのまま渡すとバケット内の
-// 別のプレフィックスを指せます。各ハンドラーの入口にある Sanitize はこの決まりで、
-// 個別の判断ではありません。
+// A job ID received from outside always goes through jobid.Sanitize before use. The ID becomes
+// a storage path element, so a value containing traversal, passed as is, could point at another
+// prefix in the bucket. The Sanitize at each handler's entrance follows this rule; it is not a
+// case-by-case decision.
 package handlers
 
 import (
@@ -12,7 +12,7 @@ import (
 	"github.com/shouni/gcp-kit/auth/session"
 )
 
-// CSRFTokenFromContext は、コンテキストに保存された CSRF トークンを取得します。
+// CSRFTokenFromContext returns the CSRF token stored in the context.
 func CSRFTokenFromContext(ctx context.Context) string {
 	return session.CSRFTokenFromContext(ctx)
 }

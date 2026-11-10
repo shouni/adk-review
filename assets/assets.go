@@ -1,4 +1,4 @@
-// Package assets は、プロンプトテンプレート等を埋め込みリソースとして提供します。
+// Package assets provides prompt templates and other files as embedded resources.
 package assets
 
 import (
@@ -19,79 +19,80 @@ const (
 	promptDir  = "prompts"
 	partialDir = "partials"
 
-	// partialPrefix は、共有断片をテンプレート名として登録するときの接頭辞です。
-	// go-prompt-kit の既定と同じ値で、この接頭辞が付いたものはモードとして公開されません。
+	// partialPrefix is the prefix used when registering shared fragments as template names.
+	// It is the same value as go-prompt-kit's default; anything carrying it is not exposed as a mode.
 	partialPrefix = "_"
 )
 
 var (
-	// promptFiles はレビュープロンプトです。ファイル名がそのままモード名になります。
+	// promptFiles are the review prompts. The file name is the mode name.
 	//go:embed prompts/*.md
 	promptFiles embed.FS
 
-	// partialFiles は、複数のプロンプトモードで共有するテキスト断片です。
-	// prompts/ とは別ディレクトリに置き、レビューモードの一覧には含めません。
+	// partialFiles are text fragments shared by several prompt modes.
+	// They live in a directory apart from prompts/ and are not listed as review modes.
 	//go:embed partials/*.md
 	partialFiles embed.FS
 
-	// Templates は、HTMLテンプレートです。
+	// Templates are the HTML templates.
 	//go:embed templates/*.html
 	Templates embed.FS
 
-	// StaticFiles は、ブラウザへ配信するJavaScriptなどの静的ファイルを保持します。
+	// StaticFiles holds the static files served to the browser, such as JavaScript.
 	//go:embed static
 	StaticFiles embed.FS
 )
 
-// ExcerptStyle は、指摘の引用（excerpt / suggestion）を画面でどう見せるかです。
+// ExcerptStyle is how a finding's quotation (excerpt / suggestion) is shown on screen.
 //
-// モードによって引用の中身が別物になります。code なら等幅で読むソースコードですが、
-// novel / article では日本語の地の文です。同じ体裁で出すと、原稿の引用がコードに見えます。
+// What a quote contains differs by mode. For code it is source code read in monospace,
+// for novel / article it is Japanese prose. In the same style, a quote from a manuscript
+// looks like code.
 type ExcerptStyle string
 
 const (
-	// ExcerptProse は、地の文としての引用です（本文フォント・明るい背景）。
+	// ExcerptProse quotes as prose (body font, light background).
 	ExcerptProse ExcerptStyle = "prose"
-	// ExcerptCode は、ソースコードとしての引用です（等幅・暗い背景）。
+	// ExcerptCode quotes as source code (monospace, dark background).
 	ExcerptCode ExcerptStyle = "code"
 )
 
-// ModeMetadata は、プロンプト冒頭の front matter に書くモードの説明です。
-// 兄弟アプリと同じ方式で、説明の置き場をプロンプト自身にします。
+// ModeMetadata is a mode's description, written in the front matter at the top of the prompt.
+// As in the sibling apps, the description lives in the prompt itself.
 //
-// 画面側に一覧を持たせない理由は、モードの追加が prompts/<mode>.md を置くだけで
-// 済む仕組みだからです。説明を別ファイルに分けると、モードを足した人が説明を
-// 書き忘れても誰も気付かず、選択肢だけが増えていきます。
+// The screen keeps no list of its own because adding a mode only takes placing
+// prompts/<mode>.md. With the description in a separate file, nobody would notice when
+// whoever added a mode forgot to describe it, and the choices would just keep growing.
 type ModeMetadata struct {
-	// Label は選択肢に出す名前です。キー（ファイル名）は英字なので、日本語の表示名を
-	// 別に持ちます。
+	// Label is the name shown as a choice. The key (file name) is in Latin letters, so the
+	// Japanese display name is held separately.
 	Label string `yaml:"label"`
-	// Direction は何をレビューするモードなのかの一行説明です。
+	// Direction is a one-line description of what the mode reviews.
 	Direction string `yaml:"direction"`
-	// UseWhen は、どういう対象のときに選ぶかです。
+	// UseWhen says for what kind of subject the mode is chosen.
 	UseWhen string `yaml:"use_when"`
-	// Excerpt は、指摘の引用を画面でどう見せるかです。空なら ExcerptProse 扱いです。
+	// Excerpt is how a finding's quote is shown on screen. Empty means ExcerptProse.
 	//
-	// モードを足す人がプロンプト側で宣言します。画面側に
-	// 「code なら等幅」といった一覧を持たせると、モードを足したときに
-	// prompts/<mode>.md を置くだけでは済まなくなります。
+	// Whoever adds a mode declares it on the prompt side. If the screen held a list such as
+	// "monospace for code", adding a mode would no longer be just placing
+	// prompts/<mode>.md.
 	//
-	// 既定を prose にしているのは、このアプリの主対象が原稿だからです。宣言を忘れた
-	// モードがコード扱いで表示されるより、地の文として出るほうが被害が小さくなります。
+	// The default is prose because manuscripts are this app's main subject. A mode that
+	// forgot to declare it does less harm shown as prose than shown as code.
 	Excerpt ExcerptStyle `yaml:"excerpt"`
 }
 
-// Mode は、フォームに出す 1 モードです。
+// Mode is one mode offered on the form.
 type Mode struct {
-	// Key は prompts/<key>.md のファイル名で、そのまま worker へ渡る値です。
+	// Key is the file name of prompts/<key>.md and is the value passed to the worker as is.
 	Key string
 	ModeMetadata
 }
 
-// DisplayName は選択肢に表示する名前です。
+// DisplayName is the name shown as a choice.
 //
-// front matter が無いプロンプトを置いてもキーで表示され、選択肢自体は消えません。
-// 説明の書き忘れで動くはずのモードが画面から消えるほうが困るためです。
+// A prompt without front matter is shown by its key, so the choice itself never disappears.
+// A working mode vanishing from the screen because its description was forgotten would be worse.
 func (m Mode) DisplayName() string {
 	if m.Label != "" {
 		return m.Label
@@ -99,7 +100,7 @@ func (m Mode) DisplayName() string {
 	return m.Key
 }
 
-// ExcerptKind は、そのモードの引用の見せ方を返します。
+// ExcerptKind returns how the mode's quotes are shown.
 func (m Mode) ExcerptKind() ExcerptStyle {
 	if m.Excerpt == "" {
 		return ExcerptProse
@@ -107,20 +108,20 @@ func (m Mode) ExcerptKind() ExcerptStyle {
 	return m.Excerpt
 }
 
-// promptSet は、プロンプトの本文と、front matter から組み立てたモード情報です。
+// promptSet is the prompt bodies and the mode information built from their front matter.
 type promptSet struct {
 	bodies map[string]string
 	modes  map[string]Mode
 }
 
-// loadModes は、埋め込みプロンプトの本文と front matter の解析を最初の呼び出しで
-// 1度だけ行います。本文（LoadPrompts）とモード情報（AvailableModes）は
-// 別の入口ですが、出どころは同じディレクトリです。
+// loadModes parses the embedded prompt bodies and their front matter once, on the first
+// call. The bodies (LoadPrompts) and the mode information (AvailableModes) are separate
+// entry points, but they come from the same directory.
 //
-// 失敗するとすれば front matter の書式や excerpt の値のように毎回同じ結果になるものだけ
-// なので、エラーごとキャッシュして再試行しません。
+// The only possible failures, such as front matter syntax or an excerpt value, give the
+// same result every time, so the error is cached too and never retried.
 //
-// 返すマップは呼び出し側で共有されます。書き換えないでください。
+// The returned maps are shared between callers. Do not modify them.
 var loadModes = sync.OnceValues(func() (promptSet, error) {
 	raw, err := resource.Load(promptFiles, promptDir)
 	if err != nil {
@@ -129,23 +130,23 @@ var loadModes = sync.OnceValues(func() (promptSet, error) {
 
 	bodies, fronts := frontmatter.SplitMap(raw)
 
-	// 黙って無視しません。書き間違えた説明が空欄になるだけだと、画面を開くまで
-	// 気付けません。
+	// Not ignored silently. If a mistyped description just came out blank, nobody would
+	// notice until opening the screen.
 	metas, err := frontmatter.DecodeMap[ModeMetadata](fronts, yaml.Unmarshal)
 	if err != nil {
-		return promptSet{}, fmt.Errorf("prompts の front matter が読めません: %w", err)
+		return promptSet{}, fmt.Errorf("cannot read the front matter of prompts: %w", err)
 	}
 
 	modes := make(map[string]Mode, len(bodies))
 	for key := range bodies {
 		meta := metas[key]
 
-		// 綴り違いは起動時に落とします。実行時に既定へ落とすと、
-		// コードとして見せるつもりのモードが黙って地の文で表示され続けます。
+		// A misspelling fails startup. Falling back to the default at run time would keep a
+		// mode meant to be shown as code silently displayed as prose.
 		switch meta.Excerpt {
 		case "", ExcerptProse, ExcerptCode:
 		default:
-			return promptSet{}, fmt.Errorf("プロンプト %q の excerpt 指定が不正です: %q（prose か code）", key, meta.Excerpt)
+			return promptSet{}, fmt.Errorf("prompt %q has an invalid excerpt: %q (prose or code)", key, meta.Excerpt)
 		}
 
 		modes[key] = Mode{Key: key, ModeMetadata: meta}
@@ -153,10 +154,10 @@ var loadModes = sync.OnceValues(func() (promptSet, error) {
 	return promptSet{bodies: bodies, modes: modes}, nil
 })
 
-// LoadPrompts は埋め込まれたプロンプトの本文だけを読み込みます。
+// LoadPrompts loads only the bodies of the embedded prompts.
 //
-// front matter は説明であってプロンプトではないので、ここで落とします。
-// 残したまま渡すと YAML が指示文の先頭に紛れ込みます。
+// The front matter is a description, not part of the prompt, so it is dropped here.
+// Passed on, the YAML would end up at the top of the instructions.
 func LoadPrompts() (map[string]string, error) {
 	set, err := loadModes()
 	if err != nil {
@@ -165,15 +166,16 @@ func LoadPrompts() (map[string]string, error) {
 	return maps.Clone(set.bodies), nil
 }
 
-// PromptTemplates は、モードのプロンプト本文と共有断片を 1 つのテンプレート集として返します。
+// PromptTemplates returns the modes' prompt bodies and the shared fragments as one template set.
 //
-// 断片を "_" 付きのテンプレート名で同じ集合に入れるのは、本文から
-// {{template "_finding_policy" .}} で参照させるためです。文字列として流し込むのをやめた
-// 理由は、末尾改行の始末をライブラリ（prompts.WithTrimPartials）へ渡すためです。断片は
-// 箇条書きの途中に差し込まれるので、末尾改行が残るとそこだけリストが分かれます。
-// テンプレートとして参照していれば、断片の側でも条件分岐やデータの参照を書けます。
+// The fragments go into the same set under "_"-prefixed template names so the bodies can
+// reference them with {{template "_finding_policy" .}}. They stopped being pasted in as
+// strings so that trimming the trailing newline is left to the library
+// (prompts.WithTrimPartials). Fragments are inserted in the middle of bullet lists, and a
+// leftover trailing newline splits the list at that point. Referenced as templates, the
+// fragments can also use conditionals and data.
 //
-// 断片は go-prompt-kit の partial として扱われるため、AvailableModes の一覧には出ません。
+// Fragments are treated as go-prompt-kit partials, so they do not appear in AvailableModes.
 func PromptTemplates() (map[string]string, error) {
 	bodies, err := LoadPrompts()
 	if err != nil {
@@ -182,23 +184,23 @@ func PromptTemplates() (map[string]string, error) {
 
 	entries, err := partialFiles.ReadDir(partialDir)
 	if err != nil {
-		return nil, fmt.Errorf("共有テンプレートの列挙に失敗: %w", err)
+		return nil, fmt.Errorf("failed to list the shared templates: %w", err)
 	}
 	for _, e := range entries {
 		name := e.Name()
 		b, err := partialFiles.ReadFile(partialDir + "/" + name)
 		if err != nil {
-			return nil, fmt.Errorf("共有テンプレート '%s' の読み込みに失敗: %w", name, err)
+			return nil, fmt.Errorf("failed to read shared template '%s': %w", name, err)
 		}
 		bodies[partialPrefix+strings.TrimSuffix(name, ".md")] = string(b)
 	}
 	return bodies, nil
 }
 
-// AvailableModes は、埋め込まれたレビュープロンプトから利用可能なモードをキー順に返します。
+// AvailableModes returns the modes available from the embedded review prompts, in key order.
 //
-// 並びを固定するのは、map の走査順がそのまま選択肢の順になると、
-// 描画のたびに並びが変わるためです。
+// The order is fixed because, if the map's iteration order became the order of the
+// choices, it would change on every render.
 func AvailableModes() ([]Mode, error) {
 	set, err := loadModes()
 	if err != nil {
@@ -214,7 +216,7 @@ func AvailableModes() ([]Mode, error) {
 	return modes, nil
 }
 
-// IsValidMode は、指定されたモード名に対応するプロンプトファイルが存在するか確認します。
+// IsValidMode reports whether a prompt file exists for the given mode name.
 func IsValidMode(mode string) bool {
 	set, err := loadModes()
 	if err != nil {
@@ -226,11 +228,11 @@ func IsValidMode(mode string) bool {
 	return ok
 }
 
-// ExcerptStyleFor は、モードの引用の見せ方を返します。
+// ExcerptStyleFor returns how a mode's quotes are shown.
 //
-// 未知のモードでもエラーにしません。呼ぶのは履歴の詳細ページで、履歴には
-// 過去に実行したモード名がそのまま残ります。プロンプトを消したり改名したりしたあとに
-// 過去のレビューを開けなくなるのは、表示の都合として重すぎます。
+// An unknown mode is not an error. The caller is the history detail page, and the history
+// keeps the names of modes run in the past as they were. Being unable to open a past
+// review after a prompt was deleted or renamed would be too high a price for a display concern.
 func ExcerptStyleFor(mode string) ExcerptStyle {
 	set, err := loadModes()
 	if err != nil {

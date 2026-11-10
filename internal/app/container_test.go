@@ -36,13 +36,13 @@ func (f *fakeFactory) Store() (remoteio.Store, error) { return nil, nil }
 func (f *fakeFactory) Handler() (remoteio.Handler, error) { return nil, nil }
 
 func TestContainerClose_ClosesEveryResource(t *testing.T) {
-	// 片方が失敗しても残りを閉じ切ることを見ます。Close はエラーを返さないので、
-	// ここが崩れると資源の閉じ漏れがログにしか出ません。
+	// Checks that the rest are still closed when one fails. Close returns no error, so if
+	// this breaks, a leaked resource shows up only in the logs.
 	ff := &fakeFactory{closeErr: errors.New("remote close failed")}
 	te := &fakeTaskEnqueuer{closeErr: errors.New("task close failed")}
 
-	// ストレージの寿命はファクトリが持ちます。Bundle が束ねていた頃と違い、
-	// Closers へ入れるのはファクトリそのものです。
+	// The factory owns the storage's lifetime. Unlike when Bundle grouped them, what goes
+	// into Closers is the factory itself.
 	c := &Container{
 		TaskEnqueuer: te,
 		Closers:      []io.Closer{ff, te},
@@ -59,9 +59,9 @@ func TestContainerClose_ClosesEveryResource(t *testing.T) {
 }
 
 func TestContainerClose_NilSafe(_ *testing.T) {
-	// アサーションは不要。パニックなく終了すること（nil-safe）を検証する。
-	// 2 つ目は typed-nil で、スライスの nil チェックをすり抜けて nil レシーバーの
-	// Close が呼ばれる経路です。
+	// No assertion needed: it checks that it finishes without panicking (nil-safe).
+	// The second one is a typed nil, the path that slips past the slice's nil check and
+	// calls Close on a nil receiver.
 	c := &Container{}
 	c.Close()
 
@@ -69,8 +69,8 @@ func TestContainerClose_NilSafe(_ *testing.T) {
 	c.Close()
 }
 
-// nilSafeCloser は nil レシーバーでも Close が通る型です。
-// Closers へ typed-nil が混ざっても落ちないことを見るために使います。
+// nilSafeCloser is a type whose Close works on a nil receiver.
+// It is used to check that a typed nil in Closers does not crash.
 type nilSafeCloser struct{}
 
 func (c *nilSafeCloser) Close() error { return nil }

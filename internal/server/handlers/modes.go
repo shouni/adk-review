@@ -7,10 +7,10 @@ import (
 	"github.com/shouni/go-serve-kit/respond"
 )
 
-// ModeInfo は、選べるレビューモード 1 件です。
+// ModeInfo is one selectable review mode.
 //
-// 出どころは assets/prompts/*.md の front matter です。呼び出し元にモード名を
-// 直書きさせないための一覧で、モードを足しても呼び出し元を変えずに済みます。
+// Its source is the front matter of assets/prompts/*.md. The list keeps callers from
+// hard-coding mode names, so adding a mode needs no change on their side.
 type ModeInfo struct {
 	Key       string `json:"key"`
 	Label     string `json:"label"`
@@ -19,20 +19,20 @@ type ModeInfo struct {
 	Excerpt   string `json:"excerpt"`
 }
 
-// modesResponse は GET /modes の応答です。
+// modesResponse is the response of GET /modes.
 type modesResponse struct {
 	Modes []ModeInfo `json:"modes"`
 }
 
-// HandleModes は、選べるレビューモードの一覧を返します。
+// HandleModes returns the list of selectable review modes.
 //
-// このルートだけは HTML を持ちません。画面はフォームの <select> がモード一覧を
-// 兼ねているため、人間向けの表示先が既にあります。
+// This route alone has no HTML. On screen the form's <select> doubles as the mode list, so a
+// place to show it to people already exists.
 func (h *Handler) HandleModes(w http.ResponseWriter, r *http.Request) {
 	modes, err := assets.AvailableModes()
 	if err != nil {
-		// プロンプト資産の破損なので、起動していれば通常は起きません。
-		respond.ServerErrorJSON(w, r, http.StatusInternalServerError, err, "レビューモード一覧の読み込みに失敗しました")
+		// This means broken prompt assets, which normally cannot happen once started.
+		respond.ServerErrorJSON(w, r, http.StatusInternalServerError, err, "failed to load the review modes")
 		return
 	}
 

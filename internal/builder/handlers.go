@@ -15,42 +15,42 @@ import (
 
 const defaultSessionName = "adk-review-session"
 
-// AppHandlers は生成されたすべての HTTP ハンドラーを保持する構造体です。
+// AppHandlers holds every HTTP handler built.
 //
-// 担当しない面のハンドラーは nil のままにします。ルーターは nil を見て登録を省くため、
-// 役割が増えてもルーティング側を触らずに済みます（兄弟アプリと同じ形です）。
+// Handlers for a role this process does not serve stay nil. The router skips registering on
+// nil, so adding a role needs no routing change (the same shape as the sibling apps).
 type AppHandlers struct {
 	Auth   *session.Handler
 	Web    *handlers.Handler
 	Worker *worker.Handler[domain.ReviewRequest]
-	// TaskAuth は Cloud Tasks からの OIDC を検証します。Auth と違い OAuth 設定を
-	// 必要としないため、検証だけを担う独立した部品として持ちます。
+	// TaskAuth verifies the OIDC token from Cloud Tasks. Unlike Auth it needs no OAuth
+	// settings, so it is kept as a separate piece that only verifies.
 	TaskAuth *oidc.Verifier
-	// M2M は、他サービス（MCP ゲートウェイ）からの OIDC Bearer を検証します。web 面を担うなら
-	// 必ず構成されます（未設定は起動時に落とします。newM2MVerifier を参照）。
+	// M2M verifies OIDC Bearer tokens from other services (the MCP gateway). It is always
+	// configured when serving the web role (unset fails startup; see newM2MVerifier).
 	M2M *oidc.Verifier
 }
 
-// Validate は、面ごとのハンドラーが揃っているかを確かめます。
+// Validate checks that each role's handlers are complete.
 //
-// 揃っていないまま起動すると、ルーターは該当ルートの登録を飛ばすだけなので
-// デプロイは成功し、/health も通り、壊れているのは投入経路だけになります。
-// Cloud Tasks は 404 を受けて max_attempts = 1 でタスクを捨てるため、レビュー依頼は
-// 静かに失われます。ルーターが 404 を返す前に、起動を失敗させます。
+// Started incomplete, the router just skips registering those routes, so the deploy succeeds,
+// /health passes, and only the submission path is broken. Cloud Tasks gets a 404 and, with
+// max_attempts = 1, drops the task, so the review request is silently lost. Startup fails
+// before the router can return a 404.
 func (h *AppHandlers) Validate() error {
 	if (h.Auth == nil) != (h.Web == nil) {
-		return fmt.Errorf("web 面のハンドラーが揃っていません (auth: %t, web: %t)", h.Auth != nil, h.Web != nil)
+		return fmt.Errorf("web handlers are incomplete (auth: %t, web: %t)", h.Auth != nil, h.Web != nil)
 	}
 	if (h.TaskAuth == nil) != (h.Worker == nil) {
-		return fmt.Errorf("worker 面のハンドラーが揃っていません (task_auth: %t, worker: %t)", h.TaskAuth != nil, h.Worker != nil)
+		return fmt.Errorf("worker handlers are incomplete (task_auth: %t, worker: %t)", h.TaskAuth != nil, h.Worker != nil)
 	}
 	if h.Auth == nil && h.Worker == nil {
-		return fmt.Errorf("担当する面のハンドラーが 1 つも構築されていません")
+		return fmt.Errorf("no handler was built for any role")
 	}
 	return nil
 }
 
-// BuildHandlers は依存関係を注入し、役割が担う面のハンドラーだけを生成します。
+// BuildHandlers injects the dependencies and builds only the handlers of the roles served.
 func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 	appHandlers := &AppHandlers{}
 	role := appCtx.Config.Server.Role
@@ -70,7 +70,7 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 			History:      appCtx.History,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("WebHandlerの初期化失敗: %w", err)
+			return nil, fmt.Errorf("failed to initialise the WebHandler: %w", err)
 		}
 		appHandlers.Web = webHandler
 
@@ -82,13 +82,13 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 	}
 
 	if role.ServesWorker() {
-		// Worker ハンドラーと、その入口を守る Cloud Tasks OIDC 検証器の生成。
-		// audience と発行元サービスアカウントの両方が揃わないと検証は常に失敗する
-		// （fail-closed）ため、起動時に構成を確かめておきます。
+		// Build the Worker handler and the Cloud Tasks OIDC verifier guarding its entrance.
+		// Without both the audience and the issuing service accounts, verification always
+		// fails (fail-closed), so the configuration is checked at startup.
 		appHandlers.Worker = worker.NewHandler[domain.ReviewRequest](appCtx.Pipeline)
 		taskAuth, err := oidc.New(appCtx.Config.Tasks.TaskAudienceURL, appCtx.Config.Tasks.AllowedServiceAccounts)
 		if err != nil {
-			return nil, fmt.Errorf("cloud Tasks の OIDC 検証を構成できません: TASK_AUDIENCE_URL と ALLOWED_TASK_SERVICE_ACCOUNTS が必要です: %w", err)
+			return nil, fmt.Errorf("cannot configure Cloud Tasks OIDC verification: TASK_AUDIENCE_URL and ALLOWED_TASK_SERVICE_ACCOUNTS are required: %w", err)
 		}
 		appHandlers.TaskAuth = taskAuth
 	}
@@ -100,11 +100,11 @@ func BuildHandlers(appCtx *app.Container) (*AppHandlers, error) {
 	return appHandlers, nil
 }
 
-// createAuthHandler は、提供された設定(Config)に基づいて認証ハンドラーを初期化して返します。
+// createAuthHandler initialises and returns the auth handler from the given Config.
 //
-// セッションの保存先は呼び出し元が渡します。既定を持たないのは gcp-kit 側の判断で、
-// プロセス内に持つ実装へ黙って倒れると、Cloud Run のインスタンスが替わるたびに
-// 利用者がログアウトされ、開発中は 1 インスタンスなので気付けないためです。
+// The caller passes the session store. Having no default is gcp-kit's decision: silently
+// falling back to an in-process implementation would log users out every time the Cloud Run
+// instance changes, which goes unnoticed in development with a single instance.
 func createAuthHandler(cfg *config.Config, store session.Store) (*session.Handler, error) {
 	return session.New(session.Config{
 		ClientID:       cfg.Auth.GoogleClientID,
@@ -117,25 +117,25 @@ func createAuthHandler(cfg *config.Config, store session.Store) (*session.Handle
 	})
 }
 
-// newM2MVerifier は M2M（サーバー間通信）用の OIDC 検証器を構成します。
+// newM2MVerifier configures the OIDC verifier for M2M (server-to-server) calls.
 //
-// 未設定を「意図的に無効化した」とは解釈せず、起動時に落とします。auth.Protected は
-// M2M を無効化できないためです。許可リストか audience が欠けていても経路は生き続け、
-// 検証が必ず失敗してセッション認証へフォールバックします。つまり設定漏れは
-// 「ブラウザは正常に動くが MCP ゲートウェイだけログイン画面の HTML を受け取る」という形でしか
-// 現れません。意図的な無効化と設定漏れを区別する手段が無い以上、空は後者としか
-// 解釈できないので、TaskVerifier と同じく起動時に弾きます。
+// Unset is not read as "deliberately disabled"; it fails startup, because auth.Protected cannot
+// disable M2M. With the allowlist or the audience missing the path stays alive, verification
+// always fails and falls back to session authentication. A missing setting therefore shows up
+// only as "the browser works but the MCP gateway alone receives the login page's HTML". With no
+// way to tell deliberate disabling from a missing setting, empty can only mean the latter, so
+// it is rejected at startup, like TaskVerifier.
 //
-// 以前はここだけ「未設定なら nil のまま（＝素通り）」にしていましたが、
-// 兄弟アプリ 4 本はいずれも起動時に落とす形で、adk-review だけが違っていました。
+// This used to be the one place that "stays nil (= passes through) when unset", while all 4
+// sibling apps failed at startup; adk-review alone differed.
 //
-// 構成の可否を config ではなく検証器自身に尋ねるのは、必要な設定が何かを知っているのが
-// gcp-kit 側だからです。許可リストの空だけを config で見ると audience（SERVICE_URL）の
-// 欠落を拾えず、キットが要件を増やしても追随しません。
+// Whether it can be configured is asked of the verifier itself rather than the config, because
+// gcp-kit knows which settings are needed. Checking only for an empty allowlist in the config
+// would miss a missing audience (SERVICE_URL) and would not follow when the kit adds requirements.
 func newM2MVerifier(serviceURL string, allowedServiceAccounts []string) (*oidc.Verifier, error) {
 	m2m, err := oidc.New(serviceURL, allowedServiceAccounts)
 	if err != nil {
-		return nil, fmt.Errorf("m2m の OIDC 検証を構成できません（SERVICE_URL と ALLOWED_M2M_SERVICE_ACCOUNTS）: %w", err)
+		return nil, fmt.Errorf("cannot configure m2m OIDC verification (SERVICE_URL and ALLOWED_M2M_SERVICE_ACCOUNTS): %w", err)
 	}
 	return m2m, nil
 }

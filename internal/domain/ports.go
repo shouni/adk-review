@@ -1,15 +1,14 @@
-// Package domain は、レビューワークフローが扱う中心的なドメインモデルと
-// インターフェース（ポート）を定義します。
+// Package domain defines the core domain models and interfaces (ports) of the review workflow.
 package domain
 
 import (
 	"context"
 )
 
-// Pipeline は、レビュー要求 1 件を最後まで処理する実行面です。
+// Pipeline processes one review request to the end.
 //
-// 実体は internal/pipeline の Runner（go-review-kit のパイプラインの ACL）で、
-// worker 面だけが持ちます。
+// The implementation is internal/pipeline's Runner (the ACL over go-review-kit's pipeline),
+// held by the worker role only.
 type Pipeline interface {
 	Execute(ctx context.Context, payload ReviewRequest) error
 }

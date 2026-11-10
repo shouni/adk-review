@@ -33,34 +33,34 @@ func TestHandleJobList_ReturnsJSON(t *testing.T) {
 		t.Errorf("Content-Type = %q", ct)
 	}
 
-	// 項目名は snake_case です。同じ構造体で往復すると綴りの誤りに気付けないため、
-	// 生のキーで確かめます（本文は 1 度しか読めないのでバイト列から 2 通りに解きます）。
+	// Field names are snake_case. A round trip through the same struct cannot catch a misspelling,
+	// so the raw keys are checked (the body can be read once, so the bytes are decoded two ways).
 	body := rec.Body.Bytes()
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
-		t.Fatalf("JSON をデコードできません: %v\n%s", err, body)
+		t.Fatalf("cannot decode the JSON: %v\n%s", err, body)
 	}
 	for _, key := range []string{"items", "meta"} {
 		if _, ok := raw[key]; !ok {
-			t.Errorf("%q が応答にありません: %v", key, mapKeys(raw))
+			t.Errorf("%q is not in the response: %v", key, mapKeys(raw))
 		}
 	}
 
 	var got domain.HistoryPage
 	if err := json.Unmarshal(body, &got); err != nil {
-		t.Fatalf("HistoryPage をデコードできません: %v", err)
+		t.Fatalf("cannot decode the HistoryPage: %v", err)
 	}
 	if len(got.Items) != 1 || got.Items[0].Mode != "code" {
-		t.Errorf("items が期待と違います: %+v", got.Items)
+		t.Errorf("unexpected items: %+v", got.Items)
 	}
-	// ページングの指定はそのまま届きます。
+	// The paging parameters arrive unchanged.
 	if history.gotPage != 2 || history.gotPerPage != 5 {
 		t.Errorf("page/per_page = %d/%d, want 2/5", history.gotPage, history.gotPerPage)
 	}
 }
 
-// 一覧の読み取り障害を 500 に潰さないこと。
+// A read failure of the list is not flattened into a 500.
 func TestHandleJobList_UnreadableIsBadGateway(t *testing.T) {
 	t.Parallel()
 
@@ -98,13 +98,13 @@ func TestHandleJobList_RendersRows(t *testing.T) {
 		"/jobs/20260810-213000-a1b2c3d4",
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("一覧に %q が含まれていません", want)
+			t.Errorf("the list does not contain %q", want)
 		}
 	}
 }
 
-// 状態はジョブの state と結末の両方で決まります。スキップは succeeded なので、
-// state だけを見ると完了と区別できません。
+// The status depends on both the job's state and its outcome. A skip is succeeded, so state
+// alone cannot tell it from completion.
 func TestHandleJobList_DistinguishesSkipped(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -112,11 +112,11 @@ func TestHandleJobList_DistinguishesSkipped(t *testing.T) {
 		outcome review.Status
 		want    string
 	}{
-		{"完了", jobstatus.StateSucceeded, review.StatusSucceeded, "完了"},
-		{"スキップ", jobstatus.StateSucceeded, review.StatusSkipped, "スキップ"},
-		{"実行中", jobstatus.StateRunning, "", "実行中"},
-		{"受付済み", jobstatus.StateQueued, "", "受付済み"},
-		{"失敗", jobstatus.StateFailed, review.StatusFailed, "失敗"},
+		{"succeeded", jobstatus.StateSucceeded, review.StatusSucceeded, "完了"},
+		{"skipped", jobstatus.StateSucceeded, review.StatusSkipped, "スキップ"},
+		{"running", jobstatus.StateRunning, "", "実行中"},
+		{"queued", jobstatus.StateQueued, "", "受付済み"},
+		{"failed", jobstatus.StateFailed, review.StatusFailed, "失敗"},
 	}
 
 	for _, tt := range tests {
@@ -129,7 +129,7 @@ func TestHandleJobList_DistinguishesSkipped(t *testing.T) {
 			buildHandlerWithHistory(t, history).HandleJobList(w, httptest.NewRequest(http.MethodGet, "/jobs", nil))
 
 			if !strings.Contains(w.Body.String(), tt.want) {
-				t.Errorf("一覧に %q が含まれていません", tt.want)
+				t.Errorf("the list does not contain %q", tt.want)
 			}
 		})
 	}
@@ -142,10 +142,10 @@ func TestHandleJobList_PageParams(t *testing.T) {
 		wantPage    int
 		wantPerPage int
 	}{
-		{"既定", "", 1, defaultPerPage},
-		{"指定", "?page=3&per_page=5", 3, 5},
-		{"不正値は既定へ倒す", "?page=abc&per_page=-1", 1, defaultPerPage},
-		{"上限で頭打ち", "?per_page=1000", 1, maxPerPage},
+		{"default", "", 1, defaultPerPage},
+		{"given", "?page=3&per_page=5", 3, 5},
+		{"invalid falls back to default", "?page=abc&per_page=-1", 1, defaultPerPage},
+		{"capped at the limit", "?per_page=1000", 1, maxPerPage},
 	}
 
 	for _, tt := range tests {
@@ -173,7 +173,7 @@ func TestHandleJobList_EmptyState(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	if !strings.Contains(w.Body.String(), "まだレビュー履歴がありません") {
-		t.Error("空のときの案内が出ていません")
+		t.Error("the empty-state message is not shown")
 	}
 }
 
@@ -187,6 +187,6 @@ func TestHandleJobList_ListError(t *testing.T) {
 		t.Fatalf("status = %d, want 500", w.Code)
 	}
 	if strings.Contains(w.Body.String(), "gcs down") {
-		t.Error("内部のエラー内容が画面へ出ています")
+		t.Error("internal error details are shown on screen")
 	}
 }

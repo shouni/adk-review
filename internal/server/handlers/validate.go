@@ -12,13 +12,15 @@ import (
 )
 
 var (
-	// gitURLRegexp は、GitリポジトリURLの形式をチェックします。
+	// gitURLRegexp checks the format of a Git repository URL.
 	gitURLRegexp = regexp.MustCompile(repoURLPattern)
-	// gitBranchRegexp は、ブランチ名の命名規則をチェックします。
+	// gitBranchRegexp checks the naming rules for branch names.
 	gitBranchRegexp = regexp.MustCompile(branchPattern)
 )
 
-// validateReviewRequest は、投入内容をまとめて検証します。
+// validateReviewRequest validates a submission as a whole.
+//
+// Its messages are shown to the user on the form and in the JSON API, so they stay Japanese.
 func (h *Handler) validateReviewRequest(req domain.ReviewRequest) error {
 	if req.RepoURL == "" || req.BaseBranch == "" || req.FeatureBranch == "" || req.Mode == "" || req.ModelName == "" {
 		return errors.New("すべてのフィールドを入力してください。")
@@ -47,7 +49,7 @@ func (h *Handler) validateReviewRequest(req domain.ReviewRequest) error {
 	return nil
 }
 
-// validateBranchName は、Git のブランチ名として正当かどうかを返します。
+// validateBranchName reports whether the name is a valid Git branch name.
 func validateBranchName(branchName string) error {
 	if !gitBranchRegexp.MatchString(branchName) {
 		return errors.New("形式が不正です。英数字、ハイフン、ドット、スラッシュのみ使用可能です。")

@@ -17,22 +17,22 @@ func TestStorageLayoutURIs(t *testing.T) {
 		want string
 	}{
 		{
-			name: "一覧が列挙するプレフィックス",
+			name: "prefix the list enumerates",
 			got:  layout.ReviewPrefixURI(),
 			want: "gs://review-bucket/reviews/",
 		},
 		{
-			name: "ジョブのプレフィックス",
+			name: "job prefix",
 			got:  layout.JobPrefixURI(testJobID),
 			want: "gs://review-bucket/reviews/" + testJobID + "/",
 		},
 		{
-			name: "進行状況",
+			name: "progress",
 			got:  layout.StatusURI(testJobID),
 			want: "gs://review-bucket/reviews/" + testJobID + "/status.json",
 		},
 		{
-			name: "レビュー結果",
+			name: "review result",
 			got:  layout.ReportURI(testJobID),
 			want: "gs://review-bucket/reviews/" + testJobID + "/report.json",
 		},
@@ -47,27 +47,27 @@ func TestStorageLayoutURIs(t *testing.T) {
 	}
 }
 
-// 1 ジョブ分のオブジェクトはすべてジョブのプレフィックス配下に収まります。
-// 外れると、履歴の削除（プレフィックスの一括削除）で消し残しが出ます。
+// Every object of a job sits under the job's prefix.
+// Anything outside would be left behind when the history is deleted (one prefix deletion).
 func TestStorageLayoutKeepsJobObjectsUnderOnePrefix(t *testing.T) {
 	layout := NewStorageLayout(testBucket)
 	prefix := layout.JobPrefixURI(testJobID)
 
 	for _, uri := range []string{layout.StatusURI(testJobID), layout.ReportURI(testJobID)} {
 		if !strings.HasPrefix(uri, prefix) {
-			t.Errorf("%q が %q の配下にありません", uri, prefix)
+			t.Errorf("%q is not under %q", uri, prefix)
 		}
 	}
 }
 
-// 状態ファイルはジョブのプレフィックス配下に置きます。履歴一覧は reviews/ 直下の
-// プレフィックスを列挙して作るため、ここを外すと成果物を持たないジョブ
-// （実行中・失敗・スキップ）が一覧から消えます。
+// The status file sits under the job's prefix. The history list is built by enumerating the
+// prefixes directly under reviews/, so moving it out would drop jobs without artifacts
+// (running, failed, skipped) from the list.
 func TestStatusLivesUnderTheListedPrefix(t *testing.T) {
 	layout := NewStorageLayout(testBucket)
 
 	if !strings.HasPrefix(layout.StatusURI(testJobID), layout.ReviewPrefixURI()) {
-		t.Error("状態ファイルが一覧の列挙対象から外れています")
+		t.Error("the status file is outside what the list enumerates")
 	}
 }
 

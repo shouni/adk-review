@@ -7,12 +7,12 @@ import (
 	"github.com/shouni/go-job-kit/jobstatus"
 )
 
-// recordErrorStatus は、進行状況の読み出し失敗に対応する HTTP ステータスを返します。
+// recordErrorStatus returns the HTTP status for a failure to read the progress.
 //
-// 「まだ無い」と「読めなかった」を分けるのが要点です。同一視すると、権限剥奪や
-// ストレージ障害が「そんなレビューはありません」として画面にも API にも出て、
-// 呼び出し元は再試行すべき場面で諦めます。jobstatus が両者を別のエラーとして返すので、
-// そのまま割り当てます（この区別を潰さないことは go-job-kit 側の約束でもあります）。
+// The point is to separate "not there yet" from "could not be read". Conflated, a revoked
+// permission or a storage outage would reach both the screen and the API as "no such review",
+// and callers would give up where they should retry. jobstatus returns the two as different
+// errors, so they are mapped as is (keeping the distinction is also go-job-kit's promise).
 func recordErrorStatus(err error) int {
 	switch {
 	case errors.Is(err, jobstatus.ErrNotFound):

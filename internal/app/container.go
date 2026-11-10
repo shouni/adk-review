@@ -1,4 +1,4 @@
-// Package app は、アプリケーションの依存関係を組み立てて保持する DI コンテナを提供します。
+// Package app provides the DI container that builds and holds the application's dependencies.
 package app
 
 import (
@@ -14,41 +14,41 @@ import (
 	"github.com/shouni/adk-review/internal/domain"
 )
 
-// Container はアプリケーションの依存関係（DI コンテナ）を保持します。
+// Container holds the application's dependencies (the DI container).
 type Container struct {
 	Config *config.Config
-	// ストレージ I/O
+	// Storage I/O
 	Store  remoteio.Store
 	Layout domain.StorageLayout
-	// 進行状況と履歴
+	// Progress and history
 	StatusStore domain.StatusStore
 	History     domain.HistoryRepository
-	// 非同期タスクの投入
+	// Asynchronous task submission
 	TaskEnqueuer TaskEnqueuer
-	// SessionStore はログインセッションの保存先です。web 面だけが持ちます。
+	// SessionStore is where login sessions are stored. Only the web role has one.
 	SessionStore session.Store
-	// レビューの実行
+	// Running reviews
 	Pipeline domain.Pipeline
-	// 外部アダプター
+	// External adapters
 	Notifier  review.Notifier
 	PromptGen review.PromptGenerator
-	// Closers は、組み立て時に開いた資源です。Container.Close がまとめて閉じます。
-	// Close が個々のフィールドを見ないのは、資源が増えたときに builder が append
-	// するだけで済ませるためです。
+	// Closers are the resources opened during construction. Container.Close closes them all.
+	// Close does not look at individual fields so that a new resource only needs an
+	// append in the builder.
 	Closers []io.Closer
 }
 
-// TaskEnqueuer は、レビュー要求を非同期タスクとしてキューへ投入する役割です。
+// TaskEnqueuer submits a review request to the queue as an asynchronous task.
 type TaskEnqueuer interface {
 	Enqueue(ctx context.Context, payload domain.ReviewRequest) error
 	Close() error
 }
 
-// Close は、Container が保持するすべての外部接続リソースを安全に解放します。
+// Close safely releases every external connection the Container holds.
 //
-// エラーを返さないのは、呼び出し元が server.Run の defer 1 箇所きりで、返したところで
-// slog.Error 以外の行き先が無いためです。ここで必ず記録しておけば、cloudlog が
-// level を severity へマップするのでアラートにも乗ります。
+// It returns no error because its only caller is a single defer in server.Run, where a
+// returned error would have nowhere to go but slog.Error. Logged here without fail, it also
+// reaches alerting, since cloudlog maps the level to severity.
 func (c *Container) Close() {
 	for _, closer := range c.Closers {
 		if closer == nil {

@@ -12,19 +12,19 @@ import (
 	"google.golang.org/adk/v2/agent"
 )
 
-// search_text ツールです。作業ディレクトリ配下のテキストファイルを横断して検索します。
+// The search_text tool. It searches across the text files under the working directory.
 
 type searchTextArgs struct {
 	Query string `json:"query"`
-	// Context は、ヒット行の前後に添える行数です（0〜maxSearchContext、既定 0）。
+	// Context is the number of lines added before and after a hit (0 to maxSearchContext, default 0).
 	//
-	// 既定を 0 にしているのは、広い検索で総量の上限に先に当たると、添えた文脈のぶんだけ
-	// ヒットそのものが落ちるためです。1 行では判断できないと分かっている検索でだけ指定します。
+	// The default is 0 because when a broad search hits the total size limit first, the added
+	// context costs hits themselves. It is meant only for searches known to need more than one line.
 	Context int `json:"context,omitempty"`
 }
 
 type searchTextResult struct {
-	// Hits の各要素は "path:line: 行の内容" 形式です。
+	// Each element of Hits has the form "path:line: line content".
 	Hits      []string `json:"hits,omitempty"`
 	Truncated bool     `json:"truncated,omitempty"`
 	Error     string   `json:"error,omitempty"`
@@ -59,14 +59,14 @@ func (t *toolbox) searchText(toolCtx context.Context, args searchTextArgs) (sear
 	return searchTextResult{Hits: run.hits, Truncated: run.truncated}, nil
 }
 
-// searchRun は、1 回の search_text で積み上がる状態です。
+// searchRun is the state accumulated during one search_text.
 //
-// ヒット数も返却量も検索全体でひとつの上限なので、ファイルをまたいで持ち回る必要が
-// あります。WalkDir のコールバックへ閉じ込めると、ひとつの関数が状態の管理・ディレクトリ
-// 走査・行の切り出しを兼ねることになるため、状態のほうを型にして走査を分けています。
+// The hit count and the returned size each have a single limit for the whole search, so they
+// must carry across files. Confined to the WalkDir callback, one function would manage the state,
+// walk the directory and cut out lines at once, so the state is a type and the walk is separate.
 type searchRun struct {
 	root     string
-	lowered  string // 小文字化した検索語。大文字小文字を区別しません。
+	lowered  string // The lowercased search term. Matching is case-insensitive.
 	ctxLines int
 
 	hits        []string
@@ -76,17 +76,17 @@ type searchRun struct {
 	truncated   bool
 }
 
-// walkFunc は、root 配下を走査してヒットを積む WalkDir のコールバックを返します。
+// walkFunc returns the WalkDir callback that walks the root and accumulates hits.
 //
-// ここで見るのはファイル単位の足切り（種別・サイズ・文字コード・走査数）だけで、
-// 中身の走査は scanFile が持ちます。
+// It only applies per-file cut-offs (type, size, encoding, files walked); scanning the
+// content belongs to scanFile.
 func (s *searchRun) walkFunc(ctx context.Context) fs.WalkDirFunc {
 	return func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		// キャンセルはファイル単位で見ます。1 ファイルは maxSearchByteLen で頭打ちなので、
-		// 1 回のコールバックが締切を大きく踏み越えることはありません。
+		// Cancellation is checked per file. A file is capped at maxSearchByteLen, so one callback
+		// never overshoots the deadline by much.
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -96,15 +96,16 @@ func (s *searchRun) walkFunc(ctx context.Context) fs.WalkDirFunc {
 			}
 			return nil
 		}
-		// ★ 通常ファイル以外（symlink・FIFO・デバイス）は開きません。os.ReadFile は
-		// symlink を辿るため、ここを通すと root 外のファイルの中身がモデルの入力に入ります。
-		// d.Info() が返すのはリンク自身の情報なので、下のサイズ検査も素通りします
-		// （read_file は resolve で塞いでいますが、こちらは WalkDir のパスを直接開きます）。
+		// ★ Nothing but regular files (no symlinks, FIFOs or devices) is opened. os.ReadFile
+		// follows symlinks, so letting them through would put the content of files outside the
+		// root into the model's input. d.Info() describes the link itself, so the size check
+		// below would pass it too (read_file is protected by resolve, but this opens WalkDir's
+		// paths directly).
 		if !d.Type().IsRegular() {
 			return nil
 		}
-		// 走査したファイル数でも打ち切ります。ヒットが 1 件も無いとヒット上限が効かず、
-		// 1 レビューぶんのツール予算をリポジトリの全走査に何度も使ってしまうためです。
+		// The number of files walked also cuts it off. With no hits at all the hit limit never
+		// applies, and a review's tool budget would be spent on repeated full walks of the repository.
 		s.scanned++
 		if s.scanned > maxSearchFiles {
 			s.truncated = true
@@ -115,8 +116,8 @@ func (s *searchRun) walkFunc(ctx context.Context) fs.WalkDirFunc {
 		if err != nil || info.Size() > maxSearchByteLen {
 			return nil
 		}
-		// path は WalkDir が s.root 配下から渡す通常ファイルのパスです。
-		content, err := os.ReadFile(path) //nolint:gosec // 走査元が root 配下の通常ファイルに限定済み
+		// path is a regular file's path that WalkDir passes from under s.root.
+		content, err := os.ReadFile(path) //nolint:gosec // the walk is limited to regular files under the root
 		if err != nil || !utf8.Valid(content) {
 			return nil
 		}
@@ -129,14 +130,14 @@ func (s *searchRun) walkFunc(ctx context.Context) fs.WalkDirFunc {
 	}
 }
 
-// scanFile は 1 ファイルの中身を走査し、ヒットと（指定があれば）その前後の行を積みます。
+// scanFile scans one file's content and accumulates hits and (if requested) their surrounding lines.
 //
-// 上限に当たったときに filepath.SkipAll を返すのは、続きを読んでも載せられないためです。
+// It returns filepath.SkipAll at a limit because reading further could not be returned anyway.
 func (s *searchRun) scanFile(relPath, content string) error {
-	// emit は 1 行を結果へ載せます。載せられなければ false を返します。
+	// emit adds one line to the result. It returns false when it cannot.
 	//
-	// 既に載せた行は飛ばします。ヒットが近いと前後の文脈が重なるためで、
-	// 潰さないと同じ行が何度も並んで総量の上限を無駄に食います。
+	// Lines already added are skipped. Close hits have overlapping context, and without
+	// deduplication the same line repeats and wastes the total size limit.
 	lastEmitted := 0
 	emit := func(no int, line string) bool {
 		if no <= lastEmitted {
@@ -146,7 +147,7 @@ func (s *searchRun) scanFile(relPath, content string) error {
 		if cut {
 			s.truncated = true
 		}
-		// 総量の上限に当たったら、その 1 件は載せずに打ち切ります。
+		// On hitting the total size limit, stop without adding that line.
 		if s.resultBytes+len(hit) > maxSearchResultBytes {
 			s.truncated = true
 			return false
@@ -157,17 +158,17 @@ func (s *searchRun) scanFile(relPath, content string) error {
 		return true
 	}
 
-	// strings.Lines は行を切り出しながら回すので、大きなファイルでも
-	// 全行ぶんのスライスを一度に確保しません。前後の文脈も、直前の数行を
-	// 持ち回るだけで足ります（全行を配列にする必要はありません）。
+	// strings.Lines yields lines as it goes, so even a large file never allocates a slice of
+	// every line at once. The context only needs the last few lines carried along (no array
+	// of all lines is needed).
 	var before []bufferedLine
 	remainingAfter := 0
 	lineNo := 0
 
 	for raw := range strings.Lines(content) {
 		lineNo++
-		// 落とすのは改行だけです。TrimSpace までやるとインデントが消え、
-		// モデルから見て行の位置関係（ネストの深さ、箇条書きの階層）が読めなくなります。
+		// Only the newline is dropped. TrimSpace would remove the indentation, and the model could
+		// no longer read how lines relate (nesting depth, bullet list levels).
 		line := strings.TrimRight(raw, "\r\n")
 
 		switch {
@@ -204,14 +205,14 @@ func (s *searchRun) scanFile(relPath, content string) error {
 	return nil
 }
 
-// bufferedLine は、ヒットの手前で持ち回る 1 行です。
+// bufferedLine is one line carried along ahead of a hit.
 type bufferedLine struct {
 	no   int
 	text string
 }
 
-// formatHit は "path:line: 行の内容" 形式のヒットを組み立て、行を切り詰めたかを返します。
-// 切り詰めは文字境界で行い、切ったことが分かるよう末尾に省略記号を付けます。
+// formatHit builds a hit of the form "path:line: line content" and reports whether the line was truncated.
+// Truncation happens at a character boundary, with an ellipsis at the end to show the cut.
 func formatHit(rel string, lineNo int, line string) (string, bool) {
 	if len(line) <= maxHitBytes {
 		return fmt.Sprintf("%s:%d: %s", rel, lineNo, line), false

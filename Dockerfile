@@ -3,9 +3,9 @@ FROM golang:1.27-alpine AS builder
 RUN apk add --no-cache tzdata ca-certificates curl jq
 WORKDIR /app
 
-# SSH のホスト鍵。リポジトリに置くとローテートに追従できず、clone が全滅するのに
-# 気付くのは本番になります。COPY . . より前に置くこと（後ろだとソース変更のたびに
-# キャッシュが外れ、毎ビルド API を叩きます）。
+# SSH host keys. Kept in the repository, they could not follow a rotation, and every
+# clone failing would first be noticed in production. Keep this before COPY . . (after
+# it, every source change misses the cache and every build calls the API).
 RUN mkdir -p /etc/ssh \
     && curl -fsSL --retry 3 https://api.github.com/meta \
        | jq -er '.ssh_keys[] | "github.com \(.)"' > /etc/ssh/ssh_known_hosts \

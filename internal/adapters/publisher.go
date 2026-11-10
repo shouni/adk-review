@@ -13,40 +13,40 @@ import (
 
 const contentTypeJSON = "application/json; charset=utf-8"
 
-// ReportPublisher は、レビュー結果全文を report.json として保存する review.Publisher です。
+// ReportPublisher is a review.Publisher that saves the full review result as report.json.
 //
-// HTML へ整形せず JSON のまま置くのは、表示を詳細画面（/jobs/{jobID}）が受け持つ
-// ためです。整形済みの HTML も置くと、同じ内容の見た目が 2 系統に分かれるうえ、
-// 署名付き URL 経由でアプリの認証を迂回して読めてしまいます。
+// It is stored as JSON rather than rendered to HTML because the detail page (/jobs/{jobID})
+// handles display. Storing rendered HTML as well would split the look of the same content
+// into two, and it could be read through a signed URL, bypassing the app's authentication.
 type ReportPublisher struct {
 	writer remoteio.Writer
 }
 
 var _ review.Publisher = (*ReportPublisher)(nil)
 
-// NewReportPublisher は ReportPublisher を構築します。
+// NewReportPublisher builds a ReportPublisher.
 func NewReportPublisher(writer remoteio.Writer) (*ReportPublisher, error) {
 	if writer == nil {
-		return nil, fmt.Errorf("writer が nil です")
+		return nil, fmt.Errorf("writer is nil")
 	}
 	return &ReportPublisher{writer: writer}, nil
 }
 
-// Publish は、レビュー結果を report.json として保存します。
+// Publish saves the review result as report.json.
 //
-// 保存先は Request.StorageURI です。ジョブ ID から組み立て直さないのは、投入時に
-// 決めた場所と食い違わないようにするためです（採番と配置は投入側の責務です）。
+// The destination is Request.StorageURI. It is not rebuilt from the job ID so that it cannot
+// disagree with the location decided at submission (minting and placement belong to the submitter).
 func (p *ReportPublisher) Publish(ctx context.Context, req review.Request, report review.Report) error {
 	body, err := json.Marshal(report)
 	if err != nil {
-		return fmt.Errorf("レビュー結果のJSON化に失敗しました: %w", err)
+		return fmt.Errorf("failed to encode the review result as JSON: %w", err)
 	}
 
-	slog.InfoContext(ctx, "レビュー結果を保存します", "uri", req.StorageURI)
+	slog.InfoContext(ctx, "saving the review result", "uri", req.StorageURI)
 
 	if err := p.writer.Write(ctx, req.StorageURI, bytes.NewReader(body),
 		remoteio.WithContentType(contentTypeJSON)); err != nil {
-		return fmt.Errorf("レビュー結果の保存に失敗しました (%s): %w", req.StorageURI, err)
+		return fmt.Errorf("failed to save the review result (%s): %w", req.StorageURI, err)
 	}
 	return nil
 }

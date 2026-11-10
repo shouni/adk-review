@@ -12,15 +12,15 @@ import (
 	"github.com/shouni/adk-review/internal/server/handlers"
 )
 
-// Validate は、面ごとのハンドラーが揃っていないまま起動するのを止めます。
+// Validate stops startup when a role's handlers are incomplete.
 //
-// 揃っていないとルーターは該当ルートの登録を飛ばすだけなので、デプロイは成功し
-// /health も通り、壊れているのは投入経路だけになります。Cloud Tasks は 404 を受けて
-// max_attempts = 1 でタスクを捨てるため、レビュー依頼が静かに失われます。
+// Incomplete, the router just skips registering those routes, so the deploy succeeds, /health
+// passes, and only the submission path is broken. Cloud Tasks gets a 404 and, with
+// max_attempts = 1, drops the task, so the review request is silently lost.
 func TestAppHandlersValidate(t *testing.T) {
 	t.Parallel()
 
-	// 中身は見ないので、非 nil であることだけが意味を持ちます。
+	// The contents are never looked at; only being non-nil matters.
 	authHandler := &session.Handler{}
 	webHandler := &handlers.Handler{}
 	workerHandler := &worker.Handler[domain.ReviewRequest]{}
@@ -32,47 +32,47 @@ func TestAppHandlersValidate(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name: "web だけの構成は通る",
+			name: "web only passes",
 			h:    AppHandlers{Auth: authHandler, Web: webHandler},
 		},
 		{
-			name: "worker だけの構成は通る",
+			name: "worker only passes",
 			h:    AppHandlers{Worker: workerHandler, TaskAuth: taskAuth},
 		},
 		{
-			name: "both の構成は通る",
+			name: "both passes",
 			h: AppHandlers{
 				Auth: authHandler, Web: webHandler,
 				Worker: workerHandler, TaskAuth: taskAuth,
 			},
 		},
 		{
-			// これを通すと、画面が全部 302 になるのに起動は成功します。
-			name:    "web ハンドラーだけで認証が無い",
+			// If this passed, every screen would be a 302 while startup succeeds.
+			name:    "web handler without auth",
 			h:       AppHandlers{Web: webHandler},
-			wantErr: "web 面",
+			wantErr: "web handlers",
 		},
 		{
-			name:    "認証だけで web ハンドラーが無い",
+			name:    "auth without web handler",
 			h:       AppHandlers{Auth: authHandler},
-			wantErr: "web 面",
+			wantErr: "web handlers",
 		},
 		{
-			// ★ これを通すと /tasks/execute-review が無認証で開くか、
-			// あるいは登録されずタスクが 404 で捨てられます。
-			name:    "worker ハンドラーだけで OIDC 検証が無い",
+			// ★ If this passed, /tasks/execute-review would either be open without
+			// authentication or not registered, dropping tasks with a 404.
+			name:    "worker handler without OIDC verification",
 			h:       AppHandlers{Worker: workerHandler},
-			wantErr: "worker 面",
+			wantErr: "worker handlers",
 		},
 		{
-			name:    "OIDC 検証だけで worker ハンドラーが無い",
+			name:    "OIDC verification without worker handler",
 			h:       AppHandlers{TaskAuth: taskAuth},
-			wantErr: "worker 面",
+			wantErr: "worker handlers",
 		},
 		{
-			name:    "どの面も担当していない",
+			name:    "no role served",
 			h:       AppHandlers{},
-			wantErr: "1 つも構築されていません",
+			wantErr: "no handler was built",
 		},
 	}
 
@@ -83,15 +83,15 @@ func TestAppHandlersValidate(t *testing.T) {
 			err := tt.h.Validate()
 			if tt.wantErr == "" {
 				if err != nil {
-					t.Fatalf("通るはずの構成で失敗した: %v", err)
+					t.Fatalf("a valid setup failed: %v", err)
 				}
 				return
 			}
 			if err == nil {
-				t.Fatalf("不整合が素通りした（%q を含むエラーを期待）", tt.wantErr)
+				t.Fatalf("the inconsistency passed (want an error containing %q)", tt.wantErr)
 			}
 			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("エラー %q に %q が含まれていない", err.Error(), tt.wantErr)
+				t.Fatalf("error %q does not contain %q", err.Error(), tt.wantErr)
 			}
 		})
 	}

@@ -24,14 +24,14 @@ const (
 	reviewDetailTemplate = "review_detail.html"
 )
 
-// pageTemplates は、レイアウトと組み合わせて描画するページテンプレートです。
+// pageTemplates are the page templates rendered together with the layout.
 var pageTemplates = []string{reviewFormTemplate, historyTemplate, reviewDetailTemplate}
 
-// parsePageTemplates は、ページごとに独立したテンプレートセットを構築します。
+// parsePageTemplates builds an independent template set per page.
 //
-// 1 セットへまとめてパースできないのは、どのページも本文を {{define "content"}} で
-// 定義しているためです。同じ名前の定義は後からパースしたものが前を上書きするので、
-// まとめると 1 ページ分の本文しか残らず、他のページはそれを描いてしまいます。
+// They cannot be parsed into one set because every page defines its body with
+// {{define "content"}}. A later definition of the same name overwrites an earlier one, so
+// together only one page's body would remain and every other page would render it.
 func parsePageTemplates() (map[string]*template.Template, error) {
 	set := make(map[string]*template.Template, len(pageTemplates))
 
@@ -40,27 +40,27 @@ func parsePageTemplates() (map[string]*template.Template, error) {
 			Funcs(templateFuncs()).
 			ParseFS(assets.Templates, layoutTemplate, "templates/"+page)
 		if err != nil {
-			return nil, fmt.Errorf("テンプレート %s のパースに失敗しました: %w", page, err)
+			return nil, fmt.Errorf("failed to parse template %s: %w", page, err)
 		}
 		set[page] = tmpl
 	}
 	return set, nil
 }
 
-// render は、指定ページをレイアウトに載せて描画します。
+// render renders the given page within the layout.
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, page string, data any) {
 	tmpl, ok := h.templates[page]
 	if !ok {
-		slog.ErrorContext(r.Context(), "未登録のテンプレートです", "page", page)
+		slog.ErrorContext(r.Context(), "unregistered template", "page", page)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	// 先にバッファへ書き出します。テンプレートの実行が途中で失敗しても、
-	// 壊れた HTML を 200 で返さずにエラーへ倒せます。
+	// Write to a buffer first. If executing the template fails midway, it can turn into an error
+	// instead of returning broken HTML with a 200.
 	var buf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&buf, "layout.html", data); err != nil {
-		slog.ErrorContext(r.Context(), "テンプレート実行エラー", "error", err, "page", page)
+		slog.ErrorContext(r.Context(), "template execution error", "error", err, "page", page)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -68,11 +68,11 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, pag
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	if _, err := buf.WriteTo(w); err != nil {
-		slog.ErrorContext(r.Context(), "レスポンス書き込みエラー", "error", err)
+		slog.ErrorContext(r.Context(), "response write error", "error", err)
 	}
 }
 
-// templateFuncs は、履歴の表示に使う整形関数です。
+// templateFuncs are the formatting functions used to display the history.
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"repoPath":      giturl.GetRepositoryPath,
@@ -89,10 +89,10 @@ func templateFuncs() template.FuncMap {
 	}
 }
 
-// byteSize は、バイト数を読める単位へ整えます。
+// byteSize formats a byte count in readable units.
 //
-// 差分の大きさは MAX_DIFF_BYTES（既定 320 KiB）と見比べる値なので、生のバイト数のままだと
-// 桁を数えることになります。
+// The diff size is compared against MAX_DIFF_BYTES (default 320 KiB); as raw bytes one would
+// have to count digits.
 func byteSize(n int) string {
 	switch {
 	case n >= 1<<20:
@@ -104,7 +104,7 @@ func byteSize(n int) string {
 	}
 }
 
-// durationText は、ミリ秒を読める長さへ整えます。
+// durationText formats milliseconds as a readable duration (the text is user-facing Japanese).
 func durationText(ms int64) string {
 	d := time.Duration(ms) * time.Millisecond
 	if d < time.Minute {
@@ -113,17 +113,17 @@ func durationText(ms int64) string {
 	return fmt.Sprintf("%d 分 %d 秒", int(d.Minutes()), int(d.Seconds())%60)
 }
 
-// 引用ブロックの CSS クラスです。見た目そのものは app.css が持ちます。
+// CSS classes of the quote blocks. The look itself lives in app.css.
 const (
 	codeBlockClass  = "code-block"
 	quoteBlockClass = "quote-block"
 )
 
-// excerptClass は、モードに応じた引用ブロックのクラスを返します。
+// excerptClass returns the quote block class for a mode.
 //
-// 何をどう見せるかの宣言はプロンプト側（front matter の excerpt）にあります。
-// ここでモード名を条件分岐すると、モードを足すたびに画面側も直すことになり、
-// 「prompts/<mode>.md を置くだけで増える」という仕組みが崩れます。
+// What to show and how is declared on the prompt side (excerpt in the front matter).
+// Branching on mode names here would mean fixing the screen for every new mode, breaking
+// "placing prompts/<mode>.md is all it takes".
 func excerptClass(mode string) string {
 	if assets.ExcerptStyleFor(mode) == assets.ExcerptCode {
 		return codeBlockClass
@@ -131,15 +131,15 @@ func excerptClass(mode string) string {
 	return quoteBlockClass
 }
 
-// codeText は、指摘の引用（excerpt）と修正案を表示用に整えます。
+// codeText tidies a finding's quote (excerpt) and suggested fix for display.
 //
-// ★ モデルは JSON の文字列値にも Markdown の癖を持ち込み、コードフェンスごと
-// excerpt へ入れてくることがあります。<pre> へそのまま流すと ``` が本文として見え、
-// 「モデルの出力の生々しさ」がそのまま画面に出ます。全体が 1 つのフェンスで
-// 囲まれている場合だけ剥がし、中に出てくるフェンスは内容として残します。
+// ★ The model brings Markdown habits into JSON string values too, and sometimes puts a whole
+// code fence into excerpt. Fed into <pre> as is, the ``` shows up as text and the rawness of
+// the model's output reaches the screen. Only a fence wrapping the whole value is stripped;
+// fences inside it stay as content.
 //
-// 前後の空行も落とします。<pre> は空行をそのまま高さにするので、中身の無い帯が
-// 引用の上下に残ります（モデルは引用の前後に改行を付けがちです）。
+// Leading and trailing blank lines are dropped too. <pre> turns blank lines into height, leaving
+// empty bands above and below the quote (the model tends to add newlines around quotes).
 func codeText(s string) string {
 	lines := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
 	lines = trimBlankLines(lines)
@@ -152,7 +152,7 @@ func codeText(s string) string {
 	return strings.Join(lines, "\n")
 }
 
-// trimBlankLines は、前後の空白だけの行を落とします。
+// trimBlankLines drops leading and trailing whitespace-only lines.
 func trimBlankLines(lines []string) []string {
 	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
 		lines = lines[1:]
@@ -163,8 +163,8 @@ func trimBlankLines(lines []string) []string {
 	return lines
 }
 
-// formatTime は日本時間で表示します。ゼロ値は空欄にします
-// （未記録の時刻が 0001/01/01 として並ぶのを避けるためです）。
+// formatTime displays Japan time. The zero value is left blank
+// (so an unrecorded time does not appear as 0001/01/01).
 func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
@@ -172,18 +172,18 @@ func formatTime(t time.Time) string {
 	return jst.FormatTimestamp(t)
 }
 
-// badge は、表示名とバッジのクラスの組です。
+// badge pairs a display name with a badge class.
 //
-// 表示名とクラスを別々の switch で持つと、状態を増やしたときに片方だけ直す事故が
-// 起きます（どちらも「状態 → 見た目」の同じ対応表です）。1 箇所に束ねます。
+// With the name and the class in separate switches, adding a state invites fixing only one
+// (both are the same "state -> look" table). They are kept together in one place.
 type badge struct {
 	label string
 	class string
 }
 
-// stateBadges は、進行状況の表示定義です。
-// 「差分なしスキップ」はジョブとしては正常終了（succeeded）なので、State だけでは
-// 完了と見分けがつきません。Outcome を併せて見る分だけ stateBadge が補います。
+// stateBadges defines how progress is displayed.
+// A "skipped, no diff" is a normal end for the job (succeeded), so State alone cannot tell it
+// from completion. stateBadge fills in by also looking at Outcome.
 var stateBadges = map[jobstatus.State]badge{
 	jobstatus.StateQueued:    {"⏱ 受付済み", "text-bg-light"},
 	jobstatus.StateRunning:   {"⏳ 実行中", "text-bg-info"},
@@ -191,13 +191,13 @@ var stateBadges = map[jobstatus.State]badge{
 	jobstatus.StateSucceeded: {"✅ 完了", "text-bg-success"},
 }
 
-// skippedBadge は、差分が無くスキップされた場合の表示です。
+// skippedBadge is shown when the review was skipped for lack of a diff.
 var skippedBadge = badge{"⏭️ スキップ", "text-bg-secondary"}
 
-// unknownStateBadge は、未知の状態の表示です。
+// unknownStateBadge is shown for an unknown state.
 var unknownStateBadge = badge{"— 不明", "text-bg-light"}
 
-// decisionBadges は、レビュー判定の表示定義です。
+// decisionBadges defines how review decisions are displayed.
 var decisionBadges = map[review.Decision]badge{
 	review.DecisionNone:    {"✅ 問題なし", "text-bg-success"},
 	review.DecisionMinor:   {"🟡 軽微", "text-bg-warning"},
@@ -205,10 +205,10 @@ var decisionBadges = map[review.Decision]badge{
 	review.DecisionBlocker: {"🔴 ブロッカー", "text-bg-danger"},
 }
 
-// unknownDecisionBadge は、未知の判定の表示です。
+// unknownDecisionBadge is shown for an unknown decision.
 var unknownDecisionBadge = badge{"—", "text-bg-light"}
 
-// stateBadge は、進行状況と結末に対応する表示を返します。
+// stateBadge returns the display for the progress and outcome.
 func stateBadge(state jobstatus.State, outcome review.Status) badge {
 	if state == jobstatus.StateSucceeded && outcome == review.StatusSkipped {
 		return skippedBadge
@@ -219,7 +219,7 @@ func stateBadge(state jobstatus.State, outcome review.Status) badge {
 	return unknownStateBadge
 }
 
-// decisionBadge は、判定に対応する表示を返します。
+// decisionBadge returns the display for a decision.
 func decisionBadge(decision review.Decision) badge {
 	if b, ok := decisionBadges[decision]; ok {
 		return b
@@ -227,30 +227,30 @@ func decisionBadge(decision review.Decision) badge {
 	return unknownDecisionBadge
 }
 
-// stateLabel は、進行状況と結末をあわせた表示名を返します。
+// stateLabel returns the display name combining the progress and outcome.
 func stateLabel(state jobstatus.State, outcome review.Status) string {
 	return stateBadge(state, outcome).label
 }
 
-// stateClass は、状態バッジの Bootstrap クラスを返します。
+// stateClass returns the Bootstrap class of the state badge.
 func stateClass(state jobstatus.State, outcome review.Status) string {
 	return stateBadge(state, outcome).class
 }
 
-// decisionLabel は、レビュー判定の表示名を返します。
+// decisionLabel returns the display name of a review decision.
 func decisionLabel(decision review.Decision) string {
 	return decisionBadge(decision).label
 }
 
-// decisionClass は、判定バッジの Bootstrap クラスを返します。
+// decisionClass returns the Bootstrap class of the decision badge.
 func decisionClass(decision review.Decision) string {
 	return decisionBadge(decision).class
 }
 
-// severityClass は、指摘の重大度バッジの Bootstrap クラスを返します。
+// severityClass returns the Bootstrap class of a finding's severity badge.
 //
-// Decision とは型が違うため別関数にしています。テンプレートの関数は型で解決されるので、
-// 片方を使い回すと実行時に型不一致で落ちます。
+// It is a separate function because its type differs from Decision. Template functions resolve
+// by type, so reusing one would fail at run time with a type mismatch.
 func severityClass(severity review.Severity) string {
 	return decisionClass(review.Decision(severity))
 }

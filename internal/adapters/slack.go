@@ -13,26 +13,26 @@ import (
 	"github.com/shouni/adk-review/internal/giturl"
 )
 
-// slackTitles はレビュー結果ごとの見出しです。
+// slackTitles are the headings per review outcome.
 var slackTitles = notify.Titles{
 	Success: "✅ AIレビューが完了しました。",
 	Failure: "❌ AIレビューの生成に失敗しました。",
 	Skipped: "⏭️ 差分がないため、レビューをスキップしました。",
 }
 
-// SlackAdapter は review.Notifier を満たす具象型です。
+// SlackAdapter is the concrete type satisfying review.Notifier.
 type SlackAdapter struct {
 	pipeline *notify.Pipeline
 }
 
 var _ review.Notifier = (*SlackAdapter)(nil)
 
-// NewSlackAdapter は新しいアダプターインスタンスを作成します。
-// webhookURL が空の場合は通知を行わないアダプターを返します。
+// NewSlackAdapter creates a new adapter instance.
+// With an empty webhookURL it returns an adapter that sends nothing.
 func NewSlackAdapter(httpClient httpkit.Poster, webhookURL string) (*SlackAdapter, error) {
 	notifier, err := slack.NewNotifier(httpClient, webhookURL)
 	if err != nil {
-		return nil, fmt.Errorf("slackクライアントの初期化に失敗しました: %w", err)
+		return nil, fmt.Errorf("failed to initialise the slack client: %w", err)
 	}
 
 	return &SlackAdapter{
@@ -40,32 +40,32 @@ func NewSlackAdapter(httpClient httpkit.Poster, webhookURL string) (*SlackAdapte
 	}, nil
 }
 
-// Notify は review.Notifier の実装です。
+// Notify implements review.Notifier.
 //
-// リンク先は詳細画面（Request.PublicURL）です。成果物への署名付き URL を直接張らないのは、
-// アプリの認証を迂回して読めてしまうためです（ReportPublisher の項を参照）。
-// 裏返して言えば、通知のリンクを開く人にもログインが要ります。
+// The link points to the detail page (Request.PublicURL). A signed URL to the artifact is
+// not linked directly because it could be read bypassing the app's authentication (see
+// ReportPublisher). Put the other way, whoever opens the notice's link must also log in.
 func (s *SlackAdapter) Notify(ctx context.Context, n review.Notification) error {
 	if !s.pipeline.Enabled() {
-		slog.InfoContext(ctx, "Slack通知が無効化されているためスキップします。", "job_id", n.Request.JobID)
+		slog.InfoContext(ctx, "skipping: Slack notifications are disabled", "job_id", n.Request.JobID)
 		return nil
 	}
 
 	if err := s.send(ctx, n); err != nil {
-		return fmt.Errorf("slackへの結果投稿に失敗しました: %w", err)
+		return fmt.Errorf("failed to post the result to slack: %w", err)
 	}
 
-	slog.InfoContext(ctx, "レビュー結果を Slack に投稿しました。",
+	slog.InfoContext(ctx, "posted the review result to Slack",
 		"job_id", n.Request.JobID, "status", n.Result.Status)
 	return nil
 }
 
-// send は結果の状態に応じた通知を送信します。
+// send sends the notice for the outcome's state.
 func (s *SlackAdapter) send(ctx context.Context, n review.Notification) error {
 	switch n.Result.Status {
 	case review.StatusFailed:
-		// 詳細画面には結果が無いためリンクは張らず、代わりに失敗した工程を載せます。
-		// エラー内容そのものは Pipeline が末尾に追記します。
+		// The detail page has no result, so no link; the failed step is shown instead.
+		// The Pipeline appends the error itself at the end.
 		body := buildRepositoryBody(n.Request)
 		if step := review.StepOf(n.Err); step != "" {
 			body.Field("発生ステップ", step)
@@ -73,7 +73,7 @@ func (s *SlackAdapter) send(ctx context.Context, n review.Notification) error {
 		return s.pipeline.Failure(ctx, body, n.Err)
 
 	case review.StatusSkipped:
-		// スキップの理由は見出しが述べているため、理由は渡しません。
+		// The heading states why it was skipped, so no reason is passed.
 		return s.pipeline.Skipped(ctx, buildRepositoryBody(n.Request), nil)
 
 	default:
@@ -89,14 +89,14 @@ func (s *SlackAdapter) send(ctx context.Context, n review.Notification) error {
 	}
 }
 
-// buildRepositoryBody はリポジトリとブランチだけを持つ本文を返します。
+// buildRepositoryBody returns a body holding only the repository and branches.
 func buildRepositoryBody(req review.Request) *notify.Body {
 	body := notify.NewBody()
 	writeRepositoryFields(body, req)
 	return body
 }
 
-// writeRepositoryFields はリポジトリと比較ブランチを本文へ追記します。
+// writeRepositoryFields appends the repository and the compared branches to the body.
 func writeRepositoryFields(body *notify.Body, req review.Request) {
 	body.Code("リポジトリ", giturl.GetRepositoryPath(req.RepoURL))
 

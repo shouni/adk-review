@@ -84,11 +84,11 @@ func TestLoadConfig_TaskAudienceDefaultsToServiceURL(t *testing.T) {
 	}
 }
 
-// SERVER_ROLE は明示が必須で、未設定は起動時（LoadConfig）に落ちる契約です。
+// SERVER_ROLE must be explicit; the contract is that unset fails at startup (LoadConfig).
 func TestLoadConfig_RequiresServerRole(t *testing.T) {
 	unsetEnvForTest(t, "SERVER_ROLE")
 
 	if _, err := LoadConfig(); err == nil {
-		t.Fatal("SERVER_ROLE 未設定が素通りした")
+		t.Fatal("an unset SERVER_ROLE passed")
 	}
 }

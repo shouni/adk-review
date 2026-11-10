@@ -7,10 +7,10 @@ import (
 	"github.com/shouni/go-review-kit/review"
 )
 
-// 判定ごとの表示が全種類そろっていること。
+// Every decision has a display.
 //
-// レビューツールとして、ブロッカーが「—」や薄いグレーで出るのはいちばん痛い壊れ方です。
-// 1 つの判定しか踏まないテストだと、他の分岐が壊れても気付けません。
+// For a review tool, a Blocker shown as "—" or in pale grey is the most painful way to break.
+// A test that touches only one decision cannot notice the other branches breaking.
 func TestDecisionBadgeCoversAllDecisions(t *testing.T) {
 	t.Parallel()
 
@@ -20,33 +20,33 @@ func TestDecisionBadgeCoversAllDecisions(t *testing.T) {
 
 			b := decisionBadge(decision)
 			if b == unknownDecisionBadge {
-				t.Fatalf("%q の表示が未定義のまま", decision)
+				t.Fatalf("%q has no display defined", decision)
 			}
 			if b.label == "" || b.class == "" {
-				t.Fatalf("%q の表示が空: %+v", decision, b)
+				t.Fatalf("%q has an empty display: %+v", decision, b)
 			}
 		})
 	}
 
 	if got := decisionBadge("なにかの新しい判定"); got != unknownDecisionBadge {
-		t.Errorf("未知の判定 = %+v, want %+v", got, unknownDecisionBadge)
+		t.Errorf("unknown decision = %+v, want %+v", got, unknownDecisionBadge)
 	}
 }
 
-// ブロッカーは危険色で出ること。判定の重さが色に出ないと一覧で見落とします。
+// A Blocker shows in the danger colour. If the colour does not carry the weight, it is missed in the list.
 func TestDecisionBlockerIsDanger(t *testing.T) {
 	t.Parallel()
 
 	if got := decisionClass(review.DecisionBlocker); got != "text-bg-danger" {
-		t.Errorf("ブロッカーのクラス = %q, want text-bg-danger", got)
+		t.Errorf("Blocker class = %q, want text-bg-danger", got)
 	}
 	if got := decisionLabel(review.DecisionBlocker); got == "—" {
-		t.Error("ブロッカーの表示名が未定義扱いになっている")
+		t.Error("the Blocker display name is treated as undefined")
 	}
 }
 
-// severityClass は decisionClass へ委譲しますが、型が違うので別関数です。
-// 委譲が外れていないことを確かめます。
+// severityClass delegates to decisionClass but is a separate function because the type differs.
+// This checks that the delegation is still in place.
 func TestSeverityClassMatchesDecisionClass(t *testing.T) {
 	t.Parallel()
 
@@ -57,7 +57,7 @@ func TestSeverityClassMatchesDecisionClass(t *testing.T) {
 	}
 }
 
-// 進行状況の表示が全状態そろっていること。
+// Every state has a progress display.
 func TestStateBadgeCoversAllStates(t *testing.T) {
 	t.Parallel()
 
@@ -70,23 +70,23 @@ func TestStateBadgeCoversAllStates(t *testing.T) {
 	for _, state := range states {
 		b := stateBadge(state, review.StatusSucceeded)
 		if b == unknownStateBadge {
-			t.Errorf("%q の表示が未定義のまま", state)
+			t.Errorf("%q has no display defined", state)
 		}
 	}
 
-	// スキップは succeeded だが完了とは別扱いにします。
+	// A skip is succeeded but displayed separately from completion.
 	skipped := stateBadge(jobstatus.StateSucceeded, review.StatusSkipped)
 	done := stateBadge(jobstatus.StateSucceeded, review.StatusSucceeded)
 	if skipped == done {
-		t.Error("スキップと完了が同じ表示になっている")
+		t.Error("skipped and succeeded look the same")
 	}
 
 	if got := stateBadge("なにかの新しい状態", review.StatusSucceeded); got != unknownStateBadge {
-		t.Errorf("未知の状態 = %+v, want %+v", got, unknownStateBadge)
+		t.Errorf("unknown state = %+v, want %+v", got, unknownStateBadge)
 	}
 }
 
-// 引用の整形。モデルが付けてくるコードフェンスと前後の空行を落とすこと。
+// Formatting quotes: drop the code fences the model adds and the surrounding blank lines.
 func TestCodeText(t *testing.T) {
 	t.Parallel()
 
@@ -94,35 +94,35 @@ func TestCodeText(t *testing.T) {
 		in   string
 		want string
 	}{
-		"言語付きフェンスを剥がす": {
+		"strips a fence with a language": {
 			in:   "```go\nfunc main() {}\n```",
 			want: "func main() {}",
 		},
-		"言語なしフェンスを剥がす": {
+		"strips a fence without a language": {
 			in:   "```\nhello\n```",
 			want: "hello",
 		},
-		"前後の空行を落とす": {
+		"drops surrounding blank lines": {
 			in:   "\n\n    アキラは剣を抜いた。\n\n",
 			want: "    アキラは剣を抜いた。",
 		},
-		"インデントは残す": {
+		"keeps indentation": {
 			in:   "if x {\n\treturn nil\n}",
 			want: "if x {\n\treturn nil\n}",
 		},
-		"閉じていないフェンスは内容として残す": {
+		"keeps an unclosed fence as content": {
 			in:   "```go\nfunc main() {}",
 			want: "```go\nfunc main() {}",
 		},
-		"途中のフェンスは残す": {
+		"keeps a fence in the middle": {
 			in:   "見出し\n```go\ncode\n```\n続き",
 			want: "見出し\n```go\ncode\n```\n続き",
 		},
-		"CRLF を LF に揃える": {
+		"normalises CRLF to LF": {
 			in:   "a\r\nb",
 			want: "a\nb",
 		},
-		"空文字": {in: "", want: ""},
+		"empty string": {in: "", want: ""},
 	}
 
 	for name, tt := range tests {
@@ -136,7 +136,7 @@ func TestCodeText(t *testing.T) {
 	}
 }
 
-// 引用のクラスはモードで分かれること。判定の出どころはプロンプトの front matter です。
+// The quote class depends on the mode. The decision comes from the prompt's front matter.
 func TestExcerptClass(t *testing.T) {
 	t.Parallel()
 
@@ -150,8 +150,8 @@ func TestExcerptClass(t *testing.T) {
 	}
 }
 
-// 差分の大きさは MAX_DIFF_BYTES（既定 320 KiB）と見比べる値なので、桁を数えずに
-// 読める形にすること。
+// The diff size is compared against MAX_DIFF_BYTES (default 320 KiB), so it must be readable
+// without counting digits.
 func TestByteSize(t *testing.T) {
 	t.Parallel()
 

@@ -1,5 +1,5 @@
-// adk-review は、Git リポジトリの差分を AI エージェントにレビューさせる
-// Web ベースのオーケストレーターです。
+// adk-review is a web-based orchestrator that has an AI agent review the diff of a Git
+// repository.
 package main
 
 import (
@@ -16,16 +16,16 @@ import (
 	"github.com/shouni/adk-review/internal/server"
 )
 
-// logLevelEnvKey はログ出力レベルを指定する環境変数名です。
+// logLevelEnvKey is the environment variable that sets the log level.
 const logLevelEnvKey = "LOG_LEVEL"
 
 func main() {
-	// ロガーの設定（LOG_LEVEL 対応・Cloud Logging 互換の構造化ログ）。
+	// Logger setup (LOG_LEVEL support, structured logs compatible with Cloud Logging).
 	//
-	// cloudlog が level を severity へマップします。これが無いと Cloud Logging 上では
-	// 全行が同じ重大度に見え、slog.Error がログベースの通知やメトリクスに乗りません。
-	// slogctx は context に載せた属性（job_id など）を全出力へ付けます。
-	// 組み立てだけをアプリ側で行うのは兄弟アプリと同じ形です。
+	// cloudlog maps the level to severity. Without it every line looks the same severity in
+	// Cloud Logging, and slog.Error never reaches log-based alerts or metrics.
+	// slogctx adds the attributes put on the context (job_id and so on) to every output.
+	// Only the assembly is done in the app, the same shape as the sibling apps.
 	level := slogctx.ParseLevel(os.Getenv(logLevelEnvKey))
 	slog.SetDefault(slog.New(cloudlog.NewHandler(os.Stdout, level)))
 
@@ -34,24 +34,24 @@ func main() {
 	}
 }
 
-// run はアプリケーションの初期化とサーバー起動を行います。defer によるクリーンアップが
-// os.Exit で無視されないよう、終了コードの決定は main 側に委ねます。
+// run initialises the application and starts the server. The exit code is left to main so
+// os.Exit does not skip the deferred cleanup.
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		slog.Error("設定の読み込みに失敗しました", "error", err)
+		slog.Error("failed to load the configuration", "error", err)
 		return err
 	}
 	if err := cfg.ValidateEssentialConfig(); err != nil {
-		slog.Error("必須設定のバリデーションに失敗しました", "error", err)
+		slog.Error("failed to validate the required configuration", "error", err)
 		return err
 	}
 
 	if err := server.Run(ctx, cfg); err != nil {
-		slog.Error("アプリケーションが異常終了しました", "error", err)
+		slog.Error("the application exited abnormally", "error", err)
 		return err
 	}
 	return nil

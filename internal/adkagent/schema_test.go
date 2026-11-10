@@ -9,8 +9,8 @@ import (
 	"github.com/shouni/go-review-kit/review"
 )
 
-// スキーマの列挙値は review パッケージの定義から組み立てます。両者が食い違うと、
-// モデルがスキーマ上は正当な値を返したのにデコードで弾かれる、という状態になります。
+// The schema's enumerated values are built from the review package's definitions. If the two
+// disagree, the model returns a value valid by the schema and is rejected on decode.
 func TestSchemaEnumsMatchDomain(t *testing.T) {
 	t.Parallel()
 
@@ -18,78 +18,79 @@ func TestSchemaEnumsMatchDomain(t *testing.T) {
 
 	verdict, ok := schema.Properties["verdict"]
 	if !ok {
-		t.Fatal("スキーマに verdict がありません")
+		t.Fatal("the schema has no verdict")
 	}
 	if got, want := verdict.Properties["decision"].Enum, review.DecisionStrings(); !slices.Equal(got, want) {
-		t.Errorf("decision の列挙 = %v, want %v", got, want)
+		t.Errorf("decision enum = %v, want %v", got, want)
 	}
 
 	findings, ok := schema.Properties["findings"]
 	if !ok {
-		t.Fatal("スキーマに findings がありません")
+		t.Fatal("the schema has no findings")
 	}
 	if got, want := findings.Items.Properties["severity"].Enum, review.SeverityStrings(); !slices.Equal(got, want) {
-		t.Errorf("severity の列挙 = %v, want %v", got, want)
+		t.Errorf("severity enum = %v, want %v", got, want)
 	}
 }
 
-// スキーマの必須項目は review.Report のデコードが前提とする形と一致している必要があります。
+// The schema's required fields must match the shape review.Report's decoding assumes.
 func TestSchemaShape(t *testing.T) {
 	t.Parallel()
 
 	schema := reportSchema()
 
 	if schema.Type != genai.TypeObject {
-		t.Fatalf("トップレベルの型 = %v", schema.Type)
+		t.Fatalf("top-level type = %v", schema.Type)
 	}
 
 	for _, key := range []string{"title", "summary", "verdict", "findings"} {
 		if _, ok := schema.Properties[key]; !ok {
-			t.Errorf("スキーマに %s がありません", key)
+			t.Errorf("the schema has no %s", key)
 		}
 		if !slices.Contains(schema.Required, key) {
-			t.Errorf("%s が必須になっていません", key)
+			t.Errorf("%s is not required", key)
 		}
 	}
 
 	findings := schema.Properties["findings"]
 	if findings.Type != genai.TypeArray || findings.Items == nil {
-		t.Fatal("findings が配列として定義されていません")
+		t.Fatal("findings is not defined as an array")
 	}
 
 	for _, key := range []string{"severity", "file", "excerpt", "message"} {
 		if !slices.Contains(findings.Items.Required, key) {
-			t.Errorf("findings[].%s が必須になっていません", key)
+			t.Errorf("findings[].%s is not required", key)
 		}
 	}
 
-	// 履歴一覧は title を切り詰めずに 1 列へ流し込みます。画面側で切らない以上、
-	// 長さを頼むのはここだけです（verdict_format.md の日本語は狙いの長さ、こちらは歯止め）。
+	// The history list puts the title into one column untruncated. Since the screen does not cut
+	// it, this is the only place that asks for a length (verdict_format.md's Japanese states the
+	// target, this is the safeguard).
 	if title := schema.Properties["title"]; title.MaxLength == nil {
-		t.Error("title に MaxLength がありません（長い題が履歴一覧の表を崩します）")
+		t.Error("title has no MaxLength (a long title breaks the history table)")
 	} else if *title.MaxLength != maxTitleLength {
-		t.Errorf("title の MaxLength = %d, want %d", *title.MaxLength, maxTitleLength)
+		t.Errorf("title MaxLength = %d, want %d", *title.MaxLength, maxTitleLength)
 	}
 
-	// ★ 出力の 64Ki トークンに当たると、途中まで正しく書けていた JSON ごと全損になります。
-	// スキーマが長さについて何も言わないと、モデルから見れば無制限です。
+	// ★ Hitting the 64Ki output tokens loses everything, including JSON that was correct so far.
+	// If the schema says nothing about length, to the model it is unlimited.
 	if findings.MaxItems == nil {
-		t.Error("findings に MaxItems がありません（出力上限に当たると全損になります）")
+		t.Error("findings has no MaxItems (hitting the output limit loses everything)")
 	} else if *findings.MaxItems != maxFindings {
-		t.Errorf("findings の MaxItems = %d, want %d", *findings.MaxItems, maxFindings)
+		t.Errorf("findings MaxItems = %d, want %d", *findings.MaxItems, maxFindings)
 	}
 
-	// 膨らむのはたいてい引用です。切れた実行の末尾は同じコード片の反復で埋まっていました。
+	// What balloons is usually the quote. A cut run's tail was filled with one code fragment repeated.
 	excerpt := findings.Items.Properties["excerpt"]
 	if excerpt.MaxLength == nil {
-		t.Error("excerpt に MaxLength がありません")
+		t.Error("excerpt has no MaxLength")
 	} else if *excerpt.MaxLength != maxExcerptLength {
-		t.Errorf("excerpt の MaxLength = %d, want %d", *excerpt.MaxLength, maxExcerptLength)
+		t.Errorf("excerpt MaxLength = %d, want %d", *excerpt.MaxLength, maxExcerptLength)
 	}
 
-	// evidence はこちらにだけ含めます。作業ディレクトリを実際に調べるレビュアーなので、
-	// 「どこを見て判断したか」を自己申告させる意味があります（schema.go のコメント参照）。
+	// evidence is included only here. This reviewer actually investigates the working directory,
+	// so having it declare "where it looked to decide" means something (see the comment in schema.go).
 	if _, ok := findings.Items.Properties["evidence"]; !ok {
-		t.Error("エージェントのスキーマには evidence が必要です")
+		t.Error("the agent schema needs evidence")
 	}
 }

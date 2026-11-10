@@ -1,8 +1,8 @@
-// Package giturl は、Git リポジトリの URL（HTTPS / SSH）から、画面や通知に出す
-// 表示用のリポジトリパスを取り出します。
+// Package giturl extracts, from a Git repository URL (HTTPS / SSH), the repository path
+// shown on screen and in notifications.
 //
-// 扱うのは表示だけです。クローン先は go-review-kit が、保存先は
-// internal/domain の StorageLayout が決めます。
+// It is for display only. go-review-kit decides the clone location, and internal/domain's
+// StorageLayout decides where results are stored.
 package giturl
 
 import (
@@ -10,20 +10,20 @@ import (
 	"strings"
 )
 
-// GetRepositoryPath はリポジトリURLから 'owner/repo-name' の形式のパスを抽出します。
+// GetRepositoryPath extracts a path of the form 'owner/repo-name' from a repository URL.
 func GetRepositoryPath(repoURL string) string {
-	// scp 形式（git@host:owner/repo.git）は net/url が解釈できないため、
-	// ssh:// の形へ寄せてから渡します。
+	// net/url cannot parse the scp form (git@host:owner/repo.git), so it is turned into the
+	// ssh:// form first.
 	if strings.HasPrefix(repoURL, "git@") {
 		if idx := strings.Index(repoURL, ":"); idx != -1 {
 			repoURL = "ssh://" + repoURL[:idx] + "/" + repoURL[idx+1:]
 		}
 	}
 
-	// 解釈できない URL はそのまま返します。握り潰しではありません。呼び出し元は
-	// テンプレート関数と通知の本文で、どちらも「元の URL を出す」が正しい結末です。
-	// 記録も残しません。この関数は context を受け取れる位置にないので、書けば job_id の
-	// 付かない行が 1 本増えるだけで、誰のどのレビューの話か追えません。
+	// An unparsable URL is returned as is. That is not swallowing the error: the callers are a
+	// template function and the notification body, where "show the original URL" is the right
+	// outcome. Nothing is logged either. This function is in no position to receive a context,
+	// so a log line would lack a job_id and could not be traced to anyone's review.
 	u, err := url.Parse(repoURL)
 	if err != nil {
 		return repoURL

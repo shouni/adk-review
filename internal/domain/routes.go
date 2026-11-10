@@ -1,7 +1,7 @@
 package domain
 
-// WorkerTaskPath は、ワーカーがタスクを受け取るパスです。
-// 投入側（tasks.Config.WorkerPath）と受信側（internal/server のルート登録）の両方が使います。
-// 二重に持つと片方だけ変えてもビルドは通り、投入したタスクが全件 404 になります。
-// サービス URL への継ぎ足しと正規化は gcp-kit の tasks が行います。
+// WorkerTaskPath is the path at which the worker receives tasks.
+// Both the submitter (tasks.Config.WorkerPath) and the receiver (route registration in
+// internal/server) use it. With two copies, changing only one still builds and every submitted
+// task gets a 404. gcp-kit's tasks appends it to the service URL and normalises it.
 const WorkerTaskPath = "/tasks/execute-review"

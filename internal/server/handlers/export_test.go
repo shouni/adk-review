@@ -6,10 +6,10 @@ import (
 	"github.com/shouni/gcp-kit/auth/session"
 )
 
-// withCSRFToken は、コンテキストに CSRF トークンを載せます。
+// withCSRFToken puts a CSRF token on the context.
 //
-// 実運用ではミドルウェアが行うため、本番の API には出しません。
-// テストから任意の値を載せるためだけのヘルパーです。
+// In production the middleware does this, so it is not part of the production API.
+// It is a helper only for tests to put an arbitrary value on the context.
 func withCSRFToken(ctx context.Context, token string) context.Context {
 	return session.WithCSRFToken(ctx, token)
 }

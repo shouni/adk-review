@@ -44,19 +44,19 @@ func TestHandleJobCreate_AcceptsJSON(t *testing.T) {
 	if got.DetailURL != wantURL {
 		t.Errorf("detail_url = %q, want %q", got.DetailURL, wantURL)
 	}
-	// 本文を読まなくてもポーリング先が分かるように、Location にも同じ URL を載せます。
+	// Location carries the same URL so the polling target is known without reading the body.
 	if loc := rec.Header().Get("Location"); loc != wantURL {
 		t.Errorf("Location = %q, want %q", loc, wantURL)
 	}
 	if !enq.called || enq.received.Mode != "code" {
-		t.Errorf("キューへ渡った内容が違います: %+v", enq.received)
+		t.Errorf("the queued contents differ: %+v", enq.received)
 	}
 }
 
-// 呼び出し元に保存先を決めさせないこと。
+// Callers do not decide where results are stored.
 //
-// storage_uri を受け付けると、成果物をバケット内の任意のパスへ書かせられます。
-// 黙って捨てるのではなくエラーにするのは、送った側が効いたと思い込まないためです。
+// Accepting storage_uri would let artifacts be written to any path in the bucket.
+// It is an error rather than silently dropped, so the sender does not believe it took effect.
 func TestHandleJobCreate_RejectsCallerSuppliedStorageURI(t *testing.T) {
 	t.Parallel()
 
@@ -75,7 +75,7 @@ func TestHandleJobCreate_RejectsCallerSuppliedStorageURI(t *testing.T) {
 		t.Fatalf("status = %d, want 400\n%s", rec.Code, rec.Body.String())
 	}
 	if enq.called {
-		t.Error("不正な入力なのにキューへ投入されました")
+		t.Error("enqueued although the input was invalid")
 	}
 }
 
@@ -95,16 +95,16 @@ func TestHandleJobCreate_JSONValidationError(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400\n%s", rec.Code, rec.Body.String())
 	}
-	// 画面ではなく理由だけを返します（HTML が混ざっていないこと）。
+	// Only the reason is returned, not the screen (no HTML mixed in).
 	if got := decodeJSON[errorBody](t, rec); got.Error == "" {
-		t.Error("エラー本文が空です")
+		t.Error("the error body is empty")
 	}
 	if enq.called {
-		t.Error("不正な入力なのにキューへ投入されました")
+		t.Error("enqueued although the input was invalid")
 	}
 }
 
-// フォーム投入は JSON を求めない限り従来どおり HTML を返すこと。
+// A form submission returns HTML as before unless JSON is asked for.
 func TestHandleJobCreate_FormStillRendersHTML(t *testing.T) {
 	t.Parallel()
 
@@ -253,7 +253,7 @@ func TestHandleJobCreate_InvalidModelName(t *testing.T) {
 	}
 }
 
-// ジョブ ID を採番できなければ保存先も閲覧先も決まらないため、投入まで進みません。
+// Without a job ID neither the storage nor the view location is decided, so it never gets to enqueueing.
 func TestHandleJobCreate_JobIDError(t *testing.T) {
 	h, enq, _, _ := buildTestHandler(t, errors.New("entropy failure"), nil)
 	w := httptest.NewRecorder()
@@ -298,7 +298,7 @@ func TestHandleJobCreate_Success(t *testing.T) {
 		t.Fatalf("unexpected job id: %s", enq.received.JobID)
 	}
 
-	// 保存先も閲覧先もジョブ ID から決まります。
+	// Both the storage and the view location follow from the job ID.
 	wantURI := "gs://bucket-a/reviews/" + testJobID + "/report.json"
 	if enq.received.StorageURI != wantURI {
 		t.Fatalf("storage uri = %s, want %s", enq.received.StorageURI, wantURI)
@@ -311,19 +311,19 @@ func TestHandleJobCreate_Success(t *testing.T) {
 		t.Fatalf("response should include the detail URL, body=%q", body)
 	}
 
-	// 受付が履歴に残り、一覧のキャッシュが捨てられていること。
+	// The acceptance is in the history and the list's cache was dropped.
 	if len(store.saved) != 1 {
-		t.Fatalf("記録件数 = %d, want 1", len(store.saved))
+		t.Fatalf("records = %d, want 1", len(store.saved))
 	}
 	if got := store.saved[0]; got.State != "queued" || got.QueuedAt.IsZero() {
-		t.Fatalf("記録内容が想定と違います: %+v", got)
+		t.Fatalf("unexpected record: %+v", got)
 	}
 	if history.invalidated != 1 {
-		t.Fatalf("キャッシュ破棄の回数 = %d, want 1", history.invalidated)
+		t.Fatalf("cache invalidations = %d, want 1", history.invalidated)
 	}
 }
 
-// 記録に失敗しても投入は成立しているため、受付は成功として返します。
+// Even if recording fails the task is enqueued, so the acceptance is returned as a success.
 func TestHandleJobCreate_StatusRecordFailureStillAccepts(t *testing.T) {
 	h, enq, store, history := buildTestHandler(t, nil, nil)
 	store.err = errors.New("gcs unavailable")
@@ -338,7 +338,7 @@ func TestHandleJobCreate_StatusRecordFailureStillAccepts(t *testing.T) {
 		t.Fatal("enqueue should be called")
 	}
 	if history.invalidated != 0 {
-		t.Fatal("記録に失敗したらキャッシュは捨てない想定です")
+		t.Fatal("the cache should not be dropped when recording fails")
 	}
 }
 

@@ -19,17 +19,17 @@ func TestAvailableModesReadsFrontMatter(t *testing.T) {
 	for _, key := range []string{"article", "code", "novel"} {
 		mode, ok := got[key]
 		if !ok {
-			t.Fatalf("モード %s がありません", key)
+			t.Fatalf("mode %s is missing", key)
 		}
-		// 説明の書き忘れは選択肢の意味を失わせるため、全モードに要求します。
+		// A forgotten description makes the choice meaningless, so every mode must have one.
 		if mode.Label == "" {
-			t.Errorf("%s: label がありません", key)
+			t.Errorf("%s: label is missing", key)
 		}
 		if mode.Direction == "" {
-			t.Errorf("%s: direction がありません", key)
+			t.Errorf("%s: direction is missing", key)
 		}
 		if mode.UseWhen == "" {
-			t.Errorf("%s: use_when がありません", key)
+			t.Errorf("%s: use_when is missing", key)
 		}
 	}
 }
@@ -42,15 +42,15 @@ func TestLoadPromptsStripsFrontMatter(t *testing.T) {
 
 	code, ok := prompts["code"]
 	if !ok {
-		t.Fatal("code のプロンプトがありません")
+		t.Fatal("the code prompt is missing")
 	}
 	for _, key := range []string{"label:", "direction:", "use_when:", "excerpt:"} {
 		if strings.Contains(code, key) {
-			t.Errorf("front matter が本文に残っています: %q", key)
+			t.Errorf("front matter is left in the body: %q", key)
 		}
 	}
 	if !strings.HasPrefix(code, "# ") {
-		t.Errorf("本文が見出しから始まっていません: %q", code[:min(80, len(code))])
+		t.Errorf("the body does not start with a heading: %q", code[:min(80, len(code))])
 	}
 }
 
@@ -70,8 +70,8 @@ func TestLoadPromptsReturnsCopy(t *testing.T) {
 	}
 }
 
-// 共有断片は "_" 付きのテンプレート名で本文と同じ集合に入ります。
-// キーがずれると本文の {{template "_..."}} が解決できず、全モードが起動時に落ちます。
+// Shared fragments join the same set as the bodies under "_"-prefixed template names.
+// If the keys drift, the bodies' {{template "_..."}} cannot resolve and every mode fails at startup.
 func TestPromptTemplatesIncludePartials(t *testing.T) {
 	templates, err := PromptTemplates()
 	if err != nil {
@@ -81,30 +81,30 @@ func TestPromptTemplatesIncludePartials(t *testing.T) {
 	want := map[string][]string{
 		"_findings_format": {"severity", "file", "excerpt", "message", "suggestion", "evidence"},
 		"_verdict_format":  {"decision", "reason", "title", "summary"},
-		// 行番号の算出と出力言語は、写しを作らずここ 1 箇所に置く決まりです。
+		// The line-number rule and the output language live here only, with no copies.
 		"_finding_policy": {"hunk", "findings", "日本語"},
 	}
 	for name, keywords := range want {
 		body, ok := templates[name]
 		if !ok {
-			t.Errorf("共有断片 %q がテンプレート集にありません", name)
+			t.Errorf("shared fragment %q is not in the template set", name)
 			continue
 		}
 		for _, kw := range keywords {
 			if !strings.Contains(body, kw) {
-				t.Errorf("%s に %q がありません:\n%s", name, kw, body)
+				t.Errorf("%s does not contain %q:\n%s", name, kw, body)
 			}
 		}
 	}
 
-	// モード本文も同じ集合に入っている必要があります。
+	// The mode bodies must be in the same set too.
 	if _, ok := templates["code"]; !ok {
-		t.Error("モード本文がテンプレート集にありません")
+		t.Error("the mode body is not in the template set")
 	}
 }
 
-// 共通の方針は partials に 1 つだけ置きます。プロンプト側へ写しが戻ると、
-// 直したつもりが 1 モードだけ古いまま残ります。
+// The common policy lives once, in partials. If a copy returns to a prompt, a fix
+// meant for all leaves one mode on the old text.
 func TestPromptsDoNotDuplicateSharedPolicy(t *testing.T) {
 	prompts, err := LoadPrompts()
 	if err != nil {
@@ -113,29 +113,29 @@ func TestPromptsDoNotDuplicateSharedPolicy(t *testing.T) {
 
 	for key, body := range prompts {
 		if !strings.Contains(body, `{{template "_finding_policy" .}}`) {
-			t.Errorf("%s: 共通の指摘方針が展開されていません", key)
+			t.Errorf("%s: the common finding policy is not expanded", key)
 		}
 		if strings.Contains(body, "hunk") {
-			t.Errorf("%s: 行番号の算出規則がプロンプトに写されています", key)
+			t.Errorf("%s: the line-number rule is copied into the prompt", key)
 		}
-		// evidence の使い方は findings_format と instruction が持ちます。写しが戻ると
-		// 同じ指示が 1 レビューにつき 3 回現れ、モードごとに文言だけ古くなります。
+		// How to use evidence belongs to findings_format and the instruction. If a copy
+		// returns, the same instruction appears 3 times per review and goes stale per mode.
 		if strings.Contains(body, "`evidence` に挙げ") {
-			t.Errorf("%s: evidence の指示がプロンプトに写されています", key)
+			t.Errorf("%s: the evidence instruction is copied into the prompt", key)
 		}
-		// 「差分の外を見ることこそが価値」は instruction が言います。プロンプト側が
-		// 言うべきなのは、そのモードで何を開くかだけです。
+		// "Looking beyond the diff is the value" is said by the instruction. A prompt
+		// should only say what to open in its mode.
 		if strings.Contains(body, "こそがこのレビューの価値です") {
-			t.Errorf("%s: 差分の外を見る意義が instruction と二重になっています", key)
+			t.Errorf("%s: the point of looking beyond the diff duplicates the instruction", key)
 		}
 	}
 }
 
-// ツールで確かめられないことを、観点として要求しないこと。
+// Do not ask for checks the tools cannot verify.
 //
-// このレビュアーのツールは作業ディレクトリしか読めません（read_file / list_files /
-// search_text）。リンク切れの検査を頼むと、指摘の方針の「確かめられないなら出さない」と
-// 衝突し、モデルは黙るか捏造するかのどちらかになります。
+// This reviewer's tools read only the working directory (read_file / list_files /
+// search_text). Asking for a broken-link check collides with the finding policy's "do not
+// report what you cannot verify", and the model either stays silent or makes things up.
 func TestPromptsDoNotAskForUnverifiableChecks(t *testing.T) {
 	prompts, err := LoadPrompts()
 	if err != nil {
@@ -145,14 +145,14 @@ func TestPromptsDoNotAskForUnverifiableChecks(t *testing.T) {
 	for key, body := range prompts {
 		for _, ng := range []string{"公式ドキュメントへのリンク", "一次情報の明示"} {
 			if strings.Contains(body, ng) {
-				t.Errorf("%s: ツールで確かめられない %q を求めています", key, ng)
+				t.Errorf("%s: asks for %q, which the tools cannot verify", key, ng)
 			}
 		}
-		// 「リンク切れ」は、出すなと断る文脈でだけ書けます。観点や重大度の例として
-		// 挙がっていないことを、同じ行に断り書きがあるかで見ます。
+		// "リンク切れ" (broken link) may appear only where it says not to report one. Whether it
+		// is listed as a check or a severity example is judged by a disclaimer on the same line.
 		for _, line := range strings.Split(body, "\n") {
 			if strings.Contains(line, "リンク切れ") && !strings.Contains(line, "推測で書かず") {
-				t.Errorf("%s: リンク切れの検査を求めています: %s", key, line)
+				t.Errorf("%s: asks for a broken-link check: %s", key, line)
 			}
 		}
 	}
@@ -160,14 +160,14 @@ func TestPromptsDoNotAskForUnverifiableChecks(t *testing.T) {
 
 func TestIsValidMode(t *testing.T) {
 	if !IsValidMode("code") {
-		t.Error("code が有効と判定されません")
+		t.Error("code is not judged valid")
 	}
 	if IsValidMode("no-such-mode") {
-		t.Error("未知のモードが有効と判定されました")
+		t.Error("an unknown mode was judged valid")
 	}
 }
 
-// DisplayName は label が無ければキーで代替します（選択肢自体は消しません）。
+// DisplayName falls back to the key without a label (the choice itself is never removed).
 func TestDisplayNameFallsBackToKey(t *testing.T) {
 	if got := (Mode{Key: "x"}).DisplayName(); got != "x" {
 		t.Errorf("DisplayName() = %q, want %q", got, "x")
@@ -180,8 +180,8 @@ func TestExcerptStyleFor(t *testing.T) {
 	tests := map[string]ExcerptStyle{
 		"code":  ExcerptCode,
 		"novel": ExcerptProse,
-		// 未知のモードでもエラーにせず、地の文として扱います。履歴には消したモードの
-		// 名前も残るため、ここで落とすと過去のレビューが開けなくなります。
+		// An unknown mode is not an error and is treated as prose. The history keeps the
+		// names of deleted modes, so failing here would make past reviews unopenable.
 		"すでに消したモード": ExcerptProse,
 		"":          ExcerptProse,
 	}

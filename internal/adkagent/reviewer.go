@@ -1,9 +1,9 @@
-// Package adkagent は、ADK for Go のエージェントループによる review.WorkspaceReviewer 実装です。
+// Package adkagent is a review.WorkspaceReviewer implementation driven by an ADK for Go agent loop.
 //
-// genai SDK を直接 import するのは、このファイルと schema.go、それに
-// internal/adapters/ai.go だけです。ADK のモデル層が genai を直接要求するためで、
-// 他の場所へ広げないでください（理由は CLAUDE.md）。go-review-kit 本体は
-// このパッケージを知りません。
+// The only files that import the genai SDK directly are this one, schema.go and
+// internal/adapters/ai.go. That is because ADK's model layer requires genai directly; do
+// not spread it elsewhere (the reason is in CLAUDE.md). go-review-kit itself does not
+// know about this package.
 package adkagent
 
 import (
@@ -24,23 +24,25 @@ import (
 	"github.com/shouni/go-review-kit/review"
 )
 
-// DefaultMaxToolCalls は、1 回のレビューで許すツール呼び出し回数の既定値です。
+// DefaultMaxToolCalls is the default number of tool calls allowed in one review.
 //
-// レビュー 1 件は呼び出し元の締切（Web 版では Cloud Tasks の dispatch deadline）内に
-// 収める必要があります。時間で打ち切らず回数で打ち切るのは、締切超過ではなく
-// 「調査を切り上げて最終回答をまとめる」方向へモデルを誘導するためです。
+// A review has to fit within the caller's deadline (the Cloud Tasks dispatch deadline in the
+// web version). It is cut by count rather than time to steer the model towards "wrap up the
+// investigation and write the final answer" instead of running past the deadline.
 const DefaultMaxToolCalls = 32
 
 const agentName = "workspace_reviewer"
 
-// instructionTemplate は、エージェントの行動指針です。レビュー観点そのもの（何をどう指摘するか）は
-// プロンプト側（review.PromptGenerator）の責務なので、ここには調査の進め方だけを書きます。
+// instructionTemplate is the agent's code of conduct. The review criteria themselves (what to
+// point out and how) belong to the prompt (review.PromptGenerator), so only how to investigate
+// is written here.
 //
-// 書式引数は「ツール呼び出しの上限」「まとめに入る目安」「指摘件数の上限」です。
-// 数字を文章に直書きせず実際の予算から埋めます。予算を変えたときに指示だけ古い数字を
-// 語り続けると、モデルは残り 3 回のつもりで調査を続け、budgetExhaustedMsg で不意に
-// 打ち切られます。件数も同じで、スキーマと指示がずれると、モデルは指示のほうを信じて
-// スキーマを超える件数を書き始めます。
+// The format arguments are "the tool call limit", "when to start wrapping up" and "the limit on
+// findings". The numbers are filled from the actual budget, never written into the text. If the
+// budget changed while the instruction kept quoting the old number, the model would keep
+// investigating as if it had 3 calls left and be cut off unexpectedly by budgetExhaustedMsg.
+// The same goes for the count: when the schema and the instruction disagree, the model trusts
+// the instruction and starts writing more findings than the schema allows.
 const instructionTemplate = `あなたは Git リポジトリの差分をレビューするエージェントです。
 ユーザーメッセージとしてレビュー指示と差分が渡されます。作業ディレクトリには差分の
 比較対象（head）がチェックアウトされており、ツールで中身を調べられます。
@@ -77,15 +79,15 @@ const instructionTemplate = `あなたは Git リポジトリの差分をレビ�
 - 鍵・認証情報など、レビューに不要な情報は探さないし、出力にも含めない。
 - evidence には、実際にツールで確認できたリポジトリ相対パスだけを書く。`
 
-// instructionFor は、ツール予算を埋めた行動指針を返します。
+// instructionFor returns the code of conduct with the tool budget filled in.
 func instructionFor(maxToolCalls int64) string {
 	return fmt.Sprintf(instructionTemplate, maxToolCalls, wrapUpAfter(maxToolCalls), maxFindings)
 }
 
-// wrapUpAfter は、モデルにまとめへ入ってほしい呼び出し回数（上限の 8 割）を返します。
+// wrapUpAfter returns the call count at which the model should start wrapping up (80% of the limit).
 //
-// 上限そのものを目安にすると、最後の 1 回を使い切ってからまとめに入ることになり、
-// 検証しかけの仮説を抱えたまま打ち切られます。予算が極端に小さい設定でも 1 以上を返します。
+// Aiming at the limit itself means wrapping up only after the last call is spent, and the run is
+// cut off holding a half-verified hypothesis. It returns at least 1 even for a tiny budget.
 func wrapUpAfter(maxToolCalls int64) int64 {
 	if n := maxToolCalls * 8 / 10; n > 0 {
 		return n
@@ -93,40 +95,40 @@ func wrapUpAfter(maxToolCalls int64) int64 {
 	return 1
 }
 
-// Config は、Reviewer の初期化パラメータです。
+// Config holds the Reviewer's initialisation parameters.
 type Config struct {
-	// ClientConfig は、ADK のモデル層へ渡す genai クライアント設定です。
-	// APIKey か、Vertex AI（Backend / Project / Location）のどちらかを設定します。
+	// ClientConfig is the genai client config handed to ADK's model layer.
+	// Set either APIKey or Vertex AI (Backend / Project / Location).
 	ClientConfig genai.ClientConfig
-	// MaxToolCalls は、1 回のレビューで許すツール呼び出し回数です。
-	// 0 の場合は DefaultMaxToolCalls を使います。
+	// MaxToolCalls is the number of tool calls allowed in one review.
+	// 0 means DefaultMaxToolCalls.
 	MaxToolCalls int
 }
 
-// Reviewer は、ADK のエージェントループで作業ディレクトリを調べる
-// review.WorkspaceReviewer 実装です。
+// Reviewer is a review.WorkspaceReviewer implementation that investigates the working
+// directory with an ADK agent loop.
 type Reviewer struct {
 	clientConfig genai.ClientConfig
 	maxToolCalls int64
 
-	// models は、モデル名 → 構築エントリのキャッシュです。モデルの構築は genai.Client の
-	// 生成を伴うため、同じモデル名のレビューをまたいで再利用します。
+	// models caches model name -> built entry. Building a model creates a genai.Client, so it
+	// is reused across reviews of the same model name.
 	mu     sync.Mutex
 	models map[string]*modelEntry
 }
 
-// modelEntry は、1 モデル名ぶんの構築結果です。once で構築を 1 回に絞ることで、
-// 同じモデルを同時に要求されても genai クライアントの生成は 1 回で済みます。
+// modelEntry is the build result for one model name. once limits building to a single run,
+// so concurrent requests for the same model create the genai client only once.
 type modelEntry struct {
 	once sync.Once
 	llm  model.LLM
 	err  error
 }
 
-// 実装がポートを満たすことをコンパイル時に確認します。
+// Compile-time check that the implementation satisfies the port.
 var _ review.WorkspaceReviewer = (*Reviewer)(nil)
 
-// New は Reviewer を生成します。
+// New creates a Reviewer.
 func New(cfg Config) *Reviewer {
 	maxCalls := int64(cfg.MaxToolCalls)
 	if maxCalls <= 0 {
@@ -139,25 +141,24 @@ func New(cfg Config) *Reviewer {
 	}
 }
 
-// Review は、エージェントループでレビューを実行し review.Report を返します。
+// Review runs a review in the agent loop and returns a review.Report.
 //
-// エージェント・ランナー・セッションはレビュー 1 件ごとに使い捨てます。レビューは
-// 1 回きりのジョブで、実行をまたいで残したい状態が無いためです（in-memory セッションは
-// そのための選択です）。
+// The agent, runner and session are thrown away after each review. A review is a one-off job
+// with no state worth keeping across runs (the in-memory session is chosen for that reason).
 //
-// 戻り値の review.RunInfo には、使用量・ツール呼び出し回数と、出力が途中で切れたかが
-// 入ります。失敗する経路でも、そこまでに分かったぶんは返します（トークンは既に消費済みです）。
+// The returned review.RunInfo carries the usage, the tool call count and whether the output
+// was cut off. Failure paths still return what was known by then (the tokens are already spent).
 func (r *Reviewer) Review(
 	ctx context.Context, modelName, prompt string, ws review.Workspace,
 ) (review.Report, review.RunInfo, error) {
 	if strings.TrimSpace(modelName) == "" {
-		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: モデル名が空です")
+		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: model name is empty")
 	}
 	if strings.TrimSpace(prompt) == "" {
-		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: プロンプトが空です")
+		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: prompt is empty")
 	}
 	if strings.TrimSpace(ws.Dir) == "" {
-		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: 作業ディレクトリが空です")
+		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: working directory is empty")
 	}
 
 	llm, err := r.model(ctx, modelName)
@@ -170,11 +171,11 @@ func (r *Reviewer) Review(
 		return review.Report{}, review.RunInfo{}, err
 	}
 
-	// OutputSchema とツールは併用できます。ただし経路は 2 通りあり、Vertex AI の
-	// Gemini 2.0+ では ADK は素通しで、モデルが応答本文としてスキーマ準拠の JSON を書きます
-	// （set_model_response ツールへ差し替わるのは Gemini API 側だけです）。本番は Vertex
-	// 一択なので、最終イベントの Text はモデルが生で書いた JSON です。途中で切れることが
-	// あるのはこのためで、解釈の前に終了理由を確かめます。
+	// OutputSchema and tools can be combined. There are two paths, though: on Vertex AI's
+	// Gemini 2.0+ ADK passes it straight through and the model writes schema-conforming JSON as
+	// the response body (only the Gemini API side swaps in the set_model_response tool).
+	// Production is Vertex only, so the final event's Text is JSON written raw by the model.
+	// That is why it can be cut off, and why the finish reason is checked before parsing.
 	ag, err := llmagent.New(llmagent.Config{
 		Name:         agentName,
 		Description:  "作業ディレクトリを調査しながら Git 差分をレビューするエージェント",
@@ -184,12 +185,12 @@ func (r *Reviewer) Review(
 		OutputSchema: reportSchema(),
 	})
 	if err != nil {
-		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: エージェントの構築に失敗しました: %w", err)
+		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: failed to build the agent: %w", err)
 	}
 
 	run, err := runner.NewInMemory("adk-review", ag)
 	if err != nil {
-		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: ランナーの構築に失敗しました: %w", err)
+		return review.Report{}, review.RunInfo{}, fmt.Errorf("adkagent: failed to build the runner: %w", err)
 	}
 
 	final, err := r.collectFinal(ctx, run, prompt)
@@ -198,32 +199,34 @@ func (r *Reviewer) Review(
 	}
 	info := final.runInfo(tb.used())
 
-	// 途中切れ以外の理由（安全性フィルタなど）で止まった場合はここで落とします。
-	// 上限で切り詰められた出力も「正常な最終応答」として降ってきます（ADK の
-	// converters は FinishReason を見ずに Content をそのまま通します）。
+	// A stop for any reason other than truncation (a safety filter and so on) fails here.
+	// Output cut at the limit also arrives as a "normal final response" (ADK's converters pass
+	// Content through without looking at FinishReason).
 	if err := final.finishError(); err != nil {
-		slog.ErrorContext(ctx, "モデルが最後まで出力しませんでした", final.logAttrs()...)
+		slog.ErrorContext(ctx, "the model did not finish its output", final.logAttrs()...)
 		return review.Report{}, info, err
 	}
 
 	report, parsed, err := review.ParseReport([]byte(final.text))
-	// 終了理由が欠けたまま切れることがあるため、解釈側の判定と併せて見ます
-	// （実測で、finish_reason が空のまま 212 KB で切れた例があります）。
+	// Output can be cut off with no finish reason, so the parser's verdict is checked too
+	// (in practice one response was cut at 212 KB with an empty finish_reason).
 	info.Truncated = info.Truncated || parsed.Truncated
 
 	if err != nil {
-		// ★ 生の応答を残します。これが無いと解析失敗は原因不明のまま終わります。
-		// エージェントレビューは数分かかるので、失敗のたびに同じ時間を払って再現を
-		// 試みることになります。
+		// ★ Keep the raw response. Without it a parse failure stays unexplained, and since an
+		// agent review takes minutes, every failure would cost the same time again to try to
+		// reproduce.
 		//
-		// 頭と末尾の両方を残すのが要点です。頭だけだと、最後まで律儀に書いた末に
-		// 切れたのか、途中から同じ出力を繰り返して膨らんだのかが区別できません
-		// （212 KB の出力を頭 2 KB だけ見て判断できなかった例があります）。
-		slog.ErrorContext(ctx, "レビュー結果を解釈できませんでした",
+		// The point is keeping both the head and the tail. With the head alone there is no
+		// telling whether the model wrote faithfully to the end and was cut, or ballooned by
+		// repeating the same output midway (a 212 KB output once could not be diagnosed from
+		// its first 2 KB alone).
+		slog.ErrorContext(ctx, "could not parse the review result",
 			append([]any{"error", err}, final.logAttrs()...)...)
 		if final.truncated() {
-			// 利用者がそのまま次の手を打てる文言にします。この失敗は Slack にも履歴にも
-			// 1 行しか残らないので、そこに対処が書かれていないと問い合わせになります。
+			// Worded so the user can act on it directly; it stays Japanese because it is shown
+			// to the user. This failure leaves a single line in Slack and in the history, and
+			// without the remedy written there it turns into a support question.
 			return review.Report{}, info, fmt.Errorf(
 				"adkagent: 出力が上限に達して途中で切れ、拾える範囲もありませんでした: "+
 					"レビュー範囲を狭めて再実行してください: %w", err)
@@ -231,37 +234,37 @@ func (r *Reviewer) Review(
 		return review.Report{}, info, fmt.Errorf("adkagent: %w", err)
 	}
 
-	// 補修と切り出しが要ったかを残します。黙って直して成功するので、ここで見ないと
-	// 効いているのか出番が無いのか区別が付きません。
+	// Record whether repair or extraction was needed. They fix things silently and succeed, so
+	// without looking here there is no telling whether they help or are never used.
 	if parsed.Repaired {
-		slog.WarnContext(ctx, "モデルの出力が壊れていたので補修しました",
+		slog.WarnContext(ctx, "repaired broken model output",
 			"response_bytes", len(final.text),
 			"response_head", headForLog(final.text, repairLogHead))
 	}
 	if info.Truncated {
-		// ★ 部分であることは呼び出し側へ RunInfo で渡ります。ログにも残すのは、
-		// どのくらいの頻度で起きるかが上限を決め直す材料になるためです。
-		slog.WarnContext(ctx, "出力が途中で切れたため、完結していた範囲だけを採用しました",
+		// ★ Partiality reaches the caller through RunInfo. It is logged too because how often it
+		// happens is what the limit is recalibrated from.
+		slog.WarnContext(ctx, "output was cut off; kept only the completed part",
 			append([]any{"findings", len(report.Findings)}, final.logAttrs()...)...)
 	}
 
-	// 並びはここで確定させます。プロンプトでも重い順を指示していますが、守られる保証は
-	// ありません。画面も Slack も返ってきた順にそのまま出すので、Blocker が Minor の
-	// 後ろに埋もれるといちばん読ませたい指摘が最後になります。
+	// The order is fixed here. The prompt also asks for most severe first, but nothing
+	// guarantees it. The screen and Slack show findings in the order returned, so a Blocker
+	// buried behind Minors puts the finding that most needs reading last.
 	report.SortFindings()
 	return report, info, nil
 }
 
-// repairLogHead は、補修したときにログへ残す応答の上限です。
-// 失敗時（maxLoggedResponse）より短いのは、補修は成功しているので原因の当たりが付けば
-// 足りるためです。
+// repairLogHead is how much of the response is logged after a repair.
+// It is shorter than on failure (maxLoggedResponse) because the repair succeeded, so a
+// hint at the cause is enough.
 const repairLogHead = 300
 
-// maxLoggedResponse は、解析に失敗した応答をログへ残す上限です（頭・末尾それぞれに掛かります）。
-// 全文を載せるとレビュー 1 件で数百 KB になり、原因の特定には両端で足ります。
+// maxLoggedResponse is how much of an unparsable response is logged (applied to the head and the
+// tail each). The full text would be hundreds of KB per review, and both ends suffice to find the cause.
 const maxLoggedResponse = 2000
 
-// headForLog は、ログへ載せる応答の冒頭を文字境界で切り出します。
+// headForLog cuts the head of the response for logging, at a character boundary.
 func headForLog(s string, limit int) string {
 	if len(s) <= limit {
 		return s
@@ -269,13 +272,13 @@ func headForLog(s string, limit int) string {
 	for limit > 0 && !utf8.RuneStart(s[limit]) {
 		limit--
 	}
-	return s[:limit] + "…(以下略)"
+	return s[:limit] + "…(truncated)"
 }
 
-// tailForLog は、ログへ載せる応答の末尾を文字境界で切り出します。
+// tailForLog cuts the tail of the response for logging, at a character boundary.
 //
-// 頭だけで全文が載る短い応答では空を返します。同じ内容を 2 つのキーで二重に載せると、
-// 「末尾が付いている＝切れている」という見た目の手掛かりが消えます。
+// For a short response that fits in the head it returns empty. Logging the same content under
+// two keys would lose the visual cue that "a tail is present = it was cut".
 func tailForLog(s string, limit int) string {
 	if len(s) <= limit {
 		return ""
@@ -284,48 +287,48 @@ func tailForLog(s string, limit int) string {
 	for start < len(s) && !utf8.RuneStart(s[start]) {
 		start++
 	}
-	return "(前略)…" + s[start:]
+	return "(truncated)…" + s[start:]
 }
 
-// finalResponse は、エージェントの最終応答から解釈に必要なものを取り出したものです。
+// finalResponse is what parsing needs, taken from the agent's final response.
 //
-// テキストだけでなく終了理由と使用量も持ち帰ります。テキストだけを見ると、出力上限で
-// 切れた JSON は「モデルが壊れた JSON を返した」としか読めません。区別できるのは
-// 終了理由だけで、量の当たりを付けられるのは使用量だけです。
+// It brings back the finish reason and usage as well as the text. From the text alone, JSON cut
+// at the output limit reads only as "the model returned broken JSON". Only the finish reason
+// tells them apart, and only the usage gives a sense of the size.
 type finalResponse struct {
 	text         string
 	finishReason genai.FinishReason
-	// usage は最終応答を出した 1 回ぶんの使用量です（ループ全体の合計ではありません）。
+	// usage is the usage of the one call that produced the final response (not the loop's total).
 	usage *genai.GenerateContentResponseUsageMetadata
 }
 
-// truncated は、出力の上限に当たって途中で止まったかどうかを返します。
+// truncated reports whether the output stopped midway at the output limit.
 func (f finalResponse) truncated() bool {
 	return f.finishReason == genai.FinishReasonMaxTokens
 }
 
-// finishError は、途中切れ以外の理由で止まった場合にその理由を返します。
+// finishError returns the reason when the output stopped for anything other than truncation.
 //
-// ★ MAX_TOKENS はここで落としません。そこまでに書けていた指摘は救えます
-// （review.ParseReport が完結している範囲を拾います）。全損にしていた頃は、完成した
-// Blocker の指摘ごと失っていました。拾えなかった場合だけ、呼び出し元がエラーにします。
+// ★ MAX_TOKENS does not fail here. The findings written up to that point can be saved
+// (review.ParseReport picks up the completed part). When it was a total loss, a completed
+// Blocker finding was lost with it. Only when nothing can be picked up does the caller fail.
 //
-// 終了理由が空のときも成功として扱います。最終イベントに載るとは限らず（バックエンドや
-// 経路によって欠けます）、空を失敗にすると正常なレビューまで落とします。
+// An empty finish reason is treated as success too. It is not always on the final event (it
+// is missing on some backends and paths), and failing on empty would fail sound reviews.
 func (f finalResponse) finishError() error {
 	switch f.finishReason {
 	case "", genai.FinishReasonStop, genai.FinishReasonMaxTokens:
 		return nil
 	default:
-		return fmt.Errorf("adkagent: モデルが最後まで出力しませんでした (finish_reason: %s)", f.finishReason)
+		return fmt.Errorf("adkagent: the model did not finish its output (finish_reason: %s)", f.finishReason)
 	}
 }
 
-// runInfo は、この実行の計測値を組み立てます。
+// runInfo builds this run's measurements.
 //
-// 使用量は最終応答を出した 1 回ぶんで、ループ全体の合計ではありません（ADK は各回の
-// メタデータを合算しません）。それでも上限との距離は測れます。出力が切り詰められるのは
-// 最後の 1 回だからです。
+// The usage is that of the one call that produced the final response, not the loop's total
+// (ADK does not sum the per-call metadata). It still measures the distance to the limit,
+// because only the last call has its output cut.
 func (f finalResponse) runInfo(toolCalls int) review.RunInfo {
 	info := review.RunInfo{Truncated: f.truncated(), ToolCalls: toolCalls}
 	if f.usage != nil {
@@ -336,7 +339,7 @@ func (f finalResponse) runInfo(toolCalls int) review.RunInfo {
 	return info
 }
 
-// logAttrs は、失敗したときにログへ残す応答の情報です。
+// logAttrs is the response information logged on failure.
 func (f finalResponse) logAttrs() []any {
 	attrs := []any{
 		"finish_reason", string(f.finishReason),
@@ -347,8 +350,8 @@ func (f finalResponse) logAttrs() []any {
 		attrs = append(attrs, "response_tail", tail)
 	}
 	if f.usage != nil {
-		// 出力トークン数は、切れたのが「上限に当たった」からなのかを裏付けます。
-		// 思考ぶんは出力の予算を食うので別に出します。
+		// The output token count confirms whether the cut came from hitting the limit.
+		// Thinking eats into the output budget, so it is reported separately.
 		attrs = append(attrs,
 			"prompt_tokens", f.usage.PromptTokenCount,
 			"output_tokens", f.usage.CandidatesTokenCount,
@@ -358,10 +361,10 @@ func (f finalResponse) logAttrs() []any {
 	return attrs
 }
 
-// collectFinal は、エージェントを実行して最終応答を取り出します。
+// collectFinal runs the agent and takes its final response.
 //
-// 複数の最終イベントが出る構成（サブエージェント併用時）に備えて最後の 1 件を採りますが、
-// 本実装はエージェント 1 体なので実質は唯一の最終応答です。
+// It takes the last one in case of a setup with several final events (with sub-agents), but
+// this implementation has a single agent, so in practice it is the only final response.
 func (r *Reviewer) collectFinal(ctx context.Context, run *runner.Runner, prompt string) (finalResponse, error) {
 	msg := genai.NewContentFromText(prompt, genai.RoleUser)
 
@@ -369,23 +372,23 @@ func (r *Reviewer) collectFinal(ctx context.Context, run *runner.Runner, prompt 
 	var text strings.Builder
 	for event, err := range run.Run(ctx, "reviewer", "review", msg, agent.RunConfig{}) {
 		if err != nil {
-			return finalResponse{}, fmt.Errorf("adkagent: エージェントの実行に失敗しました: %w", err)
+			return finalResponse{}, fmt.Errorf("adkagent: failed to run the agent: %w", err)
 		}
 		if event == nil || !event.IsFinalResponse() || event.Content == nil {
 			continue
 		}
 		text.Reset()
 		for _, part := range event.Content.Parts {
-			// Parts は []*Part なので、要素の nil も event 自体と同じく防ぎます。
-			// ここで panic すると worker のリクエストごと落ち、review-queue は
-			// max_attempts = 1 なのでタスクが黙って失われます。
+			// Parts is []*Part, so a nil element is guarded like the event itself.
+			// A panic here takes down the whole worker request, and with review-queue's
+			// max_attempts = 1 the task is silently lost.
 			if part == nil {
 				continue
 			}
 			text.WriteString(part.Text)
 		}
-		// テキストと同じイベントから採ります。別のイベントの終了理由を混ぜると、
-		// 採用していない応答の理由でレビューを落とすことになります。
+		// Taken from the same event as the text. Mixing in another event's finish reason would
+		// fail the review for the reason of a response that was not used.
 		final.finishReason = event.FinishReason
 		final.usage = event.UsageMetadata
 	}
@@ -397,11 +400,12 @@ func (r *Reviewer) collectFinal(ctx context.Context, run *runner.Runner, prompt 
 	return final, nil
 }
 
-// model は、モデル名に対応する model.LLM を返します（キャッシュあり）。
+// model returns the model.LLM for a model name (cached).
 //
-// 構築はモデル名ごとの sync.Once に閉じ込め、mutex はキャッシュの出し入れだけに使います。
-// gemini.NewModel は Vertex AI では認証情報の検出とメタデータサーバーへの往復を伴うため、
-// ロックを握ったまま呼ぶと、初回構築中に同居する他のレビューが全部そこで直列に待ちます。
+// Building is confined to a per-name sync.Once, and the mutex only guards the cache. On Vertex
+// AI gemini.NewModel detects credentials and makes a round trip to the metadata server, so
+// calling it under the lock would make every other review in the process wait in line during
+// the first build.
 func (r *Reviewer) model(ctx context.Context, name string) (model.LLM, error) {
 	r.mu.Lock()
 	entry, ok := r.models[name]
@@ -415,13 +419,13 @@ func (r *Reviewer) model(ctx context.Context, name string) (model.LLM, error) {
 		entry.llm, entry.err = gemini.NewModel(ctx, name, &r.clientConfig)
 	})
 	if entry.err != nil {
-		// 失敗を握り続けないよう、次回は作り直せるようにします。
+		// Allow a rebuild next time so a failure is not held forever.
 		r.mu.Lock()
 		if r.models[name] == entry {
 			delete(r.models, name)
 		}
 		r.mu.Unlock()
-		return nil, fmt.Errorf("adkagent: モデルの初期化に失敗しました (model: %s): %w", name, entry.err)
+		return nil, fmt.Errorf("adkagent: failed to initialise the model (model: %s): %w", name, entry.err)
 	}
 	return entry.llm, nil
 }

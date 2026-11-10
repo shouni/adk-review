@@ -35,7 +35,7 @@ func TestValidateBranchName(t *testing.T) {
 }
 
 func TestValidateReviewRequest(t *testing.T) {
-	// モデル名の検証は設定された一覧に対して行うため、cfg だけは要ります。
+	// Model names are validated against the configured list, so cfg is needed.
 	h := &Handler{cfg: &config.Config{AI: config.AIConfig{GeminiModels: []string{"gemini-3.6-flash"}}}}
 
 	validRequest := domain.ReviewRequest{
@@ -49,7 +49,7 @@ func TestValidateReviewRequest(t *testing.T) {
 	tests := []struct {
 		name    string
 		mutate  func(*domain.ReviewRequest)
-		wantErr string // エラーメッセージに含まれるべき文字列
+		wantErr string // text the error message must contain
 	}{
 		{
 			name:   "valid request",
@@ -104,13 +104,13 @@ func TestValidateReviewRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// ベースとなる有効なリクエストをコピーして使用
+			// Copy the valid base request
 			req := validRequest
 			tt.mutate(&req)
 
 			err := h.validateReviewRequest(req)
 
-			// エラーを期待していない場合
+			// When no error is expected
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Errorf("unexpected error for %s: %v", tt.name, err)
@@ -118,7 +118,7 @@ func TestValidateReviewRequest(t *testing.T) {
 				return
 			}
 
-			// エラーを期待している場合
+			// When an error is expected
 			if err == nil {
 				t.Errorf("expected error containing %q, but got nil for %s", tt.wantErr, tt.name)
 				return

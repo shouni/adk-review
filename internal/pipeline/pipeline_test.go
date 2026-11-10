@@ -17,7 +17,7 @@ import (
 	"github.com/shouni/adk-review/internal/domain"
 )
 
-// stubSource は差分取得元のフェイクです。Diff で受け取った context を観察できます。
+// stubSource is a fake diff source. It lets tests observe the context Diff receives.
 type stubSource struct {
 	seen func(ctx context.Context)
 	diff string
@@ -31,8 +31,8 @@ func (s stubSource) Diff(ctx context.Context, _, _ string) (string, error) {
 	if s.err != nil {
 		return "", s.err
 	}
-	// 実際の差分取得と同じく、打ち切られていればエラーを返します。
-	// ここで成功を返してしまうと、締切のテストが締切を再現できません。
+	// Like the real diff retrieval, it returns an error once cut off.
+	// Returning success here would keep the deadline tests from reproducing a deadline.
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -67,7 +67,7 @@ func (stubReviewer) Review(
 	}, review.RunInfo{}, nil
 }
 
-// stubPublisher は保存のフェイクです。保存時の context を観察できます。
+// stubPublisher is a fake publisher. It lets tests observe the context at save time.
 type stubPublisher struct {
 	seen func(ctx context.Context)
 	err  error
@@ -80,7 +80,7 @@ func (p stubPublisher) Publish(ctx context.Context, _ review.Request, _ review.R
 	return p.err
 }
 
-// stubNotifier は通知のフェイクです。通知時の context を観察できます。
+// stubNotifier is a fake notifier. It lets tests observe the context at notification time.
 type stubNotifier struct {
 	mu     sync.Mutex
 	calls  int
@@ -96,18 +96,18 @@ func (n *stubNotifier) Notify(ctx context.Context, _ review.Notification) error 
 	return nil
 }
 
-// result は通知の回数と、最後の通知が受け取った context のエラーを返します。
+// result returns the number of notifications and the context error the last one received.
 func (n *stubNotifier) result() (int, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.calls, n.ctxErr
 }
 
-// stubStore は進行状況のフェイクです。保存された状態を順に記録します。
+// stubStore is a fake progress store. It records the saved states in order.
 type stubStore struct {
 	mu    sync.Mutex
 	saved []domain.JobStatus
-	// getErr を置くと、読み取りがその失敗になります（読めない事態の再現）。
+	// With getErr set, reads fail with it (reproducing an unreadable status).
 	getErr error
 }
 
@@ -123,8 +123,8 @@ func (s *stubStore) Get(_ context.Context, jobID string) (domain.JobStatus, erro
 			return v, nil
 		}
 	}
-	// 未記録は本物の store と同じ ErrNotFound で返します。Recorder.Begin はこれを
-	// 「初回」として進み、それ以外の失敗は「読めない」として実行を見送ります。
+	// No record returns ErrNotFound, as the real store does. Recorder.Begin proceeds on it as
+	// "the first run", and treats any other failure as "unreadable" and does not run.
 	return domain.JobStatus{}, jobstatus.ErrNotFound
 }
 
@@ -148,7 +148,7 @@ func (s *stubStore) states() []string {
 	return states
 }
 
-// newTestPipeline は、観察用フックを差し込んだパイプラインを組み立てます。
+// newTestPipeline builds a pipeline with the observation hooks plugged in.
 func newTestPipeline(t *testing.T, source stubSource, publisher stubPublisher, opts ...reviewpipeline.Option) reviewRunner {
 	t.Helper()
 	return newTestPipelineWith(t, source, publisher, &stubNotifier{}, opts...)
@@ -171,7 +171,7 @@ func newTestPipelineWith(
 		Notifier:          notifier,
 	}, opts...)
 	if err != nil {
-		t.Fatalf("パイプラインの構築に失敗: %v", err)
+		t.Fatalf("failed to build the pipeline: %v", err)
 	}
 	return p
 }
@@ -188,12 +188,12 @@ func testDomainRequest() domain.ReviewRequest {
 	}
 }
 
-// ★ PIPELINE_TIMEOUT がレビューに効いていること。
+// ★ PIPELINE_TIMEOUT applies to the review.
 //
-// 締切を持つのはライブラリ（reviewpipeline.WithRunTimeout）ですが、渡し忘れると
-// Cloud Tasks の dispatch deadline が先に来て、プロセスごと SIGTERM になり
-// 失敗の記録も Slack 通知も残りません。配線されていることをここで固定します。
-func TestRunner_レビューに締切を被せる(t *testing.T) {
+// The library (reviewpipeline.WithRunTimeout) owns the deadline, but if it were not passed, the
+// Cloud Tasks dispatch deadline would come first, the process would be SIGTERMed, and neither a
+// failure record nor a Slack notice would be left. This pins the wiring.
+func TestRunner_PutsADeadlineOnTheReview(t *testing.T) {
 	t.Parallel()
 
 	var reviewDeadline time.Time
@@ -211,15 +211,15 @@ func TestRunner_レビューに締切を被せる(t *testing.T) {
 	}
 
 	if !hasDeadline {
-		t.Fatal("レビューの context に締切が無い（PIPELINE_TIMEOUT が効いていない）")
+		t.Fatal("the review context has no deadline (PIPELINE_TIMEOUT does not apply)")
 	}
 	if d := reviewDeadline.Sub(before); d < timeout-time.Minute || d > timeout+time.Minute {
-		t.Errorf("締切までの時間 = %s, want ≒ %s", d, timeout)
+		t.Errorf("time to deadline = %s, want ≈ %s", d, timeout)
 	}
 }
 
-// 0 以下は無制限。ローカルでの長時間デバッグ用の逃げ道が塞がっていないこと。
-func TestRunner_ゼロなら無制限(t *testing.T) {
+// 0 or below is unlimited. The escape hatch for long local debugging must stay open.
+func TestRunner_ZeroMeansNoLimit(t *testing.T) {
 	t.Parallel()
 
 	var hasDeadline bool
@@ -232,21 +232,22 @@ func TestRunner_ゼロなら無制限(t *testing.T) {
 		t.Fatalf("Execute() failed: %v", err)
 	}
 	if hasDeadline {
-		t.Error("timeout=0 なのに締切が付いている")
+		t.Error("a deadline is set although timeout=0")
 	}
 }
 
-// 締切で打ち切られても通知は走ること（ライブラリ側の切り離しが効いているかの結合確認）。
+// The notification still goes out after a cut-off at the deadline (an integration check that
+// the library's detachment works).
 //
-// 打ち切られた場合、保存する結果が無いので Publisher は呼ばれません。報告が要るのは
-// まさにこの場面なので、Notifier が期限切れでない context で呼ばれることを確かめます。
-func TestRunner_打ち切り後も通知は走る(t *testing.T) {
+// When cut off there is no result to save, so the Publisher is not called. This is exactly when
+// a report is needed, so it checks that the Notifier is called with an unexpired context.
+func TestRunner_NotifiesAfterTheCutOff(t *testing.T) {
 	t.Parallel()
 
 	notifier := &stubNotifier{}
 	runner := newTestPipelineWith(t,
 		stubSource{seen: func(ctx context.Context) {
-			<-ctx.Done() // 締切まで待つ = レビューが打ち切られた状態を作る
+			<-ctx.Done() // wait for the deadline = make the review cut off
 		}},
 		stubPublisher{},
 		notifier,
@@ -254,23 +255,23 @@ func TestRunner_打ち切り後も通知は走る(t *testing.T) {
 	)
 
 	if err := NewRunner(runner, &stubStore{}).Execute(context.Background(), testDomainRequest()); err == nil {
-		t.Fatal("打ち切りがエラーとして返っていません")
+		t.Fatal("the cut-off is not returned as an error")
 	}
 
 	calls, ctxErr := notifier.result()
 	if calls == 0 {
-		t.Fatal("打ち切り後に通知が行われていない")
+		t.Fatal("no notification after the cut-off")
 	}
 	if calls != 1 {
-		t.Errorf("通知回数 = %d, want 1", calls)
+		t.Errorf("notifications = %d, want 1", calls)
 	}
 	if ctxErr != nil {
-		t.Errorf("通知の context が期限切れ: %v", ctxErr)
+		t.Errorf("the notification context has expired: %v", ctxErr)
 	}
 }
 
-// 実行開始が記録され、試行回数が加算されること。
-func TestRunner_実行開始を記録する(t *testing.T) {
+// The start of the run is recorded and the attempt count is incremented.
+func TestRunner_RecordsTheStart(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
@@ -282,22 +283,22 @@ func TestRunner_実行開始を記録する(t *testing.T) {
 
 	states := store.states()
 	if len(states) == 0 || states[0] != "running" {
-		t.Fatalf("最初の記録 = %v, want running", states)
+		t.Fatalf("first record = %v, want running", states)
 	}
 	if store.saved[0].Attempts != 1 {
 		t.Errorf("Attempts = %d, want 1", store.saved[0].Attempts)
 	}
 }
 
-// 完了済みのタスクが再配信されたら、レビューを実行せずに打ち切ること。
-// Cloud Tasks は at-least-once 配信のため、これが無いと AI の呼び出しが二重に走ります。
-func TestRunner_完了済みの再配信は打ち切る(t *testing.T) {
+// A redelivered finished task stops without running the review.
+// Cloud Tasks delivers at least once; without this the AI calls would run twice.
+func TestRunner_StopsARedeliveryOfASucceededJob(t *testing.T) {
 	t.Parallel()
 
 	req := testDomainRequest()
 	store := &stubStore{}
 	if err := store.Save(context.Background(), req.JobID, domain.NewSucceededStatus(req, review.StatusSucceeded)); err != nil {
-		t.Fatalf("事前の記録に失敗: %v", err)
+		t.Fatalf("failed to write the prior record: %v", err)
 	}
 
 	reviewed := false
@@ -310,14 +311,15 @@ func TestRunner_完了済みの再配信は打ち切る(t *testing.T) {
 		t.Fatalf("Execute() failed: %v", err)
 	}
 	if reviewed {
-		t.Error("完了済みなのにレビューが実行されている")
+		t.Error("the review ran although the task had finished")
 	}
 }
 
-// 状態を読めなければレビューを実行せず、エラーを返して再配信に委ねること
-// （ワーカー規約 2.1 の 5）。以前は「二重実行のほうが回復可能」として進んでいましたが、
-// 進むと完了済みのジョブを作り直し、このガードが防ぐはずの費用を自分で払います。
-func TestRunner_状態を読めなければ実行しない(t *testing.T) {
+// When the status cannot be read, the review does not run and an error is returned for
+// redelivery (worker convention 2.1, item 5). It used to proceed, reasoning that "running twice
+// is easier to recover from", but proceeding rebuilds a finished job and pays the very cost this
+// guard exists to prevent.
+func TestRunner_DoesNotRunWhenTheStatusIsUnreadable(t *testing.T) {
 	t.Parallel()
 
 	unavailable := errors.New("gcs unavailable")
@@ -334,19 +336,19 @@ func TestRunner_状態を読めなければ実行しない(t *testing.T) {
 		t.Fatalf("Execute() error = %v, want %v", err, unavailable)
 	}
 	if errors.Is(err, worker.ErrPermanent) {
-		t.Error("読めない事態が Permanent になっている（再配信で直り得るので 500 のまま）")
+		t.Error("an unreadable status became Permanent (it should stay a 500, since redelivery may fix it)")
 	}
 	if reviewed {
-		t.Error("状態を読めないのにレビューが実行されている")
+		t.Error("the review ran although the status could not be read")
 	}
 	if states := store.states(); len(states) != 0 {
-		t.Errorf("読めないのに記録している: %v", states)
+		t.Errorf("records were written although the status could not be read: %v", states)
 	}
 }
 
-// 結末は Run の戻り値から記録します。以前は通知フックへ相乗りしていましたが、
-// Run が Report を返すようになったため直接組み立てられます。
-func TestRunner_結末を記録する(t *testing.T) {
+// The outcome is recorded from Run's return values. It used to ride on the notification hook,
+// but now that Run returns the Report it can be built directly.
+func TestRunner_RecordsTheOutcome(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -358,25 +360,25 @@ func TestRunner_結末を記録する(t *testing.T) {
 		wantReport  bool
 	}{
 		{
-			name:        "成功",
+			name:        "success",
 			wantState:   "succeeded",
 			wantOutcome: review.StatusSucceeded,
 			wantReport:  true,
 		},
 		{
-			name:        "差分なし",
+			name:        "no diff",
 			source:      stubSource{diff: "   "},
 			wantState:   "succeeded",
 			wantOutcome: review.StatusSkipped,
 		},
 		{
-			name:        "差分取得に失敗",
+			name:        "diff retrieval fails",
 			source:      stubSource{err: errors.New("boom")},
 			wantState:   "failed",
 			wantOutcome: review.StatusFailed,
 		},
 		{
-			name:        "保存に失敗",
+			name:        "save fails",
 			publisher:   stubPublisher{err: errors.New("gcs down")},
 			wantState:   "failed",
 			wantOutcome: review.StatusFailed,
@@ -390,9 +392,9 @@ func TestRunner_結末を記録する(t *testing.T) {
 
 			_ = NewRunner(runner, store).Execute(context.Background(), testDomainRequest())
 
-			// 1 件目は running、最後が結末です。
+			// The first record is running, the last is the outcome.
 			if len(store.saved) < 2 {
-				t.Fatalf("記録件数 = %d, want 2 以上 (%v)", len(store.saved), store.states())
+				t.Fatalf("records = %d, want at least 2 (%v)", len(store.saved), store.states())
 			}
 
 			got := store.saved[len(store.saved)-1]
@@ -406,14 +408,14 @@ func TestRunner_結末を記録する(t *testing.T) {
 				t.Errorf("HasReport() = %v, want %v", got.HasReport(), tt.wantReport)
 			}
 			if tt.wantState == "failed" && got.Error == "" {
-				t.Error("失敗理由が記録されていません")
+				t.Error("the failure reason is not recorded")
 			}
 		})
 	}
 }
 
-// 成功時はレビューの中身（題目・判定）まで記録します。履歴一覧の 1 行になります。
-func TestRunner_結末にレビューの中身を載せる(t *testing.T) {
+// On success the review's contents (title, decision) are recorded too; they become a row of the history list.
+func TestRunner_PutsTheReviewOnTheOutcome(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
@@ -436,9 +438,9 @@ func TestRunner_結末にレビューの中身を載せる(t *testing.T) {
 	}
 }
 
-// レビューが締切で打ち切られても結末は記録されること。
-// 記録まで期限切れの context で行うと、いちばん記録が要る場面で残りません。
-func TestRunner_打ち切り後も結末を記録する(t *testing.T) {
+// The outcome is recorded even when the review is cut off at the deadline.
+// Recording with the expired context would leave nothing exactly when the record matters most.
+func TestRunner_RecordsTheOutcomeAfterTheCutOff(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
@@ -452,12 +454,13 @@ func TestRunner_打ち切り後も結末を記録する(t *testing.T) {
 
 	states := store.states()
 	if len(states) < 2 || states[len(states)-1] != "failed" {
-		t.Fatalf("打ち切りが記録されていません: %v", states)
+		t.Fatalf("the cut-off is not recorded: %v", states)
 	}
 }
 
-// ★ 計測値は失敗した実行にも記録すること。成功時だけ残す作りだと、上限を決め直す
-// のにいちばん見たい裾が履歴から欠けます（理由は buildOutcomeStatus の中）。
+// ★ Measurements are recorded for failed runs too. Kept only on success, the history would
+// lack the tail most worth seeing when recalibrating the limits (the reason is inside
+// buildOutcomeStatus).
 func TestBuildOutcomeStatusRecordsMetrics(t *testing.T) {
 	t.Parallel()
 
@@ -485,20 +488,20 @@ func TestBuildOutcomeStatusRecordsMetrics(t *testing.T) {
 
 	report := &review.Report{Title: "レビュー", Verdict: review.Verdict{Decision: review.DecisionMinor}}
 
-	t.Run("成功", func(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
 		got := buildOutcomeStatus(req, result, report, nil)
 		if got.Metrics != want {
 			t.Errorf("Metrics = %+v, want %+v", got.Metrics, want)
 		}
 		if !got.Truncated {
-			t.Error("Truncated が引き継がれていません")
+			t.Error("Truncated was not carried over")
 		}
 		if got.Title != "レビュー" || got.ReportURI != req.StorageURI {
-			t.Errorf("成果物の情報が欠けています: %+v", got)
+			t.Errorf("artifact information is missing: %+v", got)
 		}
 	})
 
-	t.Run("失敗でも残る", func(t *testing.T) {
+	t.Run("kept on failure too", func(t *testing.T) {
 		failed := result
 		failed.Status = review.StatusFailed
 
@@ -507,19 +510,19 @@ func TestBuildOutcomeStatusRecordsMetrics(t *testing.T) {
 			t.Fatalf("State = %q, want failed", got.State)
 		}
 		if got.Metrics != want {
-			t.Errorf("失敗時に Metrics = %+v, want %+v", got.Metrics, want)
+			t.Errorf("on failure Metrics = %+v, want %+v", got.Metrics, want)
 		}
 		if got.ReportURI != "" {
-			t.Errorf("失敗なのに成果物の URI が入っています: %q", got.ReportURI)
+			t.Errorf("an artifact URI is set although it failed: %q", got.ReportURI)
 		}
 	})
 }
 
-// TestClassifyForRetry は、再配信で直る失敗と直らない失敗の仕分けを固定します。
+// TestClassifyForRetry pins the split between failures redelivery can fix and those it cannot.
 //
-// 取り違えるとどちらも静かに壊れます。恒久的な失敗を再試行に回すと同じ通知が
-// 2 通届き、一時的な失敗を恒久扱いにすると、再配信で直ったはずのジョブが
-// 成功扱いで打ち切られて二度と実行されません。
+// Getting it wrong breaks quietly either way. Retrying a permanent failure sends the same notice
+// twice; treating a transient failure as permanent ends a job redelivery would have fixed as a
+// success, and it never runs again.
 func TestClassifyForRetry(t *testing.T) {
 	t.Parallel()
 
@@ -527,16 +530,16 @@ func TestClassifyForRetry(t *testing.T) {
 		err           error
 		wantPermanent bool
 	}{
-		"成功":       {err: nil},
-		"依頼が不正":    {err: review.ErrInvalidRequest, wantPermanent: true},
-		"差分が空":     {err: review.ErrEmptyDiff, wantPermanent: true},
-		"差分が大きすぎる": {err: review.ErrDiffTooLarge, wantPermanent: true},
-		"ref が無い":  {err: review.ErrRefNotFound, wantPermanent: true},
-		"対応していないリポジトリ URL":  {err: review.ErrUnsupportedRepoURL, wantPermanent: true},
-		"包まれていても仕分ける":       {err: fmt.Errorf("差分の取得に失敗: %w", review.ErrDiffTooLarge), wantPermanent: true},
-		"モデルの空応答は再試行に回す":    {err: review.ErrEmptyResponse},
-		"壊れた出力は再試行に回す":      {err: review.ErrInvalidReport},
-		"素性の分からない失敗は再試行に回す": {err: errors.New("vertex ai: 503")},
+		"success":                      {err: nil},
+		"invalid request":              {err: review.ErrInvalidRequest, wantPermanent: true},
+		"empty diff":                   {err: review.ErrEmptyDiff, wantPermanent: true},
+		"diff too large":               {err: review.ErrDiffTooLarge, wantPermanent: true},
+		"ref not found":                {err: review.ErrRefNotFound, wantPermanent: true},
+		"unsupported repository URL":   {err: review.ErrUnsupportedRepoURL, wantPermanent: true},
+		"classified even when wrapped": {err: fmt.Errorf("failed to get the diff: %w", review.ErrDiffTooLarge), wantPermanent: true},
+		"empty model response retries": {err: review.ErrEmptyResponse},
+		"broken output retries":        {err: review.ErrInvalidReport},
+		"unknown failure retries":      {err: errors.New("vertex ai: 503")},
 	}
 
 	for name, tt := range tests {
@@ -553,9 +556,9 @@ func TestClassifyForRetry(t *testing.T) {
 			if permanent := errors.Is(got, worker.ErrPermanent); permanent != tt.wantPermanent {
 				t.Errorf("permanent = %v, want %v", permanent, tt.wantPermanent)
 			}
-			// 仕分けても元の原因は辿れること（記録と通知が理由を出せなくなります）。
+			// The original cause stays reachable after classification (otherwise the record and the notice cannot state the reason).
 			if !errors.Is(got, tt.err) {
-				t.Errorf("原因が失われました: %v", got)
+				t.Errorf("the cause was lost: %v", got)
 			}
 		})
 	}

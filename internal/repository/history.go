@@ -1,4 +1,4 @@
-// Package repository は、GCS 上のレビュー履歴の読み取りを担います。
+// Package repository reads the review history on GCS.
 package repository
 
 import (
@@ -21,18 +21,18 @@ import (
 	"github.com/shouni/adk-review/internal/domain"
 )
 
-// loadConcurrency は 1 ページ分のメタデータを取得する際の同時実行数です。
+// loadConcurrency is the concurrency when fetching one page of metadata.
 const loadConcurrency = 10
 
-// maxReportBytes は report.json の読み取り上限です。
-// AI の出力はスキーマで制約されていますが、壊れたオブジェクトを丸ごとメモリへ載せない
-// ための歯止めです。
+// maxReportBytes is the read limit for report.json.
+// The AI's output is constrained by the schema, but this is a safeguard against loading a
+// broken object whole into memory.
 const maxReportBytes = 8 << 20 // 8 MiB
 
-// History は、GCS 上のレビュー履歴を読み書きします。
+// History reads and writes the review history on GCS.
 //
-// 各メソッドが何を返すかは domain.HistoryRepository が定めます。ここに書くのは、
-// この実装に固有の事情（並列読み込みの失敗の扱い、削除の走査範囲）だけです。
+// What each method returns is defined by domain.HistoryRepository. Only what is specific to this
+// implementation (handling failures of parallel loads, the scope of the deletion walk) is noted here.
 type History struct {
 	storage remoteio.Store
 	store   domain.StatusStore
@@ -43,7 +43,7 @@ type History struct {
 
 var _ domain.HistoryRepository = (*History)(nil)
 
-// NewHistory は History を構築します。
+// NewHistory builds a History.
 func NewHistory(
 	storage remoteio.Store,
 	store domain.StatusStore,
@@ -58,45 +58,45 @@ func NewHistory(
 	}
 }
 
-// List は、プレフィックス走査で集めた ID を並べ替え、そのページの分だけ
-// 進行状況を読みます。何を返すかは domain.HistoryRepository の側にあります。
+// List sorts the IDs collected by walking the prefix and reads the progress for that page only.
+// What it returns is defined by domain.HistoryRepository.
 func (h *History) List(ctx context.Context, page, perPage int) (domain.HistoryPage, error) {
 	jobIDs, err := h.listJobIDs(ctx)
 	if err != nil {
-		return domain.HistoryPage{}, fmt.Errorf("レビュー履歴の一覧取得に失敗しました: %w", err)
+		return domain.HistoryPage{}, fmt.Errorf("failed to list the review history: %w", err)
 	}
 
-	// LoadPage は個々の load 失敗を「その行を落として続行」で処理します。未記録の
-	// ジョブには妥当ですが、読み取り障害まで同じ扱いだとジョブが一覧から消えるだけで
-	// 200 が返り、障害が障害に見えません。そこで種類を見分けて拾い直します。
+	// LoadPage handles each load failure by "drop the row and continue". That suits a job with no
+	// record, but applied to read failures too, the job would just vanish from the list with a 200
+	// and an outage would not look like one. So the kind is told apart and picked up again.
 	var failure loadFailure
 
-	// ID に埋め込まれた時刻で並べます。ID の辞書順に頼らないのは、採番の接頭辞が
-	// 変わったり別サービス採番の ID が混ざったりすると、時刻より先に接頭辞の差が
-	// 効いて日付を無視した並びになるためです。
+	// Sorted by the time embedded in the ID. Lexical order is not relied on because when the
+	// minted prefix changes or IDs minted by another service mix in, the prefix difference
+	// takes effect before the time and the order ignores the date.
 	items, meta, err := paging.LoadPage(ctx, jobIDs, page, perPage, jobid.SortKey, failure.wrap(h.loadStatus),
 		paging.WithConcurrency(loadConcurrency),
 		paging.WithLogger(h.logger),
 	)
 	if err != nil {
-		return domain.HistoryPage{}, fmt.Errorf("レビュー履歴の読み込みに失敗しました: %w", err)
+		return domain.HistoryPage{}, fmt.Errorf("failed to load the review history: %w", err)
 	}
 	if err := failure.err(); err != nil {
-		return domain.HistoryPage{}, fmt.Errorf("レビュー履歴の読み込みに失敗しました: %w", err)
+		return domain.HistoryPage{}, fmt.Errorf("failed to load the review history: %w", err)
 	}
 
 	return domain.HistoryPage{Items: items, Meta: meta}, nil
 }
 
-// loadFailure は、並列に走る読み込みのうち最初の失敗を保持します。
+// loadFailure holds the first failure among the loads running in parallel.
 //
-// LoadPage は load のエラーを呼び出し元へ返さないため、こちらで捕まえます。
+// LoadPage does not return load errors to the caller, so they are caught here.
 type loadFailure struct {
 	mu    sync.Mutex
 	first error
 }
 
-// wrap は、load 関数を包んで失敗を記録できるようにします。
+// wrap wraps a load function so its failure can be recorded.
 func (f *loadFailure) wrap(
 	load func(context.Context, string) (domain.JobStatus, error),
 ) func(context.Context, string) (domain.JobStatus, error) {
@@ -113,33 +113,33 @@ func (f *loadFailure) wrap(
 	}
 }
 
-// err は、記録した最初の失敗を返します。
+// err returns the first failure recorded.
 func (f *loadFailure) err() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.first
 }
 
-// Get は、進行状況を読み、成果物があれば report.json も読んで 1 件に組み立てます。
+// Get reads the progress, and report.json when there is an artifact, and builds one entry.
 func (h *History) Get(ctx context.Context, jobID string) (domain.ReviewDetail, error) {
 	status, err := h.store.Get(ctx, jobID)
 	if err != nil {
-		// %w で包みます。呼び出し側は errors.Is で ErrNotFound（404）と
-		// それ以外（500）を切り分けるため、種類は保ったまま文脈だけ足します。
-		return domain.ReviewDetail{}, fmt.Errorf("進行状況の取得に失敗しました (job_id: %s): %w", jobID, err)
+		// Wrapped with %w. The caller uses errors.Is to split ErrNotFound (404) from the rest
+		// (500), so only context is added and the kind is kept.
+		return domain.ReviewDetail{}, fmt.Errorf("failed to get the progress (job_id: %s): %w", jobID, err)
 	}
 
 	detail := domain.ReviewDetail{Status: status}
 	if !status.HasReport() {
-		// 実行中・失敗・スキップは成果物を持ちません。進行状況だけで詳細を組み立てます。
+		// Running, failed and skipped jobs have no artifact. The detail is built from the progress alone.
 		return detail, nil
 	}
 
 	report, err := h.loadReport(ctx, status.ReportURI)
 	if err != nil {
-		// 結果本体が読めなくても、進行状況までは見せます。何が起きたかを画面から
-		// 追えるほうが、404 を返すより手掛かりが残るためです。
-		h.logger.WarnContext(ctx, "レビュー結果の読み込みに失敗しました",
+		// Even when the result itself cannot be read, the progress is shown. Following what
+		// happened on screen leaves more clues than returning a 404.
+		h.logger.WarnContext(ctx, "failed to load the review result",
 			"job_id", jobID, "uri", status.ReportURI, "error", err)
 		return detail, nil
 	}
@@ -148,9 +148,9 @@ func (h *History) Get(ctx context.Context, jobID string) (domain.ReviewDetail, e
 	return detail, nil
 }
 
-// Delete は、ジョブのプレフィックスを走査して消します。そのため、消す側は
-// 「そのジョブが何を作ったか」を知らずに済み、成果物の種類が増えてもここは直りません
-// （進行状況も同じプレフィックス配下にあるので、まとめて消えます）。
+// Delete walks the job's prefix and removes it. The deleter therefore need not know "what the
+// job made", and new kinds of artifact need no change here (the progress lives under the same
+// prefix, so it goes too).
 func (h *History) Delete(ctx context.Context, jobID string) error {
 	safeJobID, err := jobid.Sanitize(jobID)
 	if err != nil {
@@ -161,26 +161,26 @@ func (h *History) Delete(ctx context.Context, jobID string) error {
 		return err
 	}
 
-	// 消したジョブが一覧に残らないよう、ID 一覧のキャッシュを捨てます。
-	// 捨てないと、読めない ID がジョブ ID だけの空行として TTL の間並びます。
+	// The cached ID list is dropped so the deleted job does not stay listed.
+	// Otherwise the unreadable ID would sit as an empty row of the job ID alone until the TTL.
 	h.Invalidate()
 	return nil
 }
 
-// Invalidate は、レビュープレフィックスの ID 一覧をキャッシュから落とします。
+// Invalidate drops the review prefix's ID list from the cache.
 func (h *History) Invalidate() {
 	h.ids.Invalidate(h.layout.ReviewPrefixURI())
 }
 
-// loadStatus は 1 件分の進行状況を読み取ります。
+// loadStatus reads one entry's progress.
 //
-// まだ記録が無い ID は一覧から落とさず、ジョブ ID だけの行として残します。
-// 一覧から消えると、投入したはずのレビューを画面から追えなくなるためです。
+// An ID with no record yet is not dropped from the list; it stays as a row of the job ID alone.
+// Gone from the list, a submitted review could no longer be followed on screen.
 //
-// ★ ただしそれは ErrNotFound のときだけです。読み取り自体が失敗した場合
-// （権限剥奪・ストレージ障害）まで同じ扱いにすると、一覧が「ジョブ ID だけの空行が
-// 並ぶ 200 OK」になり、障害が障害に見えなくなります。store は両者を別のエラーとして
-// 返すので、後者は呼び出し元へ持ち上げます。
+// ★ That applies only to ErrNotFound. Treating a failed read (revoked permission, storage
+// outage) the same way would turn the list into "200 OK with empty rows of job IDs only", and an
+// outage would not look like one. The store returns the two as different errors, so the latter
+// is raised to the caller.
 func (h *History) loadStatus(ctx context.Context, jobID string) (domain.JobStatus, error) {
 	status, err := h.store.Get(ctx, jobID)
 	switch {
@@ -189,20 +189,19 @@ func (h *History) loadStatus(ctx context.Context, jobID string) (domain.JobStatu
 	case errors.Is(err, jobstatus.ErrNotFound):
 		return domain.JobStatus{JobID: jobID}, nil
 	default:
-		h.logger.ErrorContext(ctx, "進行状況の読み込みに失敗しました", "job_id", jobID, "error", err)
-		return domain.JobStatus{}, fmt.Errorf("進行状況を読み込めませんでした (job_id: %s): %w", jobID, err)
+		h.logger.ErrorContext(ctx, "failed to load the progress", "job_id", jobID, "error", err)
+		return domain.JobStatus{}, fmt.Errorf("could not load the progress (job_id: %s): %w", jobID, err)
 	}
 }
 
-// listJobIDs はプレフィックス直下のジョブ ID を集めます。
+// listJobIDs collects the job IDs directly under the prefix.
 //
-// 走査そのものは joblist.Collect が持ちます。区切り文字を指定してジョブ 1 件を
-// 1 エントリとして受け取る形は兄弟アプリと共通で、この走査を集めるために
-// 切り出されたのが joblist です。ここで書き直すと、重複潰しやプレフィックスの
-// 末尾補正といった細部が黙って抜け落ちます。
+// joblist.Collect owns the walk itself. Receiving one job as one entry by giving a delimiter is
+// shared with the sibling apps, and joblist was extracted to gather that walk. Rewriting it here
+// would silently lose details such as deduplication and fixing the prefix's trailing slash.
 //
-// 集めた ID の絞り込みは行いません。採番より前に作られたディレクトリを一覧から
-// 消すかどうかは読み込み側の判断で、ここでは判断材料を落とさずに渡します。
+// The collected IDs are not filtered. Whether directories created before minting existed are
+// dropped from the list is the reader's decision; here the material is passed on intact.
 func (h *History) listJobIDs(ctx context.Context) ([]string, error) {
 	prefix := h.layout.ReviewPrefixURI()
 
@@ -211,22 +210,22 @@ func (h *History) listJobIDs(ctx context.Context) ([]string, error) {
 	})
 }
 
-// loadReport は report.json を読み取ります。
+// loadReport reads report.json.
 func (h *History) loadReport(ctx context.Context, uri string) (review.Report, error) {
 	rc, err := h.storage.Open(ctx, uri)
 	if err != nil {
-		return review.Report{}, fmt.Errorf("レビュー結果を開けませんでした: %w", err)
+		return review.Report{}, fmt.Errorf("could not open the review result: %w", err)
 	}
 	defer func() { _ = rc.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(rc, maxReportBytes))
 	if err != nil {
-		return review.Report{}, fmt.Errorf("レビュー結果の読み取りに失敗しました: %w", err)
+		return review.Report{}, fmt.Errorf("failed to read the review result: %w", err)
 	}
 
 	var report review.Report
 	if err := json.Unmarshal(body, &report); err != nil {
-		return review.Report{}, fmt.Errorf("レビュー結果の解釈に失敗しました: %w", err)
+		return review.Report{}, fmt.Errorf("failed to parse the review result: %w", err)
 	}
 	return report, nil
 }

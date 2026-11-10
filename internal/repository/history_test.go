@@ -20,18 +20,17 @@ const (
 	testJobID  = "20260810-213000-a1b2c3d4"
 )
 
-// fakeIO は remoteio の読み書きのフェイクです。
-// fakeIO は memio を包んだストレージのフェイクです。
+// fakeIO is a fake of remoteio reads and writes.
+// fakeIO is a storage fake wrapping memio.
 //
-// 一覧の畳み込みや不在の返し方といったストレージの振る舞いは memio が受け持ちます
-// （本物のハンドラと同じ適合性スイートを通っています）。ここに残しているのは
-// 「どのプレフィックスを走査したか」「何を消したか」という呼び出しの記録と、
-// 障害の注入だけです。
+// memio handles the storage behaviour, such as folding listings and how absence is returned
+// (it passes the same conformance suite as the real handlers). All that remains here is
+// recording the calls ("which prefix was walked", "what was deleted") and injecting failures.
 type fakeIO struct {
 	remoteio.Store
 	h *memio.Handler
 
-	// objects は init で memio へ流し込む前提のオブジェクトです。
+	// objects are the preset objects loaded into memio on init.
 	objects   []string
 	listErr   error
 	deleteErr error
@@ -40,10 +39,10 @@ type fakeIO struct {
 	deleted      []string
 }
 
-// ensure は memio を組み立てて objects を流し込みます。
+// ensure builds memio and loads objects into it.
 //
-// 各テストが構造体リテラルで前提を書けるよう、生成は最初の呼び出しまで遅らせています。
-// 冪等なので、どの入口から先に触られても同じ状態になります。
+// Creation is deferred to the first call so each test can state its preconditions in a struct
+// literal. It is idempotent, so whichever entry point is touched first, the state is the same.
 func (f *fakeIO) ensure(t *testing.T) {
 	t.Helper()
 	if f.Store != nil {
@@ -75,7 +74,7 @@ func (f *fakeIO) Delete(ctx context.Context, name string) error {
 	return f.Store.Delete(ctx, name)
 }
 
-// fakeStore は進行状況のフェイクです。
+// fakeStore is a fake progress store.
 type fakeStore struct{}
 
 func (fakeStore) Get(context.Context, string) (domain.JobStatus, error) {
@@ -90,53 +89,53 @@ func newTestHistory(t *testing.T, fake *fakeIO) *History {
 	return NewHistory(fake, fakeStore{}, domain.NewStorageLayout(testBucket))
 }
 
-// 削除はジョブのプレフィックスを走査して行います。消す側が「何を作ったか」を
-// 知らずに済むため、成果物の種類が増えてもここを直す必要がありません。
+// Deletion walks the job's prefix. The deleter need not know "what was made", so new kinds of
+// artifact need no change here.
 func TestDeleteRemovesEverythingUnderTheJobPrefix(t *testing.T) {
 	prefix := "gs://" + testBucket + "/reviews/" + testJobID + "/"
 	fake := &fakeIO{objects: []string{prefix + "status.json", prefix + "report.json"}}
 
 	if err := newTestHistory(t, fake).Delete(context.Background(), testJobID); err != nil {
-		t.Fatalf("削除に失敗: %v", err)
+		t.Fatalf("failed to delete: %v", err)
 	}
 
 	if fake.listedPrefix != prefix {
-		t.Errorf("走査したプレフィックス = %q, want %q", fake.listedPrefix, prefix)
+		t.Errorf("walked prefix = %q, want %q", fake.listedPrefix, prefix)
 	}
 	if len(fake.deleted) != 2 {
-		t.Fatalf("削除件数 = %d, want 2 (%v)", len(fake.deleted), fake.deleted)
+		t.Fatalf("deleted = %d, want 2 (%v)", len(fake.deleted), fake.deleted)
 	}
 	for _, uri := range fake.deleted {
 		if !strings.HasPrefix(uri, prefix) {
-			t.Errorf("プレフィックス外を削除しています: %q", uri)
+			t.Errorf("deleting outside the prefix: %q", uri)
 		}
 	}
 }
 
-// ジョブ ID はストレージのパス要素になるため、正規化してから組み立てます。
-// 正規化しないと、走査するプレフィックスを外から広げられます。
+// The job ID becomes a storage path element, so it is sanitised before use.
+// Unsanitised, the walked prefix could be widened from outside.
 func TestDeleteSanitizesJobID(t *testing.T) {
-	t.Run("パス要素は切り詰める", func(t *testing.T) {
+	t.Run("path elements are trimmed", func(t *testing.T) {
 		fake := &fakeIO{}
 
 		if err := newTestHistory(t, fake).Delete(context.Background(), "../../etc/passwd"); err != nil {
-			t.Fatalf("削除に失敗: %v", err)
+			t.Fatalf("failed to delete: %v", err)
 		}
 
 		want := "gs://" + testBucket + "/reviews/passwd/"
 		if fake.listedPrefix != want {
-			t.Fatalf("走査したプレフィックス = %q, want %q", fake.listedPrefix, want)
+			t.Fatalf("walked prefix = %q, want %q", fake.listedPrefix, want)
 		}
 	})
 
-	t.Run("正規化しても不正なら拒否する", func(t *testing.T) {
+	t.Run("rejected when still invalid after sanitising", func(t *testing.T) {
 		fake := &fakeIO{}
 
 		if err := newTestHistory(t, fake).Delete(context.Background(), "-bad-id"); err == nil {
-			t.Fatal("エラーを期待しましたが nil でした")
+			t.Fatal("expected an error, got nil")
 		}
 		if fake.listedPrefix != "" {
-			t.Errorf("不正なIDで走査しています: %q", fake.listedPrefix)
+			t.Errorf("walking with an invalid ID: %q", fake.listedPrefix)
 		}
 	})
 }
@@ -144,46 +143,46 @@ func TestDeleteSanitizesJobID(t *testing.T) {
 func TestDeleteReportsFailures(t *testing.T) {
 	prefix := "gs://" + testBucket + "/reviews/" + testJobID + "/"
 
-	t.Run("一覧に失敗", func(t *testing.T) {
+	t.Run("listing fails", func(t *testing.T) {
 		fake := &fakeIO{listErr: errors.New("gcs down")}
 
 		err := newTestHistory(t, fake).Delete(context.Background(), testJobID)
 		if err == nil {
-			t.Fatal("エラーを期待しましたが nil でした")
+			t.Fatal("expected an error, got nil")
 		}
 		if len(fake.deleted) != 0 {
-			t.Error("一覧に失敗したのに削除が走っています")
+			t.Error("deletion ran although listing failed")
 		}
 	})
 
-	t.Run("削除に失敗", func(t *testing.T) {
+	t.Run("deletion fails", func(t *testing.T) {
 		fake := &fakeIO{
 			objects:   []string{prefix + "status.json"},
 			deleteErr: errors.New("permission denied"),
 		}
 
 		if err := newTestHistory(t, fake).Delete(context.Background(), testJobID); err == nil {
-			t.Fatal("エラーを期待しましたが nil でした")
+			t.Fatal("expected an error, got nil")
 		}
 	})
 }
 
-// 走査対象が空でもエラーにしません（既に消えている場合など）。
+// An empty walk is not an error (for example when already deleted).
 func TestDeleteWithNoObjects(t *testing.T) {
 	fake := &fakeIO{}
 
 	if err := newTestHistory(t, fake).Delete(context.Background(), testJobID); err != nil {
-		t.Fatalf("削除に失敗: %v", err)
+		t.Fatalf("failed to delete: %v", err)
 	}
 	if len(fake.deleted) != 0 {
-		t.Errorf("削除件数 = %d, want 0", len(fake.deleted))
+		t.Errorf("deleted = %d, want 0", len(fake.deleted))
 	}
 }
 
-// バケットの根は拒否します。ここを取り違えると、バケットの広い範囲を消すことになります。
-// 末尾の区切りは要求しません（remoteio の List がプレフィックスを正規化するため、
-// "reviews" と "reviews-old/" は混同されません）。判定は remoteio.DeletePrefix が持ち、
-// ここではこの層のストレージに対して効いていることだけを確かめます。
+// The bucket root is rejected. Getting this wrong would delete a wide range of the bucket.
+// No trailing separator is required (remoteio's List normalises the prefix, so "reviews" and
+// "reviews-old/" are not confused). remoteio.DeletePrefix owns the check; this only confirms
+// it applies to this layer's storage.
 func TestDeletePrefixRefusesBucketRoot(t *testing.T) {
 	fake := &fakeIO{}
 	history := newTestHistory(t, fake)
@@ -194,13 +193,13 @@ func TestDeletePrefixRefusesBucketRoot(t *testing.T) {
 		}
 	}
 	if len(fake.deleted) != 0 {
-		t.Error("拒否したはずのプレフィックスで削除が走っています")
+		t.Error("deletion ran with a prefix that should have been rejected")
 	}
 }
 
-// --- 読み取り経路 ---
+// --- Read paths ---
 
-// stubStore は、ジョブ ID ごとに任意の結果を返す進行状況のフェイクです。
+// stubStore is a fake progress store returning any result per job ID.
 type stubStore struct {
 	statuses map[string]domain.JobStatus
 	errs     map[string]error
@@ -218,7 +217,7 @@ func (s stubStore) Get(_ context.Context, jobID string) (domain.JobStatus, error
 
 func (stubStore) Save(context.Context, string, domain.JobStatus) error { return nil }
 
-// contentIO は、Open で任意の内容を返す fakeIO です。
+// contentIO is a fakeIO whose Open returns any content.
 type contentIO struct {
 	*fakeIO
 	contents map[string]string
@@ -240,10 +239,10 @@ func jobPrefix(jobID string) string {
 	return "gs://" + testBucket + "/reviews/" + jobID + "/"
 }
 
-// 一覧は「疑似ディレクトリ」だけを拾い、ジョブ 1 件を 1 行として返すこと。
+// The list picks up only "pseudo-directories" and returns one row per job.
 //
-// 区切り指定が効かなくなると配下のオブジェクトが全件返り、末尾スラッシュの
-// フィルタで全部落ちて履歴一覧が常に空になります。
+// If the delimiter stopped working, every object underneath would come back, the trailing-slash
+// filter would drop them all, and the history list would always be empty.
 func TestListReturnsOneRowPerJob(t *testing.T) {
 	ids := []string{"20260810-213000-a1b2c3d4", "20260811-090000-b2c3d4e5"}
 	fake := &fakeIO{objects: []string{jobPrefix(ids[0]), jobPrefix(ids[1])}}
@@ -256,20 +255,20 @@ func TestListReturnsOneRowPerJob(t *testing.T) {
 	h := NewHistory(fake, store, domain.NewStorageLayout(testBucket))
 	page, err := h.List(context.Background(), 1, 20)
 	if err != nil {
-		t.Fatalf("一覧の取得に失敗: %v", err)
+		t.Fatalf("failed to list: %v", err)
 	}
 	if len(page.Items) != len(ids) {
-		t.Fatalf("件数 = %d, want %d (%+v)", len(page.Items), len(ids), page.Items)
+		t.Fatalf("items = %d, want %d (%+v)", len(page.Items), len(ids), page.Items)
 	}
 }
 
-// 一覧はジョブ ID に埋め込まれた時刻で新しい順に並ぶこと。
-// 並び順キーを外すと辞書順へ退行し、採番の接頭辞が変わった瞬間に日付を無視した
-// 並びになります。
+// The list is ordered newest first by the time embedded in the job ID.
+// Without the sort key it regresses to lexical order, and the moment the minted prefix changes
+// the order ignores the date.
 func TestListSortsNewestFirst(t *testing.T) {
 	older := "20260810-213000-a1b2c3d4"
 	newer := "20260811-090000-b2c3d4e5"
-	// 敢えて古い順に返させ、並べ替えが効いていることを見ます。
+	// Deliberately returned oldest first, to check that sorting works.
 	fake := &fakeIO{objects: []string{jobPrefix(older), jobPrefix(newer)}}
 	store := stubStore{statuses: map[string]domain.JobStatus{
 		older: {Status: jobstatus.Status{JobID: older}},
@@ -280,18 +279,18 @@ func TestListSortsNewestFirst(t *testing.T) {
 	h := NewHistory(fake, store, domain.NewStorageLayout(testBucket))
 	page, err := h.List(context.Background(), 1, 20)
 	if err != nil {
-		t.Fatalf("一覧の取得に失敗: %v", err)
+		t.Fatalf("failed to list: %v", err)
 	}
 	if len(page.Items) != 2 {
-		t.Fatalf("件数 = %d, want 2", len(page.Items))
+		t.Fatalf("items = %d, want 2", len(page.Items))
 	}
 	if page.Items[0].JobID != newer {
-		t.Errorf("先頭 = %q, want %q（新しい順になっていません）", page.Items[0].JobID, newer)
+		t.Errorf("first = %q, want %q (not newest first)", page.Items[0].JobID, newer)
 	}
 }
 
-// まだ記録が無いジョブも一覧から落とさないこと。
-// 落とすと、投入したはずのレビューを画面から追えなくなります。
+// A job with no record yet is not dropped from the list.
+// Dropped, a submitted review could no longer be followed on screen.
 func TestListKeepsJobsWithoutStatus(t *testing.T) {
 	fake := &fakeIO{objects: []string{jobPrefix(testJobID)}}
 	store := stubStore{errs: map[string]error{testJobID: jobstatus.ErrNotFound}}
@@ -300,20 +299,20 @@ func TestListKeepsJobsWithoutStatus(t *testing.T) {
 	h := NewHistory(fake, store, domain.NewStorageLayout(testBucket))
 	page, err := h.List(context.Background(), 1, 20)
 	if err != nil {
-		t.Fatalf("一覧の取得に失敗: %v", err)
+		t.Fatalf("failed to list: %v", err)
 	}
 	if len(page.Items) != 1 {
-		t.Fatalf("件数 = %d, want 1（未記録のジョブが落ちています）", len(page.Items))
+		t.Fatalf("items = %d, want 1 (the unrecorded job was dropped)", len(page.Items))
 	}
 	if page.Items[0].JobID != testJobID {
 		t.Errorf("JobID = %q, want %q", page.Items[0].JobID, testJobID)
 	}
 }
 
-// ★ 読み取り自体の失敗は握り潰さないこと。
+// ★ A failure of the read itself is not swallowed.
 //
-// 未記録と同じ扱いにすると、権限剥奪やストレージ障害が
-// 「ジョブ ID だけの空行が並ぶ 200 OK」として出て、障害が障害に見えなくなります。
+// Treated like "no record", a revoked permission or a storage outage would come out as
+// "200 OK with empty rows of job IDs only", and an outage would not look like one.
 func TestListSurfacesUnavailableStatus(t *testing.T) {
 	fake := &fakeIO{objects: []string{jobPrefix(testJobID)}}
 	store := stubStore{errs: map[string]error{testJobID: jobstatus.ErrUnavailable}}
@@ -321,11 +320,11 @@ func TestListSurfacesUnavailableStatus(t *testing.T) {
 	fake.ensure(t)
 	h := NewHistory(fake, store, domain.NewStorageLayout(testBucket))
 	if _, err := h.List(context.Background(), 1, 20); err == nil {
-		t.Fatal("読み取り失敗が握り潰されました")
+		t.Fatal("the read failure was swallowed")
 	}
 }
 
-// 詳細はレポート本文まで読み込むこと。
+// The detail reads the report body too.
 func TestGetLoadsReport(t *testing.T) {
 	uri := jobPrefix(testJobID) + "report.json"
 	fake := &fakeIO{}
@@ -344,18 +343,18 @@ func TestGetLoadsReport(t *testing.T) {
 	h := NewHistory(rio, store, domain.NewStorageLayout(testBucket))
 	detail, err := h.Get(context.Background(), testJobID)
 	if err != nil {
-		t.Fatalf("詳細の取得に失敗: %v", err)
+		t.Fatalf("failed to get the detail: %v", err)
 	}
 	if detail.Report == nil {
-		t.Fatal("レポートが読み込まれていません")
+		t.Fatal("the report was not loaded")
 	}
 	if detail.Report.Title != "レビュー結果" {
 		t.Errorf("Title = %q", detail.Report.Title)
 	}
 }
 
-// レポートが読めなくても進行状況までは見せること。
-// 404 を返すより、何が起きたかを画面から追えるほうが手掛かりが残ります。
+// Even when the report cannot be read, the progress is still shown.
+// Being able to follow what happened on screen leaves more clues than returning a 404.
 func TestGetKeepsStatusWhenReportUnreadable(t *testing.T) {
 	fake := &fakeIO{}
 	rio := contentIO{fakeIO: fake, openErr: errors.New("permission denied")}
@@ -370,17 +369,17 @@ func TestGetKeepsStatusWhenReportUnreadable(t *testing.T) {
 	h := NewHistory(rio, store, domain.NewStorageLayout(testBucket))
 	detail, err := h.Get(context.Background(), testJobID)
 	if err != nil {
-		t.Fatalf("進行状況まで失われました: %v", err)
+		t.Fatalf("the progress was lost too: %v", err)
 	}
 	if detail.Report != nil {
-		t.Error("読めなかったレポートが入っています")
+		t.Error("the unreadable report is set")
 	}
 	if detail.Status.JobID != testJobID {
 		t.Errorf("JobID = %q, want %q", detail.Status.JobID, testJobID)
 	}
 }
 
-// 未記録は ErrNotFound のまま返すこと。ハンドラーはこれで 404 と 500 を切り分けます。
+// No record is returned as ErrNotFound unchanged. The handler splits 404 from 500 on it.
 func TestGetPreservesNotFound(t *testing.T) {
 	fake := &fakeIO{}
 	fake.ensure(t)
@@ -388,6 +387,6 @@ func TestGetPreservesNotFound(t *testing.T) {
 
 	_, err := h.Get(context.Background(), testJobID)
 	if !errors.Is(err, jobstatus.ErrNotFound) {
-		t.Fatalf("err = %v, ErrNotFound として扱えません", err)
+		t.Fatalf("err = %v, cannot be treated as ErrNotFound", err)
 	}
 }

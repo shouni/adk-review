@@ -12,11 +12,11 @@ import (
 	"github.com/shouni/go-utils/jobid"
 )
 
-// ReviewFormPageData はフォームテンプレートに渡すデータ構造です。
+// ReviewFormPageData is the data passed to the form template.
 type ReviewFormPageData struct {
 	Message string
-	// Notice は、成功でも失敗でもない補足です（再実行でフォームを埋めたこと等）。
-	// Message と分けているのは、そちらが投入完了の緑色の枠に固定されているためです。
+	// Notice is a note that is neither success nor failure (such as the form being filled for a rerun).
+	// It is separate from Message because that one is fixed to the green submitted box.
 	Notice         string
 	Error          string
 	ResultURL      string
@@ -33,24 +33,24 @@ type ReviewFormPageData struct {
 	BranchPattern  string
 }
 
-// ReviewModeOption はフォームに表示するレビューモードの選択肢です。
+// ReviewModeOption is a review mode choice shown on the form.
 type ReviewModeOption struct {
 	Value       string
 	Description string
 	Selected    bool
 }
 
-// ModelOption はフォームに表示するGeminiモデルの選択肢です。
+// ModelOption is a Gemini model choice shown on the form.
 type ModelOption struct {
 	Value    string
 	Selected bool
 }
 
-// HandleForm は GET リクエストに対してフォームを表示します。
+// HandleForm shows the form for a GET request.
 //
-// ?from={jobID} を付けると、そのレビューの依頼内容でフォームを埋めます。失敗した
-// レビューは review-queue が max_attempts = 1 なので再試行されず、やり直すには
-// 依頼内容を打ち直すしかありませんでした。
+// With ?from={jobID} the form is filled with that review's request. A failed review is not
+// retried, since review-queue has max_attempts = 1, and redoing it used to mean typing the
+// request in again.
 func (h *Handler) HandleForm(w http.ResponseWriter, r *http.Request) {
 	data := defaultReviewFormPageData()
 	if from := r.URL.Query().Get("from"); from != "" {
@@ -59,26 +59,26 @@ func (h *Handler) HandleForm(w http.ResponseWriter, r *http.Request) {
 	h.renderForm(w, r, http.StatusOK, data)
 }
 
-// rerunFormData は、過去のレビューの依頼内容でフォームの初期値を埋めます。
+// rerunFormData fills the form's initial values with a past review's request.
 //
-// 読めなかった場合もエラーにはせず、既定値のフォームを断り書き付きで出します。
-// 再実行は入力を省くための便宜で、それが効かないことは新しい依頼を妨げません。
+// Failing to read it is not an error either; the default form is shown with a note. A rerun is a
+// convenience that saves typing, and it not working must not block a new request.
 //
-// 記録が空の項目には既定値を残します。依頼内容を記録する前の形式で保存された
-// ジョブを開いたときに、既定値まで空へ倒さないためです。
+// Fields empty in the record keep their defaults, so opening a job stored in a format from before
+// requests were recorded does not blank the defaults too.
 func (h *Handler) rerunFormData(ctx context.Context, jobID string, data ReviewFormPageData) ReviewFormPageData {
 	const unavailable = "元のレビューを読み込めなかったため、既定値で表示しています。"
 
 	safeJobID, err := jobid.Sanitize(jobID)
 	if err != nil {
-		slog.WarnContext(ctx, "再実行の元ジョブIDが不正です", "job_id", jobID, "error", err)
+		slog.WarnContext(ctx, "invalid source job ID for a rerun", "job_id", jobID, "error", err)
 		data.Notice = unavailable
 		return data
 	}
 
 	status, err := h.statusStore.Get(ctx, safeJobID)
 	if err != nil {
-		slog.WarnContext(ctx, "再実行の元になるレビューを読み込めませんでした", "job_id", safeJobID, "error", err)
+		slog.WarnContext(ctx, "could not load the review to rerun", "job_id", safeJobID, "error", err)
 		data.Notice = unavailable
 		return data
 	}
@@ -101,7 +101,7 @@ const (
 	defaultFeatureBranch = "develop"
 )
 
-// renderForm はレビューフォームの表示を一括管理するヘルパーメソッドです。
+// renderForm is the helper that handles rendering the review form in one place.
 func (h *Handler) renderForm(w http.ResponseWriter, r *http.Request, status int, data ReviewFormPageData) {
 	data.RepoURLPattern = repoURLPattern
 	data.BranchPattern = branchPattern
@@ -122,7 +122,7 @@ func (h *Handler) renderForm(w http.ResponseWriter, r *http.Request, status int,
 func reviewModeOptions(ctx context.Context, selectedMode string) []ReviewModeOption {
 	modes, err := assets.AvailableModes()
 	if err != nil {
-		slog.ErrorContext(ctx, "レビューモード一覧の読み込みに失敗しました", "error", err)
+		slog.ErrorContext(ctx, "failed to load the review modes", "error", err)
 		if selectedMode == "" {
 			selectedMode = defaultReviewMode
 		}
@@ -174,7 +174,7 @@ func (h *Handler) modelOptions(selectedModel string) []ModelOption {
 	return options
 }
 
-// configuredModels は GEMINI_MODELS で設定されたモデル一覧を返します。
+// configuredModels returns the models configured in GEMINI_MODELS.
 func (h *Handler) configuredModels() []string {
 	if h.cfg == nil {
 		return nil
