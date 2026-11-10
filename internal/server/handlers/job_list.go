@@ -10,21 +10,21 @@ import (
 )
 
 const (
-	// defaultPerPage は履歴一覧の 1 ページあたりの件数です。
+	// defaultPerPage is the number of rows per page of the history list.
 	defaultPerPage = 20
-	// maxPerPage は per_page に許容する上限です。1 ページの読み取り件数がそのまま
-	// ストレージへの往復数になるため、際限なく増やせないようにします。
+	// maxPerPage is the limit allowed for per_page. The rows read per page are the round trips
+	// to storage, so it cannot grow without bound.
 	maxPerPage = 100
 )
 
-// JobListPageData は履歴一覧テンプレートに渡すデータです。
+// JobListPageData is the data passed to the history list template.
 type JobListPageData struct {
 	Items []domain.JobStatus
 	Meta  domain.PageMeta
 	Error string
 }
 
-// HandleJobList はジョブ一覧を表示します（GET /jobs）。
+// HandleJobList shows the job list (GET /jobs).
 func (h *Handler) HandleJobList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -33,9 +33,9 @@ func (h *Handler) HandleJobList(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.history.List(ctx, page, perPage)
 	if err != nil {
-		// 「まだ無い」と「読めなかった」は別物として返します（recordErrorStatus の項）。
+		// "Not there yet" and "could not be read" are returned as different things (see recordErrorStatus).
 		code := recordErrorStatus(err)
-		slog.ErrorContext(ctx, "レビュー履歴の取得に失敗しました", "error", err, "status", code)
+		slog.ErrorContext(ctx, "failed to get the review history", "error", err, "status", code)
 		const message = "履歴を取得できませんでした。時間をおいて再度お試しください。"
 		if respond.WantsJSON(w, r) {
 			respond.ErrorJSON(w, r, code, message)
@@ -55,9 +55,9 @@ func (h *Handler) HandleJobList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// positiveIntParam はクエリから正の整数を読み取ります。
-// 未指定・不正値・0 以下はすべて既定値へ落とします。ページ番号の指定ミスで
-// 画面がエラーになるより、1 ページ目を出すほうが扱いやすいためです。
+// positiveIntParam reads a positive integer from the query.
+// Missing, invalid and values at or below 0 all fall back to the default. Showing the first page
+// is easier to deal with than an error page over a mistyped page number.
 func positiveIntParam(r *http.Request, name string, fallback int) int {
 	raw := r.URL.Query().Get(name)
 	if raw == "" {

@@ -17,14 +17,14 @@ import (
 	"github.com/shouni/go-review-kit/review"
 )
 
-// jsonRequest は Accept: application/json を付けたリクエストを作ります。
+// jsonRequest creates a request with Accept: application/json.
 func jsonRequest(method, target string) *http.Request {
 	req := httptest.NewRequest(method, target, nil)
 	req.Header.Set("Accept", "application/json")
 	return req
 }
 
-// withURLParam は chi の URL パラメータを載せます（ルーターを通さずハンドラを直接呼ぶため）。
+// withURLParam sets a chi URL parameter (handlers are called directly, not through the router).
 func withURLParam(req *http.Request, key, value string) *http.Request {
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add(key, value)
@@ -35,14 +35,14 @@ func decodeJSON[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 	t.Helper()
 	var out T
 	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
-		t.Fatalf("JSON をデコードできません: %v\n--- body ---\n%s", err, rec.Body.String())
+		t.Fatalf("cannot decode the JSON: %v\n--- body ---\n%s", err, rec.Body.String())
 	}
 	return out
 }
 
 // --- helpers ---
 
-// mapKeys は、エラーメッセージ用にキーだけを並べます。
+// mapKeys lists only the keys, for error messages.
 func mapKeys(m map[string]json.RawMessage) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -68,15 +68,15 @@ func buildHandlerWithStore(t *testing.T, store domain.StatusStore) *Handler {
 	return h
 }
 
-// errorBody は、エラー応答の本文を読むためのテスト用の型です。
+// errorBody is a test type for reading the body of an error response.
 //
-// gcp-kit の respond.ErrorJSON が返す形（{"error": "..."}）に合わせてあります。
-// キット側は本文の型を公開していないので、読む側でだけ持ちます。
+// It matches the shape gcp-kit's respond.ErrorJSON returns ({"error": "..."}).
+// The kit does not export the body's type, so only the reader holds one.
 type errorBody struct {
 	Error string `json:"error"`
 }
 
-// recordingHistory は履歴のフェイクです。要求されたページ番号も記録します。
+// recordingHistory is a fake history. It also records the requested page number.
 type recordingHistory struct {
 	page    domain.HistoryPage
 	detail  domain.ReviewDetail
@@ -148,12 +148,12 @@ func sampleStatus(state jobstatus.State, outcome review.Status) domain.JobStatus
 	}
 }
 
-// fakeStatusStore は進行状況の記録先のフェイクです。
+// fakeStatusStore is a fake progress store.
 type fakeStatusStore struct {
 	err   error
 	saved []domain.JobStatus
 
-	// getStatus / getErr は Get の応答です。getErr が nil のときだけ getStatus を返します。
+	// getStatus / getErr are Get's response. getStatus is returned only when getErr is nil.
 	getStatus domain.JobStatus
 	getErr    error
 }
@@ -177,7 +177,7 @@ func (f *fakeStatusStore) Save(_ context.Context, jobID string, status domain.Jo
 	return nil
 }
 
-// fakeHistory は履歴のフェイクです。投入直後にキャッシュが捨てられたかだけを見ます。
+// fakeHistory is a fake history. It only checks whether the cache was dropped right after submission.
 type fakeHistory struct {
 	invalidated int
 }
@@ -206,7 +206,7 @@ func (f *fakeEnqueuer) Enqueue(_ context.Context, payload domain.ReviewRequest) 
 	return f.err
 }
 
-// testJobID は、テストで採番されるジョブ ID です。
+// testJobID is the job ID minted in tests.
 const testJobID = "20260415-102030-abcdef123456"
 
 func buildTestHandler(t *testing.T, jobIDErr, enqueueErr error) (*Handler, *fakeEnqueuer, *fakeStatusStore, *fakeHistory) {

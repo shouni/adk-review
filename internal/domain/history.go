@@ -7,45 +7,45 @@ import (
 	"github.com/shouni/go-review-kit/review"
 )
 
-// PageMeta は履歴一覧のページ情報です。画面と M2M クライアントの双方が
-// 既存のレスポンス形式に依存しているため、go-job-kit の型をそのまま使います。
+// PageMeta is the paging information of the history list. Both the screen and M2M clients
+// depend on the existing response shape, so go-job-kit's type is used as is.
 type PageMeta = paging.PageMeta
 
-// HistoryPage は、履歴一覧の 1 ページ分です。
+// HistoryPage is one page of the history list.
 //
-// JSON タグを明示しているのは、この型がそのまま API のレスポンスになるためです。
-// 省くと Go のフィールド名（Items / Meta）が大文字のまま出て、他が snake_case の中で
-// ここだけ表記が変わります。
+// The JSON tags are explicit because this type is the API response as is. Without them the
+// Go field names (Items / Meta) come out capitalised, the only spelling that differs among
+// snake_case everywhere else.
 type HistoryPage struct {
 	Items []JobStatus `json:"items"`
 	Meta  PageMeta    `json:"meta"`
 }
 
-// ReviewDetail は、履歴の 1 件を詳細表示するために必要な一式です。
+// ReviewDetail is everything needed to show one history entry in detail.
 type ReviewDetail struct {
 	Status JobStatus
-	// Report はレビュー結果全文です。成果物が無い場合（実行中・失敗・スキップ）は nil です。
+	// Report is the full review result. It is nil without an artifact (running, failed, skipped).
 	Report *review.Report
 }
 
-// HistoryRepository は、履歴の一覧と 1 件の取得です。
+// HistoryRepository lists the history and fetches one entry.
 type HistoryRepository interface {
-	// List は、新しい順に page ページ目を返します。
+	// List returns page number page, newest first.
 	List(ctx context.Context, page, perPage int) (HistoryPage, error)
-	// Get は、1 件分の進行状況とレビュー結果全文を返します。
+	// Get returns one entry's progress and full review result.
 	Get(ctx context.Context, jobID string) (ReviewDetail, error)
-	// Delete は、1 件分のオブジェクトをすべて削除します。
-	// 削除してよい状態かどうかの判断は呼び出し側（ハンドラー）が行います。
+	// Delete removes every object of one entry.
+	// Whether it may be deleted is decided by the caller (the handler).
 	Delete(ctx context.Context, jobID string) error
-	// Invalidate は、ジョブ ID 一覧のキャッシュを捨てます。新しいジョブを投入した直後に
-	// 呼ぶことで、投入したのに履歴へ現れない時間をなくします。
+	// Invalidate drops the cached list of job IDs. Called right after submitting a new job, it
+	// removes the window in which a submitted job does not appear in the history.
 	Invalidate()
 }
 
-// StatusStore は、ジョブ進行状況の読み書きです。
+// StatusStore reads and writes job progress.
 //
-// jobstatus.Store[JobStatus] がそのままこの形を満たすため、間にアダプタを挟まずに
-// 渡せます（go-job-kit が推奨する形に合わせています）。
+// jobstatus.Store[JobStatus] satisfies it as is, so it is passed without an adapter in between
+// (following the shape go-job-kit recommends).
 type StatusStore interface {
 	Get(ctx context.Context, jobID string) (JobStatus, error)
 	Save(ctx context.Context, jobID string, status JobStatus) error

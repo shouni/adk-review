@@ -13,7 +13,7 @@ type reviewTaskEnqueuer interface {
 	Enqueue(ctx context.Context, payload domain.ReviewRequest) error
 }
 
-// Deps は Handler が必要とする依存です。
+// Deps are the dependencies Handler needs.
 type Deps struct {
 	Config       *config.Config
 	TaskEnqueuer reviewTaskEnqueuer
@@ -22,7 +22,7 @@ type Deps struct {
 	History      domain.HistoryRepository
 }
 
-// Handler は HTTPリクエストを処理する構造体です。
+// Handler processes HTTP requests.
 type Handler struct {
 	cfg          *config.Config
 	taskEnqueuer reviewTaskEnqueuer
@@ -34,7 +34,7 @@ type Handler struct {
 	newJobID     func() (string, error)
 }
 
-// NewHandler は新しい Handler インスタンスを作成します。
+// NewHandler creates a new Handler instance.
 func NewHandler(deps Deps) (*Handler, error) {
 	templates, err := parsePageTemplates()
 	if err != nil {

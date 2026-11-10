@@ -6,42 +6,43 @@ import (
 	"github.com/shouni/go-review-kit/review"
 )
 
-// maxFindings は、1 レビューで返させる指摘の上限です。
+// maxFindings is the limit on findings returned in one review.
 //
-// 出力の 64Ki トークンに収めるためのものです。上限に当たると、途中まで正しく
-// 書けていた JSON ごと全損になります（実測で 10.7 KiB の差分に 212 KiB を書いて
-// 切れた例があります。Blocker の指摘が完成した状態で失われました）。
+// It keeps the output within 64Ki tokens. Hitting that limit loses everything, including the
+// JSON that was correct up to that point (in practice a 10.7 KiB diff got 212 KiB written and
+// was cut, losing a completed Blocker finding).
 //
-// 20 なのは、実測の指摘数が最大 2 件で、20 でも正常系には当たらないからです。
-// これは「20 件まで指摘してよい」という目標ではなく、暴走を止める網です。
-// instruction が語る数字もここから埋めます（直書きすると片方だけ動いたときに、
-// モデルは実際と違う上限のつもりで書きます）。
+// It is 20 because the most findings measured is 2, so normal runs never reach 20.
+// It is not a target of "up to 20 findings is fine" but a net that stops a runaway.
+// The number the instruction quotes is filled from here too (written in by hand, if only
+// one moved the model would write against a limit other than the real one).
 const maxFindings = 20
 
-// maxTitleLength は、title の長さの上限です。
+// maxTitleLength is the limit on the title's length.
 //
-// 履歴一覧は title を 1 列へそのまま流し込み、切り詰めません
-// （assets/templates/history.html）。長い題が来ると表が崩れるので、画面側で切るのでは
-// なくここで頼みます。狙いの長さ（30 文字程度）は verdict_format.md が伝えていて、
-// この数字はそれを 2 倍に取った最後の歯止めです。excerpt と同じく硬い強制ではありません。
+// The history list puts the title into one column as is, without truncating it
+// (assets/templates/history.html). A long title breaks the table, so the length is requested
+// here rather than cut on screen. The target length (about 30 characters) is stated by
+// verdict_format.md; this number, twice that, is the last safeguard. Like excerpt, it is not
+// strictly enforced.
 const maxTitleLength = 60
 
-// maxExcerptLength は、excerpt 1 件の長さの上限です。
+// maxExcerptLength is the limit on the length of one excerpt.
 //
-// 切れた実行の末尾は、同じコード片（`Server(t *testing.T) {`）の反復で埋まって
-// いました。膨らむのはたいてい引用です。指摘そのものの長さは縛りません。
+// The tail of a cut run was filled with the same code fragment (`Server(t *testing.T) {`)
+// repeated. What balloons is usually the quote. The finding text itself is not limited.
 const maxExcerptLength = 500
 
-// reportSchema は、review.Report に対応する構造化出力スキーマです。
+// reportSchema is the structured output schema matching review.Report.
 //
-// 列挙値は review パッケージの定義から組み立てます。アプリ側で []string へ詰め替え
-// 直さないでください。写しが増えると、値を足したときにスキーマと検証が食い違い、
-// モデルはスキーマ上正当な値を返すのにデコードで弾かれます。
+// The enumerated values are built from the review package's definitions. Do not repack them
+// into a []string in the app. With more copies, adding a value makes the schema and validation
+// disagree, and the model returns a value valid by the schema only to be rejected on decode.
 //
-// findings に evidence を含めるのは、このレビュアーが作業ディレクトリを実際に調べるため、
-// 「どこを見て判断したか」を自己申告させる意味があるからです。差分しか読めない
-// レビュアーへ同じ項目を持ち込まないでください。確認する手段が無いまま根拠を
-// 求めると、モデルはそれを捏造して埋めます。
+// findings carry evidence because this reviewer actually investigates the working directory,
+// so having it declare "where it looked to decide" means something. Do not carry the same field
+// over to a reviewer that reads only the diff. Asking for grounds with no means to check them
+// makes the model fill them in with fabrications.
 func reportSchema() *genai.Schema {
 	return &genai.Schema{
 		Type: genai.TypeObject,
@@ -62,9 +63,9 @@ func reportSchema() *genai.Schema {
 			},
 			"findings": {
 				Type: genai.TypeArray,
-				// ★ 長さの制約は Enum ほど硬く強制されません。それでも置くのは、
-				// 今まで「どれだけ書いてよいか」を一言も伝えていなかったためです。
-				// 効いているかはログの response_bytes で見てください。
+				// ★ A length constraint is not enforced as strictly as Enum. It is set anyway
+				// because until now nothing told the model how much it may write.
+				// Check in the logs' response_bytes whether it works.
 				MaxItems:    new(int64(maxFindings)),
 				Description: "重大な順に並べ、重要でないものは落とす",
 				Items: &genai.Schema{

@@ -1,5 +1,5 @@
-// Package adapters は、Git / Slack / 保存 / プロンプト / パイプライン ACL を
-// go-review-kit のポート実装として提供します。
+// Package adapters provides Git / Slack / storage / prompt / pipeline ACL as
+// implementations of go-review-kit's ports.
 package adapters
 
 import (
@@ -10,34 +10,34 @@ import (
 	"github.com/shouni/adk-review/internal/config"
 )
 
-// geminiLocationID は、Gemini 呼び出しに使うロケーションです。
+// geminiLocationID is the location used for Gemini calls.
 //
-// GCP_LOCATION_ID（Cloud Tasks のリージョン）と分けているのは、モデルの提供リージョンと
-// キューのリージョンが別の都合で決まるためです。
+// It is kept apart from GCP_LOCATION_ID (the Cloud Tasks region) because the region a model
+// is offered in and the queue's region are decided for different reasons.
 const geminiLocationID = "global"
 
-// Vertex AI の一時障害に対する再試行の設定です。
+// Retry settings for transient Vertex AI failures.
 //
-// ★ 明示しないと再試行は一度も行われません。genai は RetryOptions が nil のとき
-// 素通しで 1 回だけ投げます（common.go の retryHTTPRequest）。ADK もクライアント設定へ
-// これを入れないため、既定では 5xx が 1 回返っただけでレビューがそこまでの作業ごと
-// 失われます。review-queue は max_attempts = 1 なのでタスクの再試行も来ません
-// （実測で、Vertex の 504 で 1 件そのまま失われています）。
+// ★ Without these, nothing is ever retried. With nil RetryOptions genai sends the request
+// once and passes the result through (retryHTTPRequest in common.go). ADK does not put
+// them into the client config either, so by default a single 5xx loses the review along
+// with all the work done so far. review-queue has max_attempts = 1, so no task retry comes
+// either (in practice one review was lost outright to a Vertex 504).
 //
-// 回数と待ちを既定（5 回・最大 60 秒）より絞るのは、待ち時間が PIPELINE_TIMEOUT を
-// 食うためです。この設定なら待ちの合計は最大 7 秒で、レビュー 1 件の実測（中央値 39 秒）に
-// 対して十分小さく済みます。genai の再試行ループは ctx.Err() を見るので、締切の外へは
-// 出ません。
+// The attempts and waits are tighter than the default (5 attempts, up to 60 seconds) because
+// the wait eats into PIPELINE_TIMEOUT. With these settings the total wait is at most 7 seconds,
+// small enough against a measured review (median 39 seconds). genai's retry loop checks
+// ctx.Err(), so it never runs past the deadline.
 //
-// 対象のステータスは genai の既定（408・429・5xx）に任せます。写すと、向こうが増やしたときに
-// こちらだけ古い一覧を持ち続けます。
+// The retried statuses are left to genai's default (408, 429, 5xx). A copy here would keep
+// the old list when genai adds to it.
 const (
 	retryAttempts     int32   = 4
 	retryInitialDelay float64 = 1.0
 	retryMaxDelay     float64 = 8.0
 )
 
-// NewAgentReviewer は、ADK エージェントの review.WorkspaceReviewer を構築します。
+// NewAgentReviewer builds the ADK agent's review.WorkspaceReviewer.
 func NewAgentReviewer(cfg *config.Config) review.WorkspaceReviewer {
 	return adkagent.New(adkagent.Config{
 		ClientConfig: geminiClientConfig(cfg),
@@ -45,9 +45,9 @@ func NewAgentReviewer(cfg *config.Config) review.WorkspaceReviewer {
 	})
 }
 
-// geminiClientConfig は、ADK のモデル層へ渡す genai クライアント設定を組み立てます。
+// geminiClientConfig builds the genai client config handed to ADK's model layer.
 //
-// 認証は Vertex AI（実行 SA の roles/aiplatform.user）です。API キー経路は配線していません。
+// Authentication is Vertex AI (the runtime SA's roles/aiplatform.user). The API key path is not wired.
 func geminiClientConfig(cfg *config.Config) genai.ClientConfig {
 	return genai.ClientConfig{
 		Backend:  genai.BackendVertexAI,

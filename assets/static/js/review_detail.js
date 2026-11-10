@@ -1,6 +1,6 @@
-// レビュー詳細ページの削除ボタン。
-// 実際の送信は app.js の App.deleteResource が行います（確認ダイアログ・CSRF ヘッダ・
-// 失敗時の表示はどのページでも同じなので、そちらへ寄せています）。
+// The delete button on the review detail page.
+// The request itself is sent by App.deleteResource in app.js (the confirmation dialog,
+// CSRF header and failure display are the same on every page, so they live there).
 (() => {
     const btn = document.getElementById('delete-review-btn');
     if (!btn) return;

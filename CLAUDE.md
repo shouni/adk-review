@@ -1,18 +1,18 @@
 # CLAUDE.md
 
-このファイルは、このリポジトリで作業するときの前提と、コードを読んだだけでは分からない
-不変条件をまとめたものです。同じフリートの兄弟アプリと同じ規約に従います。
-インフラの定義は別のインフラ管理リポジトリ（Terraform）が正です。
+This file collects the assumptions for working in this repository and the invariants that reading the code
+alone does not reveal. It follows the same conventions as the sibling apps in the fleet. The infrastructure is
+defined in a separate infrastructure repository (Terraform), which is the source of truth.
 
 ## What this is
 
-Git リポジトリの差分を AI エージェントにレビューさせる Web アプリです。ADK for Go の
-エージェントループでツール（`read_file` / `list_files` / `search_text`）を使わせ、
-**差分の外**を自分で調べさせてから指摘をまとめさせます。
+A web app that has an AI agent review the diff of a Git repository. An ADK for Go agent loop uses tools
+(`read_file` / `list_files` / `search_text`) to investigate **beyond the diff** on its own before writing up
+its findings.
 
-主用途は Git 管理下の記事・小説の原稿とソースコードで、対象は `assets/prompts/` の
-モード（`article` / `novel` / `code`）で切り替えます。**「コードレビューツール」ではありません。**
-UI の文言やコード中の語彙に code 前提のものを持ち込まないでください。
+The main subjects are article and novel manuscripts kept in Git and source code; the target is switched by
+the modes in `assets/prompts/` (`article` / `novel` / `code`). **This is not a "code review tool".** Do not
+bring code-centric assumptions into the UI wording or the vocabulary in the code.
 
 ## Commands
 
@@ -21,381 +21,398 @@ go build ./...
 go vet ./...
 go test ./... -race -cover
 golangci-lint run ./...
-gofmt -l .              # CI は出力が空であることを要求します
+gofmt -l .              # CI requires the output to be empty
 ```
 
-`SERVER_ROLE=both` でローカルに両面を持たせられますが、**レビューの実行までは通りません。**
-Cloud Tasks は localhost へ配送できず（`buildTaskEnqueuer` にローカル用の抜け道はありません）、
-`max_attempts = 1` なので依頼は queued のまま消えます。README にも起動手順は載せていません。
-確認はテストで行ってください。
+`SERVER_ROLE=both` gives a local process both roles, but **it does not get as far as running a review.**
+Cloud Tasks cannot deliver to localhost (`buildTaskEnqueuer` has no local escape hatch), and with
+`max_attempts = 1` the request just disappears while queued. The README does not describe how to start it
+either. Verify with tests.
+
+## Conventions
+
+- **Code comments, doc comments, error and log messages, and test assertion messages are English** (moved
+  2026-11-10; do not mix Japanese back in). Error strings follow Go style: lowercase, no trailing
+  punctuation (ST1005). Subtest names (`t.Run` names, table `name` fields, map keys used as subtest names)
+  are English too; Go test function names were left as they were.
+- **These stay Japanese:** end-user UI text (visible template text, JS UI strings, the badge labels in
+  `handlers/render.go`), messages returned to the user by the web UI and the JSON API (`validate.go`,
+  `readSubmitRequest`, the `respond.Error*` bodies, form notices), the Slack notification text, and
+  everything sent to the model: the prompts in `assets/prompts/` and `assets/partials/`, the agent's
+  instruction (`instructionTemplate`), the tool descriptions, the schema descriptions, and the tool results
+  returned to the model (`budgetExhaustedMsg`, the tools' `Error` field, `toolbox.resolve`'s errors).
+  Translating them changes the agent's behaviour and the language of the review output. Test fixtures,
+  expected outputs and strings compared at run time stay as they are. The one worker error worded for the
+  user (`adkagent`'s "output cut off, nothing to salvage, narrow the range and rerun") also stays Japanese,
+  because it is what the user reads in Slack and the history.
+- **Do not hard-code go-review-kit's step names** (`review.Step*`) in either language; compare against the
+  constants (as `internal/adapters/slack_test.go` does). The library owns their text.
+- `README.md` is English and `README.ja.md` is its Japanese version. Update the two together.
 
 ## Key invariants
 
-コードコメントに書ききれない、あるいは複数ファイルにまたがるため 1 箇所では表現できない
-決まりごとです。**変更するときは理由ごと更新してください。**
+Rules that do not fit in a code comment, or that span several files and cannot be expressed in one place.
+**When you change one, update its reasoning too.**
 
-### タイムアウトの三段
+### The three-tier timeout
 
-`PIPELINE_TIMEOUT` < `TASK_DISPATCH_DEADLINE` <= Cloud Run の `timeout` の順序が崩れると、
-**Cloud Tasks が先にリクエストを打ち切り、プロセスは SIGTERM で落ちて失敗レポートも
-Slack 通知も残りません。** `review-queue` は `max_attempts = 1` なので再試行も来ず、
-タスクは黙って消えます（履歴の行は queued のまま残るので、利用者からは
-「レビューが一生終わらない」ように見えます）。
+If the order `PIPELINE_TIMEOUT` < `TASK_DISPATCH_DEADLINE` <= Cloud Run's `timeout` breaks, **Cloud Tasks
+cuts the request first, the process dies by SIGTERM, and neither a failure report nor a Slack notification is
+left.** `review-queue` has `max_attempts = 1`, so no retry comes either and the task silently vanishes (the
+history row stays queued, so to the user it looks like "the review never finishes").
 
-- 上二段の関係は `config.validateTimeouts` が起動時に検査します。
-- 三段目はアプリから見えないため、インフラ管理リポジトリの `precondition` が受け持ちます。
-- **フリートで唯一、三段とも短く取ってあります。** レビュー 1 件の実測が動画生成とは
-  桁違いに短いためです。上限は「正常系の目標」ではなく「ハングを捕まえる網」です。
-- エージェントレビューはツール呼び出しの回数だけ伸びます。実測が近づいたら
-  `TASK_DISPATCH_DEADLINE` を伸ばしてください（**env なので再ビルドは不要です**。
-  範囲の検査は gcp-kit が持っています）。
-- **三段の数字（`PIPELINE_TIMEOUT` / `TASK_DISPATCH_DEADLINE`）はアプリに既定値を置きません。** 出どころはインフラ管理リポジトリ 1 箇所で、
-  アプリが既定を持つと同じ数字が 2 箇所に現れ、設定漏れが「誰も選んでいない値」で
-  動いてしまいます。**Cloud Tasks が受け付ける範囲（15 秒〜30 分）の検査を
-  アプリ側へ写さないでください。** gcp-kit の `tasks.NewEnqueuer` が構築時に見ており、
-  写すと同じ制約が 2 箇所に現れます（実際、写した側は下限が抜けていました）。
+- `config.validateTimeouts` checks the relation of the first two tiers at startup.
+- The third tier is invisible to the app, so a `precondition` in the infrastructure repository covers it.
+- **This is the only app in the fleet with all three tiers short.** A measured review is orders of magnitude
+  shorter than video generation. The limit is not "the target for the normal case" but "a net that catches
+  hangs".
+- An agent review grows with the number of tool calls. When measurements approach the limit, raise
+  `TASK_DISPATCH_DEADLINE` (**it is an env var, so no rebuild is needed**; gcp-kit owns the range check).
+- **The app keeps no default for the tier numbers (`PIPELINE_TIMEOUT` / `TASK_DISPATCH_DEADLINE`).** Their
+  single source is the infrastructure repository; a default in the app would put the same number in two
+  places, and a missing setting would run on "a value nobody chose". **Do not copy the check of the range
+  Cloud Tasks accepts (15 seconds to 30 minutes) into the app.** gcp-kit's `tasks.NewEnqueuer` checks it at
+  construction; a copy puts the same constraint in two places (the copy that once existed actually lacked the
+  lower bound).
 
-### 差分の上限はアプリが既定値を持つ
+### The diff limit has a default in the app
 
-`MAX_DIFF_BYTES`（既定 320 KiB）を超える差分は、AI へ送らずに失敗させます
-（`pipeline.WithMaxDiffBytes` → `review.ErrDiffTooLarge`）。**上の三段と違い、この数字は
-アプリに既定値を置きます。** 三段が既定を持たないのは同じ数字がインフラ管理リポジトリと
-2 箇所に現れるからで、この上限にインフラ側の対応物はありません。未設定を無制限にすると、
-いちばん高くつく壊れ方——モデルを呼び終えてから出力の途中切れで失敗する——が既定になります。
+A diff over `MAX_DIFF_BYTES` (default 320 KiB) fails without being sent to the AI
+(`pipeline.WithMaxDiffBytes` -> `review.ErrDiffTooLarge`). **Unlike the three tiers above, the app keeps a
+default for this number.** The tiers have no default because the same number would appear in two places with
+the infrastructure repository; this limit has no infrastructure counterpart. If unset meant unlimited, the
+most expensive failure — failing on truncated output after the model call has finished — would become the
+default.
 
-- **切り詰めて送らないでください。** モデルは差分の一部だけを見たまま *成功として* レポートを
-  返すので、質の落ちたレビューが成果物として残ります。落ちるより気付きにくい形です。
-- **これは効き目の広い網ではありません。** 出力が膨らむ主因は差分量ではなくモデルの暴走で、
-  10 KiB の差分が 217 KB の応答で途中終了した実例があります。実測（30 日）では失敗 4 件のうち
-  この上限が捕まえるのは 1 件です。
-- 締めるにも緩めるにも、材料は履歴の `metrics.diff_bytes` です。
+- **Do not truncate and send.** The model returns a report *as a success* having seen only part of the diff,
+  so a degraded review is kept as an artifact. That is harder to notice than a failure.
+- **This is not a broad net.** Output balloons mainly from the model running away, not from the diff's size;
+  a 10 KiB diff once ended mid-response at 217 KB. In measurements (30 days) this limit catches 1 of 4
+  failures.
+- To tighten or loosen it, the material is `metrics.diff_bytes` in the history.
 
-### 途中で切れた結果は、部分として残す
+### Keep a cut-off result as a partial
 
-**出力の上限（64Ki トークン）に当たっても全損にしません。** `review.ParseReport` が完結して
-いた範囲を拾い、`ParseInfo.Truncated` で知らせます。`adkagent` はそれを `review.RunInfo` へ、
-`pipeline.Runner` が `JobStatus.Truncated` へ流します。**`FinishReasonMaxTokens` を
-そこで失敗にしないでください。** 戻すと、完成していた Blocker の指摘ごと失う形に戻ります
-（実際に 1 件失っています）。拾える範囲が無かった場合だけエラーです。
+**Hitting the output limit (64Ki tokens) is not a total loss.** `review.ParseReport` picks up the completed
+part and reports it in `ParseInfo.Truncated`. `adkagent` passes it to `review.RunInfo`, and `pipeline.Runner`
+on to `JobStatus.Truncated`. **Do not turn `FinishReasonMaxTokens` into a failure there.** Going back would
+lose a completed Blocker finding along with everything else (one was actually lost). It is an error only when
+nothing could be picked up.
 
-- **部分であることを画面と JSON API から消さないでください。** 保存はしますが指摘は全部では
-  ありません。消すと、読む側は「指摘 2 件のレビュー」として受け取り、切れた先があったことを
-  知る手段を失います（`✂ 部分` バッジと詳細画面の注意書き）。
-- 差分の切り詰めに反対しているのと同じ理屈です。**部分を黙って完全なものとして出さない**、
-  という一点だけを守れば、拾うこと自体は利益です。
+- **Do not remove the partial marking from the screen and the JSON API.** The result is saved, but the
+  findings are not all there is. Without the marking, the reader takes it as "a review with 2 findings" and
+  loses any way to know there was more (the `✂ 部分` badge and the note on the detail page).
+- This is the same reasoning as opposing truncation of the diff. As long as the one rule **never present a
+  partial as complete** holds, picking it up is a benefit.
 
-### web 面の JSON API は Accept で切り替える
+### The web role's JSON API switches on Accept
 
-画面と機械で**ルートを分けません。** `Accept: application/json` を見て同じハンドラが
-JSON を返します（`negotiate.WantsJSON`）。分けると同じ取得処理が 2 本になり、片方だけ
-直したときに画面の表示と機械可読な結果が食い違います。
+**Screens and machines do not get separate routes.** The same handler returns JSON on
+`Accept: application/json` (`negotiate.WantsJSON`). Separate routes would mean two copies of the same fetch,
+and fixing only one would make the screen and the machine-readable result disagree.
 
-- `POST /jobs` は JSON body も受け付けますが、**`domain.ReviewRequest` を直接
-  デコードしません**（`submitInput` を挟みます）。呼び出し元に `StorageURI` を決めさせると、
-  成果物をバケット内の任意のパスへ書かせられます。知らない項目は黙って捨てず
-  エラーにします（捨てると、送った側が効いたと思い込みます）。
-- **`jobstatus.ErrNotFound` は 404、`ErrUnavailable` は 502 です**（`recordErrorStatus`）。
-  同一視すると、権限剥奪やストレージ障害が「そんなレビューはありません」として返り、
-  呼び出し元は再試行すべき場面で諦めます。
-- **ジョブは `/jobs/{jobID}` 一本で指します**（public-docs の URL 命名規約）。JSON は
-  進行状況と `report_url` だけで、指摘の全文は `GET /jobs/{jobID}/report` です。
-  完了検知のたびに全文を返すのは重すぎます。
-- **セッションの実体は Firestore にあり、クッキーが運ぶのは不透明な ID だけです。**
-  そのためセッション鍵（`SESSION_SECRET` / `SESSION_ENCRYPT_KEY`）はもうありません。
-  置き場所は `SESSION_FIRESTORE_DATABASE`（既定 `sessions`）で、**ジョブ状態用とは
-  別のデータベースを指します。** データベース名は識別子で後から変えられないので、
-  兼ねると片方で名前が実態と合わなくなります。
-  - **TTL ポリシー（`expiresAt`）はインフラ側の必須設定です。** クッキーと違い保存した
-    実体は自分では消えないため、無いとセッションが無期限に溜まります。読み出し側でも
-    期限を見ているので、遅延しても期限切れが通ることはありません（gcp-kit の責務）。
-  - テストは `session.NewMemoryStore` を使います。**プロセス内に持つ実装なので本番では
-    使えません**（Cloud Run のインスタンスが替わるたびに全員ログアウトされ、しかも
-    開発中は 1 インスタンスなので気付けません）。
-  - `loggedInCookie` は `Handler.IssueSession` にクッキーを焼かせます。**自前でストアを
-    組み立てないでください。** 実体はハンドラー側にあるので読めません（以前は同じ鍵で
-    CookieStore を組み直しており、gcp-kit の内部形式の写しになっていました）。
-- 認証は `auth.Protected(M2M, Auth)` で、ブラウザはセッション + CSRF、サーバー間は
-  OIDC Bearer です。**`CrossOriginProtection` はヘッダーを持たない呼び出しを素通しします**
-  （Go の仕様。`Sec-Fetch-Site` も `Origin` も無ければ非ブラウザとみなす）。ここが変わると
-  MCP ゲートウェイからの投入だけが 403 になり、画面は動いたままなので気付きにくいため、
-  `TestCrossOriginProtection_AllowsHeaderlessPost` で固定しています。
-  - Bearer 経路がセッションと CSRF を通らないのは意図的です。CSRF はクッキーの自動送出を
-    悪用する攻撃への対策で、明示的にトークンを付けるサーバー間呼び出しには当てはまりません。
-    代わりに呼び出し元を `ALLOWED_M2M_SERVICE_ACCOUNTS` で絞ります。
+- `POST /jobs` accepts a JSON body too, but **does not decode `domain.ReviewRequest` directly** (it goes
+  through `submitInput`). Letting callers decide `StorageURI` would let them have artifacts written to any
+  path in the bucket. Unknown fields are an error rather than silently dropped (dropped, the sender believes
+  they took effect).
+- **`jobstatus.ErrNotFound` is a 404, `ErrUnavailable` a 502** (`recordErrorStatus`). Conflated, a revoked
+  permission or a storage outage would come back as "no such review", and callers would give up where they
+  should retry.
+- **A job is named by `/jobs/{jobID}` alone** (the public-docs URL naming convention). Its JSON is just the
+  progress and `report_url`; the full findings are `GET /jobs/{jobID}/report`. Returning the full text on
+  every completion check would be too heavy.
+- **The session data lives in Firestore; the cookie carries only an opaque ID.** So there are no session keys
+  (`SESSION_SECRET` / `SESSION_ENCRYPT_KEY`) any more. The store is `SESSION_FIRESTORE_DATABASE` (default
+  `sessions`) and **names a database separate from the job status one.** A database name is an identifier
+  that cannot be changed later, so sharing one would leave its name wrong for one of the two uses.
+  - **A TTL policy (`expiresAt`) is a required infrastructure setting.** Unlike a cookie, stored data never
+    removes itself, so without it sessions pile up forever. The read side checks the expiry too, so a delayed
+    TTL never lets an expired session through (gcp-kit's responsibility).
+  - Tests use `session.NewMemoryStore`. **It is in-process, so it cannot be used in production** (every Cloud
+    Run instance change would log everyone out, and with one instance during development nobody would
+    notice).
+  - `loggedInCookie` has `Handler.IssueSession` bake the cookie. **Do not build a store by hand.** The data
+    lives on the handler's side, so it could not be read (it used to rebuild a CookieStore with the same key,
+    which was a copy of gcp-kit's internal format).
+- Authentication is `auth.Protected(M2M, Auth)`: browsers use a session + CSRF, servers an OIDC Bearer token.
+  **`CrossOriginProtection` lets calls without the headers through** (Go's behaviour: with neither
+  `Sec-Fetch-Site` nor `Origin` it assumes a non-browser). If that changed, only submissions from the MCP
+  gateway would get 403 while the screens keep working, which is hard to notice, so
+  `TestCrossOriginProtection_AllowsHeaderlessPost` pins it.
+  - The Bearer path skipping session and CSRF is deliberate. CSRF defends against attacks abusing cookies
+    being sent automatically; it does not apply to server-to-server calls that attach a token explicitly.
+    Callers are restricted by `ALLOWED_M2M_SERVICE_ACCOUNTS` instead.
 
-### 受付の記録は投入より先、再配信は succeeded で打ち切る
+### Record the acceptance before enqueueing; stop a redelivery at succeeded
 
-`HandleJobCreate` は `status.json` に queued を書いてから Cloud Tasks へ投入します
-（`internal/server/handlers/job_create.go`）。**順序を入れ替えないでください。** Cloud Tasks の配送は
-数十ミリ秒で届くため、逆にすると「ワーカーが running を書く → web が queued で踏み潰す」が起こり、
-実行中のジョブが履歴では受付済みのまま止まって見えます（兄弟アプリで実際に起きた順序です）。
-投入に失敗したときは `discardQueued` が記録を取り消すので、積めなかったジョブは履歴に残りません。
+`HandleJobCreate` writes queued to `status.json` and then enqueues to Cloud Tasks
+(`internal/server/handlers/job_create.go`). **Do not swap the order.** Cloud Tasks delivers within tens of
+milliseconds, so the other way round allows "the worker writes running -> web overwrites it with queued", and
+a running job looks stuck as accepted in the history (the order that actually happened in a sibling app).
+When enqueueing fails, `discardQueued` rolls the record back, so jobs that could not be enqueued do not stay
+in the history.
 
-- ワーカー側の `Runner.begin` は前回の記録を 1 回読み、succeeded なら再配信とみなして実行せず
-  成功で返します。Cloud Tasks は at-least-once なので、通知の失敗などでエラーを返すと同じタスクが
-  配り直され、AI の呼び出しコストがそのまま二重になります。
-- **記録を読めなかった場合も実行しません。** 以前は「読めないことを理由に止めるより二重実行のほうが
-  回復可能」として進めていましたが、完了済みを作り直す費用をガード自身が払う形になるので、
-  規約に合わせて人の投げ直しに委ねます。
-- 入力そのものが原因の失敗（`review.ErrInvalidRequest` / `ErrEmptyDiff` / `ErrDiffTooLarge` /
-  `ErrRefNotFound` / `ErrUnsupportedRepoURL`）は `classifyForRetry` が `worker.ErrPermanent` に包み、
-  2xx で再配信を止めます。包まないと、同じ場所で落ちる依頼が配り直され、利用者に同じ失敗通知が
-  2 通届きます。
+- The worker's `Runner.begin` reads the previous record once; if it is succeeded, it treats the task as a
+  redelivery, does not run, and returns success. Cloud Tasks delivers at least once, so returning an error,
+  for example because a notification failed, would redeliver the same task and pay for the AI calls twice.
+- **It does not run when the record cannot be read either.** It used to proceed, reasoning that "running
+  twice is easier to recover from than stopping because the read failed", but then the guard itself paid for
+  rebuilding finished work, so, following the convention, it is left to a person resubmitting.
+- Failures caused by the input itself (`review.ErrInvalidRequest` / `ErrEmptyDiff` / `ErrDiffTooLarge` /
+  `ErrRefNotFound` / `ErrUnsupportedRepoURL`) are wrapped in `worker.ErrPermanent` by `classifyForRetry`,
+  which stops the redelivery with a 2xx. Unwrapped, a request that fails at the same place would be
+  redelivered and the user would receive the same failure notification twice.
 
-### Cloud Tasks の OIDC
+### Cloud Tasks OIDC
 
-発行元と許可リストを 1 つの変数で兼ねません。同じ値でも役割ごとに意味が反転して
-読めなくなるためです（インフラ管理リポジトリの規約「Cloud Tasks の OIDC」）。
+The issuer and the allowlist never share one variable. Even with the same value, the meaning inverts per role
+and becomes unreadable (the infrastructure repository's "Cloud Tasks OIDC" convention).
 
-- `ALLOWED_M2M_SERVICE_ACCOUNTS`: **web 面の JSON API** を呼べる SA（MCP ゲートウェイ）。
-  発行元でも投入先でもなく「他サービスからの呼び出し元」なので、上の 2 つと兼ねません。
-  **空だと起動しません。** `auth.Protected` は M2M を無効化できず、未設定でも経路は生き続けて
-  検証が必ず失敗し、セッション認証へフォールバックします。つまり設定漏れは
-  「ブラウザは正常に動くが MCP ゲートウェイだけログイン画面の HTML を受け取る」という形でしか
-  現れません。意図的な無効化と設定漏れを区別する手段が無いので、空は後者として扱います
-  （以前はここだけ素通りさせており、兄弟アプリ 4 本と違っていました）。
-- `TASK_CALLER_SERVICE_ACCOUNT_EMAIL`: **投入側（web）** が指定する caller SA。
-  トークンを生成して付与するのは Cloud Tasks であって、このプロセスではありません。
-- `ALLOWED_TASK_SERVICE_ACCOUNTS`: **受信側（worker）** が受け付ける発行元の許可リスト。
-  web と worker で実行 SA を分けているので、ここには「他人（web 面）の SA」が並びます。
-  空だと検証器が fail-closed になり全タスクが失敗するため、worker では必須です。
+- `ALLOWED_M2M_SERVICE_ACCOUNTS`: the SAs that may call **the web role's JSON API** (the MCP gateway). They are
+  neither the issuer nor the target but "callers from other services", so they share nothing with the two
+  below. **Empty means startup fails.** `auth.Protected` cannot disable M2M; unset, the path stays alive,
+  verification always fails and falls back to session authentication. A missing setting therefore shows up
+  only as "the browser works normally but the MCP gateway alone receives the login page's HTML". There is no
+  way to tell deliberate disabling from a missing setting, so empty is treated as the latter (it used to be
+  the one place that let it through, unlike the 4 sibling apps).
+- `TASK_CALLER_SERVICE_ACCOUNT_EMAIL`: the caller SA set by **the submitting side (web)**. Cloud Tasks, not
+  this process, generates and attaches the token.
+- `ALLOWED_TASK_SERVICE_ACCOUNTS`: the allowlist of issuers accepted by **the receiving side (worker)**. web
+  and worker run as separate SAs, so this lists "someone else's (the web role's) SA". Empty makes the verifier
+  fail closed and every task fail, so it is required on the worker.
 
-### 起動時に落とす、を守る
+### Fail at startup
 
-**設定漏れは起動時に止めます。** 通してしまうと、失敗するのは利用者がフォームを送ったあと、
-しかも Gemini の呼び出しを終えた保存の段階になります。いちばんコストを払ったあとで
-落ちる順序です。
+**A missing setting stops startup.** Let through, the failure comes after a user submits the form, and at the
+save step after the Gemini call at that — failing after the most cost has been paid.
 
-- `GCP_PROJECT_ID` / `GCS_REVIEW_BUCKET` / `SERVICE_URL` / `GEMINI_MODELS` に
-  **プレースホルダの既定値を置かないでください。** 特に `SERVICE_URL` を
-  `http://localhost:8080` に戻すと、localhost は開発用ホスト名として HTTPS 検査を
-  免除されるため、本番の設定漏れが素通りします。
-- `GEMINI_MODELS` にアプリ側の既定値を置かないのは、モデル ID が古くなるのが Google のリリース周期で
-  あってこのリポジトリの都合ではないためです。既定値があると「デプロイ設定を変えていないのに
-  古いモデルを指し続ける」状態に誰も気付けません。
-- worker 面には OAuth 系（`GOOGLE_CLIENT_*` / `ALLOWED_EMAILS` / `ALLOWED_DOMAINS` /
-  `ALLOWED_M2M_SERVICE_ACCOUNTS`）を要求しません。要求すると、面ごとにサービスを分けた意味
-  （worker の env を最小に保ち、使わない認証情報へのアクセス権を配らない）が失われます。
-- 役割とハンドラが噛み合わない構成は `builder.AppHandlers.Validate` が落とします。
-  ここを外すと `/health` は通るので**デプロイは成功扱いになり、壊れているのは投入経路だけ**
-  という、いちばん気付きにくい形になります。
-- Duration や整数の書式エラーは既定値へ黙って落とさず、`LoadConfig` がエラーにします。
+- **Do not put placeholder defaults on** `GCP_PROJECT_ID` / `GCS_REVIEW_BUCKET` / `SERVICE_URL` /
+  `GEMINI_MODELS`. In particular, if `SERVICE_URL` went back to `http://localhost:8080`, localhost would be
+  exempt from the HTTPS check as a development host name and a missing production setting would slip through.
+- `GEMINI_MODELS` has no default in the app because model IDs age on Google's release cycle, not on this
+  repository's. With a default, nobody would notice "it keeps pointing at an old model although nobody
+  changed the deployment settings".
+- The worker role does not require OAuth settings (`GOOGLE_CLIENT_*` / `ALLOWED_EMAILS` / `ALLOWED_DOMAINS` /
+  `ALLOWED_M2M_SERVICE_ACCOUNTS`). Requiring them would defeat the point of separate services per role
+  (keeping the worker's env minimal and not handing out access to credentials it does not use).
+- `builder.AppHandlers.Validate` fails a setup where roles and handlers do not match. Without it `/health`
+  still passes, so **the deploy counts as a success and only the submission path is broken** — the least
+  noticeable shape.
+- Format errors in Durations or integers are an error in `LoadConfig` rather than silently falling back to the
+  default.
 
-### ツールの返却量は、その実行の最後まで課金され続ける
+### What a tool returns is billed until the end of the run
 
-上限は `internal/adkagent/tools.go` にまとめてあります（各ツールの中身は `tool_read.go` /
-`tool_list.go` / `tool_search.go`）。これは 1 回の呼び出しを守るためだけのものではありません。
-**ツールが返した内容は会話に残り、以降のすべてのターンで読み直されます。** 4 回目の呼び出しで
-返した 16 KB は、その後 10 ターンぶん課金されます。
+The limits are gathered in `internal/adkagent/tools.go` (the body of each tool is in `tool_read.go` /
+`tool_list.go` / `tool_search.go`). They are not only there to protect a single call. **What a tool returns
+stays in the conversation and is re-read on every later turn.** 16 KB returned by the 4th call is billed for
+the next 10 turns.
 
-- そのため `read_file` は `from` / `lines`、`search_text` は `context` を持ちます。
-  **道具の説明文（`newTools` の Description）と行動指針の両方で、範囲指定を促してください。**
-  片方だけだとモデルは全文読み込みへ戻ります。
-- `read_file` の返り値に `total_lines` があるのは、範囲で読んだモデルが「これで全部か」を
-  判断できるようにするためです。落とすと、途中まで読んで全部読んだつもりで指摘を書きます。
-- 実測（2026-08-25、差分 10.6 KiB・ツール 13 回）では、返却の合計 62 KB が最終プロンプト
-  30.6k トークンの約 7 割でした。所要 209 秒のうち、ツール実行そのものは呼び出し間隔
-  3〜4 秒ぶんだけです。**遅さの正体はモデルのターンで、その長さは文脈の大きさに連動します。**
+- That is why `read_file` has `from` / `lines` and `search_text` has `context`. **Encourage ranges both in the
+  tool descriptions (the Description in `newTools`) and in the code of conduct.** With only one, the model
+  goes back to reading whole files.
+- `read_file` returns `total_lines` so a model reading a range can judge "is this everything". Without it, the
+  model reads part of a file and writes findings as if it had read all of it.
+- In a measurement (2026-08-25, 10.6 KiB diff, 13 tool calls), the 62 KB returned in total was about 70% of
+  the final prompt's 30.6k tokens. Of the 209 seconds taken, tool execution itself accounted only for the
+  3-4 seconds between calls. **The slowness is the model's turns, and their length tracks the size of the
+  context.**
 
-### ツールの予算は時間ではなく回数で切る
+### Cut the tool budget by count, not time
 
-`AGENT_MAX_TOOL_CALLS`（既定 `adkagent.DefaultMaxToolCalls` = 32）はツール呼び出しの回数上限です。
-レビュー 1 件は Cloud Tasks の dispatch deadline 内に収める必要がありますが、モデルの思考時間は
-読めず、ツール呼び出し回数は設計時に見積もれるため、時間ではなく回数で打ち切ります。
-締切超過で落とすのではなく「調査を切り上げて最終回答をまとめる」方向へモデルを誘導するためです。
+`AGENT_MAX_TOOL_CALLS` (default `adkagent.DefaultMaxToolCalls` = 32) is the limit on the number of tool calls.
+A review must fit within the Cloud Tasks dispatch deadline, but the model's thinking time cannot be predicted
+while the number of tool calls can be estimated at design time, so it is cut by count rather than time. The
+aim is to steer the model towards "wrap up the investigation and write the final answer" instead of failing on
+a missed deadline.
 
-- **上限の 8 割（`wrapUpAfter`）で「新しい調査は始めず、そこまでの情報でまとめよ」と伝えます。**
-  上限そのものを目安にすると、最後の 1 回を使い切ってからまとめに入ることになり、検証しかけの
-  仮説を抱えたまま強制的に打ち切られます。予算が極端に小さくても 1 以上を返します。
-- 行動指針（`instructionTemplate`）の数字は `instructionFor` が実際の予算から埋めます。
-  **直書きしないでください。** 予算を変えたのに指示が古い数字を語り続けると、モデルは残り 3 回の
-  つもりで調査を続け、`budgetExhaustedMsg` で不意に打ち切られます。
-- 使い切ったことは Go の error ではなく、各ツールの `Error` フィールドに載せた正常な戻り値で
-  返します。error にするとフレームワークがエラーイベントとして扱い、モデルがリカバリー
-  （別のパスを試す、諦めて最終回答へ進む）を選べません。context のキャンセルだけは例外です
-  （`cancelErr`）。実行そのものが終わっているので、途中結果を正常な戻り値にすると
-  「探したが見つからなかった」と区別が付かなくなります。
-- 実際に何回使ったかは `metrics.tool_calls` に残ります。上限が妥当かは、使い切ったかどうかでは
-  なく毎回いくつ使ったかで判断してください。
+- **At 80% of the limit (`wrapUpAfter`) the model is told "start no new investigation, wrap up with what you
+  have".** Aiming at the limit itself means wrapping up only after the last call is spent, and the run is cut
+  off holding a half-verified hypothesis. It returns at least 1 even for a tiny budget.
+- `instructionFor` fills the numbers in the code of conduct (`instructionTemplate`) from the actual budget.
+  **Do not write them in by hand.** If the budget changed while the instruction kept quoting old numbers, the
+  model would keep investigating as if it had 3 calls left and be cut off unexpectedly by
+  `budgetExhaustedMsg`.
+- Running out is not a Go error but a normal return value carried in each tool's `Error` field. As an error,
+  the framework treats it as an error event and the model cannot choose a recovery (try another path, give up
+  and go to the final answer). Context cancellation is the one exception (`cancelErr`): the run itself is
+  over, and returning partial results as a normal value could not be told apart from "searched and found
+  nothing".
+- How many were actually used stays in `metrics.tool_calls`. Judge whether the limit is right by how many each
+  run used, not by whether it ran out.
 
-### ツールは作業ディレクトリの外へ出さない
+### Tools never leave the working directory
 
-レビュー対象のリポジトリは外部入力です。リポジトリ内の symlink がホストの任意ファイルを指している
-可能性があるため、`filepath.Clean` だけでは足りません。
+The reviewed repository is external input. A symlink in it may point at any file on the host, so
+`filepath.Clean` is not enough.
 
-- `toolbox.resolve` は root（構築時に `filepath.EvalSymlinks` 済み）と要求パスの両方を実体パスまで
-  解決し、root 配下であることを確かめます。片側だけ解決すると、macOS の `/var` → `/private/var`
-  のように OS 側の symlink で基準がずれます。
-- `list_files` と `search_text` は通常ファイル以外（symlink・FIFO・デバイス）を扱いません。
-  `os.ReadFile` は symlink を辿るため、`search_text` で通すと root 外のファイルの中身がモデルの
-  入力に入ります。`list_files` で並べると「読めるはずなのに読めないファイル」をモデルに見せる
-  ことになります。
-- `.git` は走査から外します。
+- `toolbox.resolve` resolves both the root (already `filepath.EvalSymlinks`ed at construction) and the
+  requested path to their real paths and checks that the latter is under the root. Resolving only one side
+  lets an OS-level symlink such as macOS's `/var` -> `/private/var` shift the base.
+- `list_files` and `search_text` handle nothing but regular files (no symlinks, FIFOs or devices).
+  `os.ReadFile` follows symlinks, so letting them through `search_text` would put the content of files outside
+  the root into the model's input. Listing them in `list_files` would show the model "files that should be
+  readable but are not".
+- `.git` is excluded from walks.
 
-### 出力スキーマはアプリ側で組み立てる
+### The app builds the output schema
 
-`internal/adkagent/schema.go` が構造化出力のスキーマを持ちます。
+`internal/adkagent/schema.go` holds the structured output schema.
 
-- 列挙値は `review.SeverityStrings` / `review.DecisionStrings`（ライブラリ）を直接使います。
-  **アプリ側で `[]string` へ詰め替え直さないでください。** 写しが増えると、値を足したときに
-  スキーマと検証が食い違い、モデルはスキーマ上正当な値を返すのにデコードで弾かれます
-  （症状は全レビューの失敗）。ドリフト検知テストがあります。
-- **`findings` の `MaxItems`（20）と `excerpt` の `MaxLength` は、出力の 64Ki トークン対策です。**
-  上限に当たると、途中まで正しく書けていた JSON ごと全損になります（10.7 KiB の差分に
-  212 KiB を書いて切れ、完成していた Blocker の指摘ごと失われた実例があります）。
-  20 は「そこまで指摘してよい」という目標ではなく、暴走を止める網です（実測の最大は 2 件）。
-  **同じ数字を instruction にも直書きしないでください。** `maxFindings` から埋めます。
-  ずれると、モデルは指示のほうを信じてスキーマを超える件数を書き始めます。
-  長さの制約は `Enum` ほど硬く強制されないので、効いているかは `response_bytes` で見ます。
-- `findings[].evidence` は、エージェントが作業ディレクトリを実際に調べるため
-  「どこを見て判断したか」を自己申告させるものです。**差分しか見ないレビュアーに
-  同じ項目を出させないでください。** 確認手段が無いまま根拠を求めると捏造を促します
-  （確認する手段の無いレビュアーへ evidence を求めるプロンプトを、実際に配線していた
-  ことがあります）。
+- Enumerated values use `review.SeverityStrings` / `review.DecisionStrings` (from the library) directly.
+  **Do not repack them into a `[]string` in the app.** With more copies, adding a value makes the schema and
+  validation disagree, and the model returns a value valid by the schema only to be rejected on decode (the
+  symptom: every review fails). A drift-detection test exists.
+- **`findings`'s `MaxItems` (20) and `excerpt`'s `MaxLength` guard against the 64Ki-token output limit.**
+  Hitting it loses everything, including JSON that was correct up to that point (a 10.7 KiB diff once got
+  212 KiB written and was cut, losing a completed Blocker finding). 20 is not a target of "this many findings
+  are fine" but a net against runaways (the most measured is 2). **Do not write the same number into the
+  instruction by hand either;** it is filled from `maxFindings`. If they drift, the model trusts the
+  instruction and starts writing more findings than the schema allows. Length constraints are not enforced as
+  strictly as `Enum`, so check in `response_bytes` whether they work.
+- `findings[].evidence` makes the agent declare "where it looked to decide", which means something because it
+  actually investigates the working directory. **Do not have a reviewer that sees only the diff produce the
+  same field.** Asking for grounds with no means to verify them invites fabrication (a prompt asking a
+  reviewer without any means of checking for evidence was actually wired up once).
 
-### 共有断片は prompt-kit の partial として持つ
+### Shared fragments are prompt-kit partials
 
-`assets/partials/*.md` は文字列として流し込まず、`_` 付きのテンプレート名で本文と同じ
-集合に入れて `{{template "_finding_policy" .}}` で参照します（`assets.PromptTemplates`）。
-末尾改行は `prompts.WithTrimPartials` が落とします。**自前で `TrimRight` しないでください。**
-断片は箇条書きの途中に差し込まれるので、末尾改行が残るとそこだけリストが分かれます。
+`assets/partials/*.md` are not pasted in as strings; they join the same set as the bodies under `_`-prefixed
+template names and are referenced with `{{template "_finding_policy" .}}` (`assets.PromptTemplates`).
+`prompts.WithTrimPartials` drops the trailing newline. **Do not `TrimRight` by hand.** Fragments are inserted
+in the middle of bullet lists, and a leftover trailing newline splits the list at that point.
 
-### genai を import してよい場所は 3 ファイルだけ
+### Only 3 files may import genai
 
-`google.golang.org/genai` を直接使ってよいのは次だけです（それぞれのテストを除く）。
-**増やさないでください。**
+Only these may use `google.golang.org/genai` directly (their tests aside). **Do not add more.**
 
-- `internal/adkagent/reviewer.go` — ADK のモデル層へ渡すクライアント設定
-- `internal/adkagent/schema.go` — 構造化出力スキーマ
-- `internal/adapters/ai.go` — `genai.ClientConfig` の組み立て（Vertex AI の投入口）
+- `internal/adkagent/reviewer.go` — the client config handed to ADK's model layer
+- `internal/adkagent/schema.go` — the structured output schema
+- `internal/adapters/ai.go` — building the `genai.ClientConfig` (the entry point to Vertex AI)
 
-フリートの他のアプリは AI SDK を直接触らず `go-gemini-client` 経由で呼びます
-（エコシステムの規約「genai SDK は `go-gemini-client` の外に出さない」）。
-**このリポジトリが例外なのは ADK が genai を直接要求するからで、規約を捨てたからでは
-ありません。** ADK が要求しない場所へ genai を持ち出さないでください。
-`go-review-kit` 自体は AI SDK を知りません。
+The fleet's other apps never touch the AI SDK directly and call through `go-gemini-client` (the ecosystem's
+convention "keep the genai SDK inside `go-gemini-client`"). **This repository is an exception because ADK
+requires genai directly, not because the convention was dropped.** Do not take genai anywhere ADK does not
+require it. `go-review-kit` itself knows nothing of the AI SDK.
 
-### AI は Vertex AI 経由のみ
+### AI only through Vertex AI
 
-API キー経路（`GEMINI_API_KEY`）は配線していません。Cloud Run では実行 SA の
-`roles/aiplatform.user` で認証できるため、キーを配ると使われないシークレットへの
-アクセス権を配ることになります。ローカルでは ADC が要ります。
+The API key path (`GEMINI_API_KEY`) is not wired. On Cloud Run the runtime SA's `roles/aiplatform.user`
+authenticates, so handing out a key would hand out access to a secret nobody uses. Locally, ADC is needed.
 
-Gemini のロケーションは `adapters.geminiLocationID`（`global`）に固定で、
-`GCP_LOCATION_ID`（Cloud Tasks のキューのリージョン）とは**別物です**。混同すると、
-キューを見失うか Vertex が存在しないリージョンを指すかのどちらかになります。
+Gemini's location is fixed in `adapters.geminiLocationID` (`global`) and is **a different thing** from
+`GCP_LOCATION_ID` (the region of the Cloud Tasks queue). Confusing them either loses the queue or points
+Vertex at a region that does not exist.
 
-### ワーカーのルートは 1 箇所で定義する
+### The worker route is defined in one place
 
-`domain.WorkerTaskPath` を投入側（`internal/builder`）と受信側（`internal/server`）の
-両方が使います。リテラルを二重に持つと、片方だけ変えたときに**投入したタスクが全部 404 に
-なり、再試行もされず黙って消えます。**
+Both the submitter (`internal/builder`) and the receiver (`internal/server`) use `domain.WorkerTaskPath`.
+With two literals, changing only one makes **every submitted task a 404, never retried and silently lost.**
 
-### レビュー 1 件の締切はライブラリに持たせる
+### The library owns the per-review deadline
 
-`internal/builder/pipeline.go` が `pipeline.WithRunTimeout` へ `PIPELINE_TIMEOUT` を渡します。
-**`Run` へ渡す context に自前で締切を被せないでください。** ライブラリが公開・通知のために
-行う切り離しより外側に掛かるため、打ち切りと同時に失敗通知まで落ちます
-（ACL 側で `context.WithTimeout` していた頃の形には戻さないこと。`worker.Lifecycle.Timeout` も
-同じ理由で 0 のままです）。
+`internal/builder/pipeline.go` passes `PIPELINE_TIMEOUT` to `pipeline.WithRunTimeout`. **Do not put your own
+deadline on the context passed to `Run`.** It would sit outside the detachment the library does for publishing
+and notifying, and the failure notification would be lost together with the cut-off (do not go back to the
+shape where the ACL did `context.WithTimeout`; `worker.Lifecycle.Timeout` stays 0 for the same reason).
 
-### ログは context に載せる
+### Logs ride on the context
 
-`slogctx` を通しているので、`Execute` の冒頭で載せた `job_id` / `mode` が
-以降のすべての出力に付きます。個々の呼び出しで `"job_id", req.JobID` を書き足さないでください
-（重複キーになります）。`cloudlog` が level を Cloud Logging の `severity` へマップするため、
-ロガーの組み立て（`main.go`）を素の `slog.NewJSONHandler` に戻すと
-**`slog.Error` がアラートに乗らなくなります。**
+Logging goes through `slogctx`, so the `job_id` / `mode` attached at the start of `Execute` appear on every
+later output. Do not add `"job_id", req.JobID` to individual calls (it would be a duplicate key). `cloudlog`
+maps the level to Cloud Logging's `severity`, so if the logger assembly (`main.go`) went back to a plain
+`slog.NewJSONHandler`, **`slog.Error` would no longer reach alerting.**
 
-### 計測値は失敗した実行にも残す
+### Measurements are kept for failed runs too
 
-`Runner.buildOutcomeStatus` は差分の大きさ・所要時間・トークン使用量・ツール呼び出し回数を、
-失敗した実行にも `status.json` へ書きます。上限（`MAX_DIFF_BYTES` / `AGENT_MAX_TOOL_CALLS` /
-出力トークン）が厳しすぎるかどうかを判断する材料は、通った実行より弾かれた実行の側にあります。
-これを持たない頃は、上限を決めるのに Cloud Logging を掘ってログ行を手で突き合わせる必要がありました。
+`Runner.buildOutcomeStatus` writes the diff size, duration, token usage and number of tool calls to
+`status.json` for failed runs too. The material for judging whether a limit (`MAX_DIFF_BYTES` /
+`AGENT_MAX_TOOL_CALLS` / output tokens) is too strict lies with the rejected runs rather than the ones that
+passed. Before this existed, deciding a limit meant digging through Cloud Logging and matching log lines by
+hand.
 
-### 成果物は 1 ジョブ 1 プレフィックス、結果は JSON のまま
+### One prefix per job; results stay JSON
 
-`domain.StorageLayout` が `gs://{GCS_REVIEW_BUCKET}/reviews/{jobID}/` 配下に `status.json` と
-`report.json` を置きます。
+`domain.StorageLayout` puts `status.json` and `report.json` under `gs://{GCS_REVIEW_BUCKET}/reviews/{jobID}/`.
 
-- **一覧用メタ（`status.json`）と結果の全文（`report.json`）は分けます。** 一覧は 1 行につき
-  1 回 `status.json` を読むため、指摘の全文を同じファイルへ入れると読み取り量が指摘件数に
-  比例して増えます。
-- **状態ファイルを成果物と同居させるのは意図的です。** 履歴一覧は `reviews/` 直下のプレフィックスを
-  列挙して作るため、実行中・失敗・スキップのジョブもそのまま並びます。レビューでは
-  「依頼したのに履歴から消えている」ほうが困ります。
-- **整形済みの HTML は置きません。** 結果は JSON で保存し、表示は `/jobs/{jobID}` が行います。
-  HTML を置いて署名付き URL で配ると、アプリの認証を迂回して読めてしまううえ、同じ内容の
-  見た目が詳細画面と 2 系統に分かれます。Slack 通知のリンク先が署名付き URL ではなく
-  詳細画面なのも同じ理由です。
-- **削除はプレフィックスの一括走査です**（`remoteio.DeletePrefix`）。消す側は「そのジョブが何を
-  作ったか」を知らずに済み、成果物の種類が増えても削除処理を直さずに済みます。バケットの根は
-  ライブラリが拒否します（バケットの広い範囲を消さないため）。以前はここに末尾 `/` を要求する
-  自前の写しがありましたが、`List` がプレフィックスを正規化するので要りません。
-- **queued / running は削除できません**（`JobStatus.Deletable`）。消したあとでワーカーが
-  `status.json` を書き戻してプレフィックスが復活し、中身の無い行が履歴に残ります。
+- **The list metadata (`status.json`) and the full result (`report.json`) are separate.** The list reads
+  `status.json` once per row, so putting the full findings in the same file would make the reads grow with the
+  number of findings.
+- **Keeping the status file next to the artifacts is deliberate.** The history list is built by enumerating
+  the prefixes directly under `reviews/`, so running, failed and skipped jobs appear as they are. For reviews,
+  "requested but missing from the history" is the worse problem.
+- **No rendered HTML is stored.** Results are saved as JSON and `/jobs/{jobID}` displays them. Stored HTML
+  served by a signed URL could be read bypassing the app's authentication, and the look of the same content
+  would split from the detail page into two. Slack notifications link the detail page rather than a signed
+  URL for the same reason.
+- **Deletion is a walk of the prefix** (`remoteio.DeletePrefix`). The deleter need not know "what the job
+  made", and new kinds of artifact need no change to deletion. The library rejects the bucket root (so a wide
+  range of the bucket is never deleted). There used to be a hand-written copy here requiring a trailing `/`,
+  but `List` normalises the prefix, so it is not needed.
+- **queued / running cannot be deleted** (`JobStatus.Deletable`). After the deletion the worker would write
+  `status.json` back, reviving the prefix and leaving an empty row in the history.
 
-### SSH のホスト鍵はビルド時に取得する
+### SSH host keys are fetched at build time
 
-`Dockerfile` が GitHub の API からホストキーを取得して `/etc/ssh/ssh_known_hosts` へ焼き込み、
-`SSH_KNOWN_HOSTS` でその場所を指します。**ホストキー検証を無効化するスイッチは作らないでください。**
-鍵をリポジトリに固定しないのは、ローテートに追従できないと clone が全滅し、しかも気付くのが
-本番になるためです。GitHub 以外を対象にするなら同ファイルへ追記しますが、フォームと API が
-受け付ける URL は `git@github.com:owner/repo.git` の形式だけです（`handlers.repoURLPattern`）。
+The `Dockerfile` fetches the host keys from GitHub's API, bakes them into `/etc/ssh/ssh_known_hosts`, and
+points `SSH_KNOWN_HOSTS` at it. **Do not create a switch that disables host key verification.** The keys are
+not pinned in the repository because failing to follow a rotation would break every clone, and it would first
+be noticed in production. To support hosts other than GitHub, add them in the same file, but the form and the
+API accept only URLs of the form `git@github.com:owner/repo.git` (`handlers.repoURLPattern`).
 
-### IAM は面ごとに 1 SA、権限は対象単位
+### IAM: one SA per role, permissions per resource
 
-実行 SA は web / worker で分けます（インフラ管理リポジトリの「1 ワークロード 1 SA」規約）。
-README にロール名を列挙していないのは、粒度が環境によって変わるためで、決め方だけを書いています。
+web and worker run as separate SAs (the infrastructure repository's "one workload, one SA" convention). The
+README does not list role names because the granularity varies by environment; it only describes how to
+decide.
 
-- GCS はバケット単位で `objectUser` を使います。`objectAdmin` はオブジェクト ACL の操作まで許し、
-  プロジェクトレベルで付けると無関係なバケットにも到達します。
-- シークレットはシークレット単位で付けます。プロジェクトレベルだと全シークレットに到達します。
-- web SA が GCS の読み書きを要るのは、履歴の一覧・詳細・削除と受付記録を web 面が直接行うためです。
-  投入権限だけでは足りません。
+- GCS uses `objectUser` per bucket. `objectAdmin` also allows manipulating object ACLs, and granted at the
+  project level it reaches unrelated buckets.
+- Secrets are granted per secret. At the project level they would reach every secret.
+- The web SA needs read/write on GCS because the web role itself lists, shows and deletes history and writes
+  the acceptance records. Permission to enqueue alone is not enough.
 
 ## Architecture
 
-ヘキサゴナル（Ports and Adapters）。同じイメージを `SERVER_ROLE` で web / worker に分け、
-別々の Cloud Run サービスとしてデプロイします。`both` はローカル開発専用です。
+Hexagonal (Ports and Adapters). The same image is split into web / worker by `SERVER_ROLE` and deployed as
+separate Cloud Run services. `both` is for local development only.
 
 ```text
 internal/
-  adkagent/   ADK エージェント（llmagent + ツール + 出力スキーマ）※ genai 直接依存はここだけ
-  adapters/   Git / Slack / 保存 / プロンプト
-  app/        Container（依存の保持とライフサイクル）
-  builder/    SERVER_ROLE に応じた組み立て
-  config/     環境変数・既定値・起動時検証
-  domain/     モデル、保存先の規約、ポート定義、ワーカーのルート定数
-  giturl/     リポジトリ URL の解析
-  pipeline/   ワーカーの入口。gcp-kit/worker.Lifecycle に go-review-kit を載せる ACL（public-docs のワーカー規約）
-  repository/ GCS 上の履歴の読み取り
-  server/     HTTP サーバー、ルーティング、ハンドラ
+  adkagent/   ADK agent (llmagent + tools + output schema) * the only direct genai dependency
+  adapters/   Git / Slack / storage / prompts
+  app/        Container (holds dependencies and their lifecycle)
+  builder/    Assembly by SERVER_ROLE
+  config/     Environment variables, defaults, startup validation
+  domain/     Models, storage conventions, port definitions, the worker route constant
+  giturl/     Parsing repository URLs
+  pipeline/   The worker's entry point. The ACL putting go-review-kit on gcp-kit/worker.Lifecycle (the public-docs worker convention)
+  repository/ Reading the history on GCS
+  server/     HTTP server, routing, handlers
 ```
 
-成果物は `gs://{GCS_REVIEW_BUCKET}/reviews/{jobID}/` 配下に `status.json` と `report.json`。
-一覧はプレフィックスの列挙で作るため、実行中・失敗・スキップも並びます。
+Artifacts are `status.json` and `report.json` under `gs://{GCS_REVIEW_BUCKET}/reviews/{jobID}/`. The list is
+built by enumerating prefixes, so running, failed and skipped jobs appear too.
 
 ## Notable external dependencies
 
-自作キットが多く、**振る舞いの多くはそちら側にあります。** 挙動が読めないときは
-`go doc` かモジュールキャッシュのソースを当たってください。
+Many are in-house kits, and **much of the behaviour lives in them.** When behaviour is unclear, check
+`go doc` or the source in the module cache.
 
-- `go-review-kit`: レビューの手順（差分取得 → プロンプト → レビュー → 公開 → 通知）
-- `go-job-kit`: 進行状況の記録（`jobstatus`）、履歴のページング（`paging`）、ID キャッシュ、
-  プレフィックス走査（`joblist`）
-  - `jobstatus.ErrNotFound`（未記録）と `ErrUnavailable`（読めない）は**意図的に別物**です。
-    同一視すると障害が「空行が並ぶ 200」として出ます。
-  - `paging.LoadPage` は load のエラーを呼び出し元へ返さず、その行を落として続行します。
-    障害を surface したい場合は `repository.loadFailure` のように自分で捕まえてください。
-  - `jobstatus.Status` を埋め込む `domain.JobStatus` の数値・真偽値のタグは `omitzero` です。
-    `status.json` を書くのは `jobstatus.Store` で、そちらは `encoding/json/v2` を使うため、
-    `omitempty` だと 0 と false が落ちません。文字列は `omitempty` のままで構いません。
-  - プレフィックス走査は `joblist.Collect` に任せます。同じ走査を手で書くと、重複潰しや
-    プレフィックスの末尾補正が抜けます（実際、一度そうなっていました）。
-- `gcp-kit`: OAuth・CSRF・Cloud Tasks の投入と OIDC 検証・`cloudlog`
-  - CSRF の検証は `session.Handler.Authenticate` が状態変更メソッドに対して行います。
-    アプリ側に検証コードが無いのは正常です。
-- `go-utils`: ジョブ ID 採番（`jobid`）、JST 整形（`jst`）、`slogctx`
-- `netarmor/securenet`: SSRF 対策と `SERVICE_URL` の安全性判定
+- `go-review-kit`: the review procedure (diff -> prompt -> review -> publish -> notify)
+- `go-job-kit`: progress records (`jobstatus`), history paging (`paging`), the ID cache, prefix walks
+  (`joblist`)
+  - `jobstatus.ErrNotFound` (not recorded) and `ErrUnavailable` (unreadable) are **deliberately different.**
+    Conflated, an outage would show up as "a 200 full of empty rows".
+  - `paging.LoadPage` does not return load errors to the caller; it drops the row and continues. To surface
+    an outage, catch it yourself, as `repository.loadFailure` does.
+  - The numeric and boolean tags of `domain.JobStatus`, which embeds `jobstatus.Status`, are `omitzero`.
+    `status.json` is written by `jobstatus.Store`, which uses `encoding/json/v2`, where `omitempty` does not
+    drop 0 and false. Strings can stay `omitempty`.
+  - Leave prefix walks to `joblist.Collect`. Writing the same walk by hand loses deduplication and the
+    prefix's trailing-slash fix (it actually happened once).
+- `gcp-kit`: OAuth, CSRF, Cloud Tasks submission and OIDC verification, `cloudlog`
+  - `session.Handler.Authenticate` verifies CSRF for state-changing methods. Having no verification code in the
+    app is normal.
+- `go-utils`: job ID minting (`jobid`), JST formatting (`jst`), `slogctx`
+- `netarmor/securenet`: SSRF protection and judging whether `SERVICE_URL` is safe

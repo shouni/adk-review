@@ -1,4 +1,4 @@
-# 各設定の理由は shouni/workflows の README「Dependabot の規約」にある。
+# The reason for each setting is in the shouni/workflows README, "Dependabot conventions".
 version: 2
 
 updates:
@@ -15,8 +15,8 @@ updates:
         patterns:
           - "*"
 
-  # Dockerfile のベースイメージ。**cloudbuild.yaml でビルドしているので CI には出ない**が、
-  # 追跡しないと誰も上げない。`FROM scratch` は Dependabot の対象外。
+  # The Dockerfile's base image. **It is built by cloudbuild.yaml, so CI never sees it**,
+  # and nobody would bump it unless it is tracked. `FROM scratch` is out of Dependabot's scope.
   - package-ecosystem: docker
     directory: /
     target-branch: develop

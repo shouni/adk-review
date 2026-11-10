@@ -10,7 +10,7 @@ import (
 	"google.golang.org/adk/v2/agent"
 )
 
-// list_files ツールです。作業ディレクトリ配下のファイル一覧を返します。
+// The list_files tool. It returns the files under the working directory.
 
 type listFilesArgs struct {
 	Dir string `json:"dir,omitempty"`
@@ -39,7 +39,7 @@ func (t *toolbox) listFiles(toolCtx context.Context, args listFilesArgs) (listFi
 
 	base, err := t.resolve(dir)
 	if err != nil {
-		slog.WarnContext(toolCtx, "ツールがパスを解決できませんでした", "tool", "list_files", "dir", dir, "error", err)
+		slog.WarnContext(toolCtx, "tool could not resolve the path", "tool", "list_files", "dir", dir, "error", err)
 		return listFilesResult{Error: err.Error()}, nil
 	}
 
@@ -50,8 +50,8 @@ func (t *toolbox) listFiles(toolCtx context.Context, args listFilesArgs) (listFi
 		if err != nil {
 			return err
 		}
-		// キャンセルはエントリ単位で見ます。見ないと、レビュー全体の締切が過ぎたあとも
-		// 走査が終わるまで戻りません。
+		// Cancellation is checked per entry. Otherwise, even after the whole review's deadline
+		// passes, it would not return until the walk finishes.
 		if err := toolCtx.Err(); err != nil {
 			return err
 		}
@@ -61,8 +61,8 @@ func (t *toolbox) listFiles(toolCtx context.Context, args listFilesArgs) (listFi
 			}
 			return nil
 		}
-		// 通常ファイル以外は並べません。read_file は root 外を指す symlink を拒否するので、
-		// 一覧に出すと「読めるはずなのに読めないファイル」をモデルに見せることになります。
+		// Only regular files are listed. read_file rejects symlinks pointing outside the root,
+		// so listing them would show the model "files that should be readable but are not".
 		if !d.Type().IsRegular() {
 			return nil
 		}
@@ -75,7 +75,7 @@ func (t *toolbox) listFiles(toolCtx context.Context, args listFilesArgs) (listFi
 			return err
 		}
 		name := filepath.ToSlash(rel)
-		// 件数の上限に当たる前に総量で打ち切ることがあります（上の maxListResultBytes）。
+		// The total size may cut the listing before the count limit is reached (maxListResultBytes above).
 		if resultBytes+len(name) > maxListResultBytes {
 			truncated = true
 			return filepath.SkipAll

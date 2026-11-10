@@ -12,60 +12,60 @@ import (
 	"google.golang.org/adk/v2/tool/functiontool"
 )
 
-// ツールが返す量の上限です。モデルのコンテキストを一度の呼び出しで食い潰さないための
-// 値で、超えた分は打ち切ってその旨を結果に含めます。
+// Limits on how much the tools return. They keep one call from eating the model's context;
+// anything beyond is cut off and the result says so.
 const (
 	maxFileBytes     = 200 * 1024
 	maxListEntries   = 500
 	maxSearchHits    = 100
-	maxSearchByteLen = 1 * 1024 * 1024 // これより大きいファイルは検索対象から外します
-	maxSearchFiles   = 2000            // 1 回の検索で開くファイル数の上限
+	maxSearchByteLen = 1 * 1024 * 1024 // Files larger than this are not searched
+	maxSearchFiles   = 2000            // Limit on the files opened in one search
 
-	// ヒット数だけでは返却量を抑えられません。minify 済みの 1 行が 1 MiB あれば、
-	// 100 ヒットで 100 MiB のツール結果になり、モデルのコンテキストとレイテンシと
-	// API 課金を一度に食い潰します。1 ヒットぶんと全体の両方にバイト上限を置きます。
+	// The hit count alone does not bound the returned size. With a minified 1 MiB line, 100 hits
+	// make a 100 MiB tool result, eating the model's context, latency and API bill at once. Both
+	// each hit and the total get a byte limit.
 	maxHitBytes          = 2 * 1024
 	maxSearchResultBytes = 64 * 1024
 
-	// 件数だけで足りないのは list_files も同じです。深く入れ子になったパスは 1 本で
-	// 数 KiB あり、500 件で数 MB のツール結果になり得ます。上限を search_text と
-	// 揃えるのは、抑えたい理由（以降の全ターンで読み直される）が同じだからです。
+	// A count alone is not enough for list_files either. A deeply nested path can be several KiB,
+	// and 500 of them can make a tool result of several MB. The limit matches search_text's because
+	// the reason to bound it (re-read on every later turn) is the same.
 	maxListResultBytes = 64 * 1024
 
-	// query の長さの上限です。検索語を決めるのはモデルなので、リポジトリ内の文章に
-	// 引きずられて異常に長い query を作ることがあり得ます。
+	// Limit on the query's length. The model picks the search term, and text in the repository
+	// can lead it to build an absurdly long query.
 	maxQueryBytes = 200
 
-	// maxSearchContext は、1 ヒットに添えられる前後の行数の上限です。
-	// 5 行を超えるなら read_file で範囲を指定したほうが安く済みます。
+	// maxSearchContext is the limit on the lines added around one hit.
+	// Beyond 5 lines, read_file with a range is cheaper.
 	maxSearchContext = 5
 )
 
-// toolbox は、1 回のレビュー実行に紐付くワークスペース参照ツール一式です。
+// toolbox is the set of workspace tools bound to one review run.
 //
-// remaining は全ツール共通の残り呼び出し回数です。時間ではなく回数で打ち切るのは、
-// レビュー全体の締切（Cloud Tasks の dispatch deadline）に対して、モデルの思考時間は
-// 読めないがツール呼び出し回数は設計時に見積もれるためです。
+// remaining is the call count left, shared by all tools. It cuts by count rather than time
+// because, against the whole review's deadline (the Cloud Tasks dispatch deadline), the model's
+// thinking time cannot be predicted but the number of tool calls can be estimated at design time.
 type toolbox struct {
 	root      string
 	budget    int64
 	remaining atomic.Int64
 }
 
-// budgetExhaustedMsg は、回数を使い切ったことをモデルへ伝える文言です。
+// budgetExhaustedMsg is the text telling the model the calls are used up.
 //
-// ツールの失敗を Go の error として返すとフレームワークがエラーイベントとして扱い、
-// モデルがリカバリー（別のパスを試す、諦めて最終回答へ進む）を選べません。失敗も
-// 各ツールの Error フィールドに載せた正常な戻り値として渡し、判断はモデルに委ねます。
+// Returned as a Go error, a tool failure is treated by the framework as an error event and the
+// model cannot choose a recovery (try another path, give up and go to the final answer). Failures
+// are passed as normal return values in each tool's Error field, and the model decides.
 const budgetExhaustedMsg = "ツールの呼び出し回数上限に達しました。これ以上の調査はできません。ここまでに得た情報で最終レビューをまとめてください。"
 
-// newTools は、root 配下だけを参照できるツール一式を組み立てます。
+// newTools builds the set of tools that can reach only under root.
 //
-// ここにあるのは登録と、モデルへ渡す説明文だけです。各ツールの中身は tool_read.go /
-// tool_list.go / tool_search.go にあります。
+// Only registration and the descriptions given to the model live here. Each tool's body is in
+// tool_read.go / tool_list.go / tool_search.go.
 //
-// toolbox も返すのは、実行後に呼び出し回数を数えるためです（used）。上限が実測に対して
-// 妥当かどうかは、使い切ったかどうかではなく毎回いくつ使ったかで判断します。
+// The toolbox is returned too so the calls can be counted after the run (used). Whether the
+// limit suits reality is judged by how many each run used, not by whether it ran out.
 func newTools(root string, budget int64) (*toolbox, []tool.Tool, error) {
 	tb, err := newToolbox(root, budget)
 	if err != nil {
@@ -83,7 +83,7 @@ func newTools(root string, budget int64) (*toolbox, []tool.Tool, error) {
 			"返り値の total_lines で続きの有無が分かります。",
 	}, tb.readFileTool)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read_file の構築に失敗しました: %w", err)
+		return nil, nil, fmt.Errorf("failed to build read_file: %w", err)
 	}
 
 	listFiles, err := functiontool.New(functiontool.Config{
@@ -92,7 +92,7 @@ func newTools(root string, budget int64) (*toolbox, []tool.Tool, error) {
 			"リポジトリの構成を把握するために最初に呼ぶことを推奨します。",
 	}, tb.listFilesTool)
 	if err != nil {
-		return nil, nil, fmt.Errorf("list_files の構築に失敗しました: %w", err)
+		return nil, nil, fmt.Errorf("failed to build list_files: %w", err)
 	}
 
 	searchText, err := functiontool.New(functiontool.Config{
@@ -103,21 +103,21 @@ func newTools(root string, budget int64) (*toolbox, []tool.Tool, error) {
 			"1 行では判断できないと分かっているときは、read_file で開き直すより context を指定するほうが安く済みます。",
 	}, tb.searchTextTool)
 	if err != nil {
-		return nil, nil, fmt.Errorf("search_text の構築に失敗しました: %w", err)
+		return nil, nil, fmt.Errorf("failed to build search_text: %w", err)
 	}
 
 	return tb, []tool.Tool{readFile, listFiles, searchText}, nil
 }
 
-// newToolbox は、root を実体パスへ解決して toolbox を生成します。
+// newToolbox resolves root to its real path and creates the toolbox.
 //
-// 構築時に一度だけ解決しておくのは、パス検査（resolve）とレスポンスの相対パス表示が
-// 同じ基準を共有するためです。macOS の /var → /private/var のように、OS 側の symlink で
-// 見かけのパスと実体が食い違う環境があります。
+// It is resolved once at construction so the path check (resolve) and the relative paths in
+// responses share one base. In some environments an OS-level symlink makes the apparent path
+// differ from the real one, like macOS's /var -> /private/var.
 func newToolbox(root string, budget int64) (*toolbox, error) {
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return nil, fmt.Errorf("作業ディレクトリを解決できません (%s): %w", root, err)
+		return nil, fmt.Errorf("cannot resolve the working directory (%s): %w", root, err)
 	}
 
 	tb := &toolbox{root: resolved, budget: budget}
@@ -125,10 +125,10 @@ func newToolbox(root string, budget int64) (*toolbox, error) {
 	return tb, nil
 }
 
-// used は、実際に呼ばれた回数を返します。
+// used returns how many calls were actually made.
 //
-// remaining は使い切ったあとも減り続けるため（spend は減らしてから判定します）、
-// 上限で頭打ちにします。使い切った実行を「上限より多く呼んだ」と記録しないためです。
+// remaining keeps decreasing after it runs out (spend decrements before checking), so the
+// result is capped at the limit, so a run that ran out is not recorded as "called more than the limit".
 func (t *toolbox) used() int {
 	used := t.budget - t.remaining.Load()
 	if used > t.budget {
@@ -140,44 +140,46 @@ func (t *toolbox) used() int {
 	return int(used)
 }
 
-// spend は、呼び出し回数の残りを 1 消費します。使い切っていたら false を返します。
+// spend consumes one remaining call. It returns false when none are left.
 func (t *toolbox) spend() bool {
 	return t.remaining.Add(-1) >= 0
 }
 
-// trace は、ツールの呼び出しを 1 行記録します。
+// trace logs one line per tool call.
 //
-// ★ エージェントループは数分かかることがあり、その間このアプリは何も出力しません。
-// 運用側からは実行中とハングの区別が付かないため、進行の唯一の手掛かりとしてここを残します。
-// 残り回数も併せて出すのは、上限に達して調査を打ち切った場合（結果は正常な戻り値として
-// モデルへ返るのでエラーにならない）を後から追えるようにするためです。
+// ★ The agent loop can take minutes, during which the app outputs nothing else. Operations
+// cannot tell running from hung, so this stays as the only sign of progress. The remaining count
+// is logged too, so a run cut off at the limit (which returns to the model as a normal value and
+// is no error) can be traced afterwards.
 //
-// ctx は agent.Context です。ADK の ReadonlyContext が context.Context を埋め込んでいるため、
-// slogctx が載せた job_id / mode もそのまま付きます。
+// ctx is an agent.Context. ADK's ReadonlyContext embeds context.Context, so the job_id / mode
+// attached by slogctx come along as well.
 func (t *toolbox) trace(ctx context.Context, tool string, attrs ...any) {
-	slog.InfoContext(ctx, "エージェントがツールを呼びました",
+	slog.InfoContext(ctx, "agent called a tool",
 		append([]any{"tool", tool, "remaining", t.remaining.Load()}, attrs...)...)
 }
 
-// cancelErr は、走査が終わった理由が context のキャンセル・締切だった場合に、その原因を
-// Go の error として返します。
+// cancelErr returns the cause as a Go error when the walk ended because the context was
+// cancelled or hit its deadline.
 //
-// ツールの失敗は基本的に Error フィールドへ載せてモデルに判断させますが（budgetExhaustedMsg
-// の項を参照）、キャンセルだけは例外です。実行そのものが終わっているのでリカバリーの
-// 余地が無く、途中まで走った結果を正常な戻り値として返すと「探したが見つからなかった」
-// と区別が付かなくなります。
+// Tool failures normally go in the Error field for the model to judge (see budgetExhaustedMsg),
+// but cancellation is the exception. The run itself is over, so there is no room for recovery,
+// and returning a partial walk as a normal value could not be told apart from "searched and
+// found nothing".
 func cancelErr(ctx context.Context, tool string) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("adkagent: %s を中断しました: %w", tool, err)
+		return fmt.Errorf("adkagent: %s was interrupted: %w", tool, err)
 	}
 	return nil
 }
 
-// resolve は、相対パスを root 配下の絶対パスへ解決します。
+// resolve turns a relative path into an absolute path under root.
 //
-// filepath.Clean だけでは symlink 経由の脱出を防げないため、実体パスまで解決して
-// root 配下であることを確認します。レビュー対象のリポジトリは外部入力なので、
-// リポジトリ内の symlink がホストの任意ファイルを指している可能性があります。
+// filepath.Clean alone does not stop an escape through a symlink, so the real path is resolved
+// and checked to be under root. The reviewed repository is external input, and a symlink in it
+// may point at any file on the host.
+//
+// Its error text reaches the model through the tools' Error field, so it stays Japanese.
 func (t *toolbox) resolve(rel string) (string, error) {
 	if rel == "" {
 		return "", fmt.Errorf("パスが空です")
@@ -191,7 +193,7 @@ func (t *toolbox) resolve(rel string) (string, error) {
 		return "", fmt.Errorf("作業ディレクトリの外は参照できません: %s", rel)
 	}
 
-	// t.root は構築時に実体解決済みなので、こちら側だけ解決すれば基準が揃います。
+	// t.root was resolved at construction, so resolving this side alone aligns the base.
 	joined := filepath.Join(t.root, clean)
 	resolved, err := filepath.EvalSymlinks(joined)
 	if err != nil {

@@ -13,7 +13,7 @@ import (
 	"github.com/shouni/go-job-kit/jobstatus"
 )
 
-// pastReview は、再実行の元になる過去のレビューの記録です。
+// pastReview is the record of a past review to rerun.
 func pastReview() domain.JobStatus {
 	return domain.JobStatus{
 		Status:        jobstatus.Status{JobID: "20260810-213000-a1b2c3d4", State: jobstatus.StateFailed},
@@ -156,8 +156,8 @@ func TestHandleForm_RendersCSRFTokenFromContext(t *testing.T) {
 	}
 }
 
-// 失敗したレビューは review-queue が max_attempts = 1 なので再試行されません。
-// 依頼内容を打ち直さずにやり直せることが、この画面の存在理由です。
+// A failed review is not retried, since review-queue has max_attempts = 1.
+// Redoing it without retyping the request is why this screen exists.
 func TestHandleForm_PrefillsFromPastReview(t *testing.T) {
 	past := pastReview()
 	body := renderFormWithQuery(t, &fakeStatusStore{getStatus: past}, "?from="+past.JobID)
@@ -168,36 +168,36 @@ func TestHandleForm_PrefillsFromPastReview(t *testing.T) {
 		`value="` + past.FeatureBranch + `"`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("%s が引き継がれていません: %s", want, body)
+			t.Errorf("%s was not carried over: %s", want, body)
 		}
 	}
-	// モードとモデルは select なので、選択済みとして描かれているかで見ます。
+	// Mode and model are selects, so check that they are rendered as selected.
 	if !strings.Contains(body, `value="`+past.Mode+`" selected`) {
-		t.Errorf("モードが選択されていません: %s", body)
+		t.Errorf("the mode is not selected: %s", body)
 	}
 	if !strings.Contains(body, `value="`+past.ModelName+`" selected`) {
-		t.Errorf("モデルが選択されていません: %s", body)
+		t.Errorf("the model is not selected: %s", body)
 	}
 	if !strings.Contains(body, "過去の依頼内容を引き継いでいます") {
-		t.Errorf("引き継いだことが画面に出ていません: %s", body)
+		t.Errorf("the screen does not say it was carried over: %s", body)
 	}
 }
 
-// 元のレビューを読めなくてもエラー画面にはしません。再実行は入力を省くための
-// 便宜で、それが効かないことは新しい依頼を妨げないためです。
+// Failing to read the original review does not show an error page. A rerun is a convenience
+// that saves typing, and it not working must not block a new request.
 func TestHandleForm_FallsBackWhenSourceIsUnreadable(t *testing.T) {
 	body := renderFormWithQuery(t, &fakeStatusStore{getErr: errors.New("boom")}, "?from=20260810-213000-a1b2c3d4")
 
 	if !strings.Contains(body, "既定値で表示しています") {
-		t.Errorf("読み込めなかったことが画面に出ていません: %s", body)
+		t.Errorf("the screen does not say it could not be loaded: %s", body)
 	}
 	if !strings.Contains(body, `value="main"`) || !strings.Contains(body, `value="develop"`) {
-		t.Errorf("既定値のフォームになっていません: %s", body)
+		t.Errorf("the form does not have the defaults: %s", body)
 	}
 }
 
-// 依頼内容を記録する前の形式で保存されたジョブを開いても、既定値まで空へ
-// 倒さないこと。倒すと、再実行のほうが白紙より入力が増えます。
+// Opening a job stored in a format from before requests were recorded does not blank the
+// defaults too. Otherwise a rerun would need more typing than a blank form.
 func TestHandleForm_KeepsDefaultsForFieldsTheRecordLacks(t *testing.T) {
 	sparse := domain.JobStatus{
 		Status:  jobstatus.Status{JobID: "20260810-213000-a1b2c3d4", State: jobstatus.StateFailed},
@@ -206,21 +206,21 @@ func TestHandleForm_KeepsDefaultsForFieldsTheRecordLacks(t *testing.T) {
 	body := renderFormWithQuery(t, &fakeStatusStore{getStatus: sparse}, "?from="+sparse.JobID)
 
 	if !strings.Contains(body, `value="`+sparse.RepoURL+`"`) {
-		t.Errorf("記録にある項目が引き継がれていません: %s", body)
+		t.Errorf("a field in the record was not carried over: %s", body)
 	}
 	if !strings.Contains(body, `value="main"`) || !strings.Contains(body, `value="develop"`) {
-		t.Errorf("記録に無い項目の既定値が消えています: %s", body)
+		t.Errorf("the default of a field missing from the record is gone: %s", body)
 	}
 }
 
-// from が無いときは、これまでどおり白紙のフォームを出すこと。
+// Without from, a blank form is shown as before.
 func TestHandleForm_WithoutFromStaysBlank(t *testing.T) {
 	body := renderFormWithQuery(t, &fakeStatusStore{getStatus: pastReview()}, "")
 
 	if strings.Contains(body, "過去の依頼内容") || strings.Contains(body, "既定値で表示しています") {
-		t.Errorf("断り書きが出ています: %s", body)
+		t.Errorf("a note is shown: %s", body)
 	}
 	if strings.Contains(body, `value="git@github.com:org/other.git"`) {
-		t.Errorf("読み込むはずのないレビューが引き継がれています: %s", body)
+		t.Errorf("a review that should not be loaded was carried over: %s", body)
 	}
 }

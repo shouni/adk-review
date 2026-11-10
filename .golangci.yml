@@ -12,19 +12,19 @@ linters:
     - unused
     - gocritic
     - revive
-    # 以下は adk-review が扱うものに合わせた追加分。
-    # SSH 秘密鍵・OAuth のセッション暗号鍵・署名付き URL・外部リポジトリの clone を
-    # 扱うので、セキュリティリンターは外せません（http.Server のタイムアウト欠落も
-    # ここが拾います）。
+    # The following are additions matched to what adk-review handles.
+    # It handles SSH private keys, OAuth session encryption keys, signed URLs and clones
+    # of external repositories, so the security linter cannot be dropped (it also catches
+    # a missing http.Server timeout).
     - gosec
-    # エラーは全域で %w ラップと errors.Is/As に頼っています。== 比較や %v 誤用を
-    # 見つけるのはこのリンターだけです。
+    # Errors rely on %w wrapping and errors.Is/As throughout. This linter is the only
+    # one that finds == comparisons and misuse of %v.
     - errorlint
-    # errcheck で (io.ReadCloser).Close を除外しているぶん、レスポンスボディの
-    # 閉じ忘れを見る目が他にありません。
+    # Since errcheck excludes (io.ReadCloser).Close, nothing else watches for an
+    # unclosed response body.
     - bodyclose
-    # 三段のタイムアウトを軸に設計しているので、context 無しの HTTP 呼び出しは
-    # その設計を素通りします。
+    # The design is built around the three-tier timeout, so an HTTP call without a
+    # context slips past it.
     - noctx
     - copyloopvar
     - unconvert
@@ -35,12 +35,12 @@ linters:
         - (io.ReadCloser).Close
     gosec:
       excludes:
-        # G104 は errcheck と重複するため無効化します。
+        # G104 duplicates errcheck, so it is disabled.
         - G104
   exclusions:
     rules:
-      # テストの httptest.NewRequest は context を持たない形が定石で、
-      # ここを直しても本番の呼び出しは 1 つも安全になりません。
+      # httptest.NewRequest without a context is the idiom in tests, and fixing
+      # it here would not make a single production call safer.
       - path: _test\.go
         linters:
           - noctx

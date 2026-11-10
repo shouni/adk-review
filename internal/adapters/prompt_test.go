@@ -30,8 +30,8 @@ func TestPromptAdapter_GenerateReview(t *testing.T) {
 				t.Fatalf("Generate(%q) failed: %v", mode.Key, err)
 			}
 
-			// 共有パーシャル(findings_format.md / verdict_format.md /
-			// finding_policy.md)がテンプレート実行時に正しく展開されていること
+			// The shared partials (findings_format.md / verdict_format.md /
+			// finding_policy.md) must be expanded correctly when the template runs
 			for _, want := range []string{"findings", "verdict", "decision", "reason", "evidence", "hunk", "日本語"} {
 				if !strings.Contains(prompt, want) {
 					t.Errorf("Generate(%q) result missing %q\n--- prompt ---\n%s", mode.Key, want, prompt)

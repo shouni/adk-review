@@ -5,32 +5,32 @@ import (
 	"github.com/shouni/go-review-kit/review"
 )
 
-// CommandReview は、ジョブの種類を表す jobstatus.Status.Command の値です。
-// 本サービスのジョブは今のところレビューだけですが、記録の読み手が種類を判別できるよう
-// 明示しておきます。
+// CommandReview is the jobstatus.Status.Command value naming the kind of job.
+// This service's only job so far is the review, but it is stated so that readers of the
+// record can tell the kind.
 const CommandReview = "review"
 
-// JobStatus は、1 レビュージョブの進行状況と、履歴一覧に出すメタ情報です。
+// JobStatus is the progress of one review job and the metadata shown in the history list.
 //
-// jobstatus.Status を埋め込んでいるため、JSON はフラットに展開されます（入れ子の
-// ペイロードを挟むと保存済みの status.json が読めなくなります）。
+// It embeds jobstatus.Status, so the JSON is flat (a nested payload would make the stored
+// status.json files unreadable).
 //
-// 一覧が 1 行あたり 1 オブジェクトの読み取りで済むよう、表示に要る項目はすべてここへ
-// 持たせます。指摘の全文だけは行数に比例して重くなるため、report.json 側に置きます。
+// Everything the display needs lives here, so the list reads one object per row. Only the
+// full findings, which grow with their count, live in report.json.
 //
-// 数値と真偽値のタグは omitzero です。omitempty へ戻さないでください。
-// この構造体を status.json へ書くのは jobstatus.Store で、そちらは encoding/json/v2
-// を使います。v2 の omitempty は「空の JSON 値になるか」で判定するため 0 と false を
-// 落とさず、omitempty のままだと truncated:false と 0 だらけの metrics が全レコードに
-// 残ります。文字列は v2 でも空文字が空なので omitempty のままで構いません。
+// The tags on numbers and booleans are omitzero. Do not change them back to omitempty.
+// This struct is written to status.json by jobstatus.Store, which uses encoding/json/v2. v2's
+// omitempty judges by "does it encode to an empty JSON value", so it does not drop 0 and false;
+// with omitempty, every record would carry truncated:false and metrics full of zeros. For
+// strings the empty string is empty in v2 too, so omitempty is fine there.
 type JobStatus struct {
 	jobstatus.Status
 
-	// Outcome は、レビューそのものの結末です。
+	// Outcome is the outcome of the review itself.
 	//
-	// jobstatus.State（queued / running / succeeded / failed）はジョブの生死しか表せません。
-	// 「差分が無くてレビューしなかった」はジョブとしては正常終了なので succeeded ですが、
-	// 成果物は無く判定もありません。一覧でこの違いを見分けるために別の値として持ちます。
+	// jobstatus.State (queued / running / succeeded / failed) only says whether the job lived.
+	// "No diff, so no review" is a normal end for the job, so it is succeeded, yet it has no
+	// artifact and no decision. A separate value lets the list tell them apart.
 	Outcome review.Status `json:"outcome,omitempty"`
 
 	RepoURL       string `json:"repo_url,omitempty"`
@@ -39,63 +39,63 @@ type JobStatus struct {
 	Mode          string `json:"mode,omitempty"`
 	ModelName     string `json:"model_name,omitempty"`
 
-	// Decision はレビュー全体の判定です。成功時のみ入ります。
+	// Decision is the review's overall decision. Set only on success.
 	Decision review.Decision `json:"decision,omitempty"`
-	// ReportURI はレビュー結果全文（report.json）の URI です。成功時のみ入ります。
+	// ReportURI is the URI of the full review result (report.json). Set only on success.
 	ReportURI string `json:"report_uri,omitempty"`
 
-	// Truncated は、モデルの出力が途中で切れ、完結していた範囲だけを保存したことを示します。
+	// Truncated means the model's output was cut off and only the completed part was saved.
 	//
-	// ★ 成功として記録しますが、指摘はこれで全部ではありません。ここを持たずに保存すると、
-	// 画面も API も「指摘 2 件のレビュー」として見せることになり、読む側は残りが
-	// あったことを知る手段を失います。
+	// ★ It is recorded as a success, but the findings are not all there is. Saved without this,
+	// the screen and the API would present "a review with 2 findings", and the reader would
+	// have no way to know there was more.
 	Truncated bool `json:"truncated,omitzero"`
 
-	// Metrics は、上限を実測から決め直すための材料です。
+	// Metrics is the material for recalibrating the limits from measurements.
 	Metrics Metrics `json:"metrics,omitzero"`
 }
 
-// Metrics は、レビュー 1 件の実行の計測値です。
+// Metrics are the measurements of one review run.
 //
-// 失敗した実行にも入ります。上限（差分の大きさ・ツール回数・出力トークン）が
-// 厳しすぎるかどうかを判断する材料は、通った実行より弾かれた実行の側にあります。
-// これを持たない頃は、`MAX_DIFF_BYTES` を決めるのに Cloud Logging を掘って
-// ログ行を手で突き合わせる必要がありました。
+// Failed runs carry them too. The material for judging whether a limit (diff size, tool calls,
+// output tokens) is too strict lies with the rejected runs rather than the ones that passed.
+// Before this existed, deciding `MAX_DIFF_BYTES` meant digging through Cloud Logging and
+// matching log lines by hand.
 type Metrics struct {
-	// DiffBytes は AI へ送った差分の大きさです。MAX_DIFF_BYTES の調整に使います。
+	// DiffBytes is the size of the diff sent to the AI. Used to tune MAX_DIFF_BYTES.
 	DiffBytes int `json:"diff_bytes,omitzero"`
-	// DurationMS はレビュー 1 件の所要時間です。PIPELINE_TIMEOUT の調整に使います。
+	// DurationMS is how long the review took. Used to tune PIPELINE_TIMEOUT.
 	DurationMS int64 `json:"duration_ms,omitzero"`
-	// 以下はモデルの使用量です。出力が上限（64Ki トークン）へどれだけ近いかを見ます。
+	// The following are the model's usage, showing how close the output came to the limit (64Ki tokens).
 	PromptTokens  int `json:"prompt_tokens,omitzero"`
 	OutputTokens  int `json:"output_tokens,omitzero"`
 	ThoughtTokens int `json:"thought_tokens,omitzero"`
-	// ToolCalls はエージェントがツールを呼んだ回数です。AGENT_MAX_TOOL_CALLS の調整に使います。
+	// ToolCalls is how many times the agent called a tool. Used to tune AGENT_MAX_TOOL_CALLS.
 	ToolCalls int `json:"tool_calls,omitzero"`
 }
 
-// Empty は、計測値が 1 つも入っていないかどうかを返します。
+// Empty reports whether no measurement is set.
 func (m Metrics) Empty() bool { return m == Metrics{} }
 
-// HasReport は、レビュー結果全文が保存されているかどうかを返します。
+// HasReport reports whether the full review result is stored.
 func (s JobStatus) HasReport() bool {
 	return s.ReportURI != ""
 }
 
-// Deletable は、履歴から削除してよい状態かどうかを返します。
+// Deletable reports whether the entry may be deleted from the history.
 //
-// queued / running を消せないようにしているのは、消したあとでワーカーが status.json を
-// 書き戻し、プレフィックスが復活するためです。結果として、中身の無い行が履歴に残ります。
+// queued / running cannot be deleted because the worker would write status.json back after
+// the deletion and revive the prefix, leaving an empty row in the history.
 func (s JobStatus) Deletable() bool {
 	return s.Finished()
 }
 
-// Rerunnable は、この依頼内容でフォームを埋め直せるかどうかを返します。
+// Rerunnable reports whether the form can be refilled from this request.
 //
-// queued / running で出さないのは、結果を待っている依頼をもう一度出させると
-// 同じレビューが 2 本走るためです。RepoURL を見るのは、依頼内容を記録する前の
-// 形式で保存されたジョブがあり得るからで、埋まらないフォームを開かせても
-// 打ち直しと変わりません。
+// It is not offered while queued / running because resubmitting a request still awaiting its
+// result would run the same review twice. RepoURL is checked because jobs may have been stored in
+// a format from before requests were recorded, and opening a form that cannot be filled is no
+// better than typing it again.
 func (s JobStatus) Rerunnable() bool {
 	if s.RepoURL == "" {
 		return false
@@ -103,12 +103,12 @@ func (s JobStatus) Rerunnable() bool {
 	return s.Finished()
 }
 
-// carryOverFrom は、前回の記録から引き継ぐべきサービス固有フィールドを移します。
+// carryOverFrom moves the service-specific fields that must carry over from the previous record.
 //
-// ワーカーは状態が変わるたびにタスクの内容から JobStatus を組み立て直すため、投入時に
-// しか分からない情報（Outcome や Decision のような後から確定する値ではなく、タスクに
-// 含まれない値）を素直に書くと失われます。共通フィールドの引き継ぎは jobstatus.Recorder が
-// 行うので、ここではこの型が足した分だけを扱います。
+// The worker rebuilds JobStatus from the task at every transition, so information known only
+// at submission (values not in the task, as opposed to values settled later such as Outcome or
+// Decision) would be lost if written naively. jobstatus.Recorder carries over the common fields,
+// so this handles only what this type adds.
 func (s *JobStatus) carryOverFrom(prev *JobStatus) {
 	if prev == nil {
 		return
@@ -128,22 +128,22 @@ func (s *JobStatus) carryOverFrom(prev *JobStatus) {
 	}
 }
 
-// CarryOverExtras は、jobstatus.Recorder.Record へ渡す引き継ぎ関数です。
+// CarryOverExtras is the carry-over function passed to jobstatus.Recorder.Record.
 func CarryOverExtras(next, prev *JobStatus) {
 	next.carryOverFrom(prev)
 }
 
-// NewQueuedStatus は、タスク投入時に記録する JobStatus を組み立てます。
+// NewQueuedStatus builds the JobStatus recorded when a task is submitted.
 func NewQueuedStatus(req ReviewRequest) JobStatus {
 	return newStatus(req, jobstatus.StateQueued)
 }
 
-// NewRunningStatus は、ワーカーが処理を開始したときに記録する JobStatus を組み立てます。
+// NewRunningStatus builds the JobStatus recorded when the worker starts.
 func NewRunningStatus(req ReviewRequest) JobStatus {
 	return newStatus(req, jobstatus.StateRunning)
 }
 
-// NewFailedStatus は、失敗を記録する JobStatus を組み立てます。
+// NewFailedStatus builds the JobStatus that records a failure.
 func NewFailedStatus(req ReviewRequest, err error) JobStatus {
 	status := newStatus(req, jobstatus.StateFailed)
 	status.Outcome = review.StatusFailed
@@ -153,8 +153,8 @@ func NewFailedStatus(req ReviewRequest, err error) JobStatus {
 	return status
 }
 
-// NewSucceededStatus は、レビューが完了したことを記録する JobStatus を組み立てます。
-// スキップも「ジョブとしては正常終了」として succeeded で記録し、Outcome で区別します。
+// NewSucceededStatus builds the JobStatus recording that the review finished.
+// A skip is also recorded as succeeded ("a normal end for the job") and told apart by Outcome.
 func NewSucceededStatus(req ReviewRequest, outcome review.Status) JobStatus {
 	status := newStatus(req, jobstatus.StateSucceeded)
 	status.Outcome = outcome

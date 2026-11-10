@@ -9,16 +9,16 @@ import (
 	"github.com/shouni/go-serve-kit/serverrole"
 )
 
-// testDispatchDeadline は、テストで使う打ち切りです。アプリは既定値を持たないため、
-// 実際のデプロイ設定と同じく明示します。
+// testDispatchDeadline is the cut-off used in tests. The app has no default, so it is set
+// explicitly, as in the real deployment settings.
 const testDispatchDeadline = 10 * time.Minute
 
-// testPipelineTimeout は、テストで使うレビュー 1 件の上限です。打ち切りと同じく
-// アプリは既定値を持たないため、実際のデプロイ設定と同じく明示します。
+// testPipelineTimeout is the per-review limit used in tests. Like the cut-off, the app has
+// no default, so it is set explicitly, as in the real deployment settings.
 const testPipelineTimeout = 5 * time.Minute
 
-// validBase は、検証を通る最小構成を返します。
-// 各テストは 1 項目だけ崩して、そこが検出されることを確かめます。
+// validBase returns the minimal configuration that passes validation.
+// Each test breaks a single item and checks that it is detected.
 func validBase() *Config {
 	return &Config{
 		Server: ServerConfig{
@@ -63,7 +63,7 @@ func TestValidateEssentialConfig(t *testing.T) {
 			wantErr: "HTTPS",
 		},
 		{
-			// 既定値を持たせると、本番の設定漏れが localhost として素通りします。
+			// With a default, a missing production setting would slip through as localhost.
 			name:    "missing service url",
 			mutate:  func(c *Config) { c.Server.ServiceURL = "" },
 			wantErr: "SERVICE_URL",
@@ -79,22 +79,22 @@ func TestValidateEssentialConfig(t *testing.T) {
 				c.Auth.AllowedEmails = nil
 				c.Auth.AllowedDomains = nil
 			},
-			wantErr: "認可リスト",
+			wantErr: "allowlist",
 		},
 		{
-			// 既定値へ黙って落ちると、古いモデルを指したまま動き続けます。
+			// Silently falling back to a default would keep running on an outdated model.
 			name:    "missing gemini model",
 			mutate:  func(c *Config) { c.AI.GeminiModels = nil },
 			wantErr: "GEMINI_MODELS",
 		},
 		{
-			// プレースホルダ既定値を廃したので、未設定は起動時に落ちます。
+			// The placeholder default is gone, so unset fails at startup.
 			name:    "missing project id",
 			mutate:  func(c *Config) { c.GCP.ProjectID = "" },
 			wantErr: "GCP_PROJECT_ID",
 		},
 		{
-			// 落ちないと、AI 呼び出しを終えた最後の保存で初めて失敗します。
+			// Otherwise it would first fail at the final save, after the AI call.
 			name:    "missing bucket",
 			mutate:  func(c *Config) { c.Storage.GCSBucket = "" },
 			wantErr: "GCS_REVIEW_BUCKET",
@@ -110,8 +110,8 @@ func TestValidateEssentialConfig(t *testing.T) {
 			wantErr: "WORKER_URL",
 		},
 		{
-			// キューのリージョンも web 面だけの要件です（Gemini は "global" 固定のため
-			// worker 面では使いません）。
+			// The queue's region is also a web-only requirement (Gemini is fixed to "global",
+			// so the worker does not use it).
 			name:    "missing location id on web",
 			mutate:  func(c *Config) { c.GCP.LocationID = "" },
 			wantErr: "GCP_LOCATION_ID",
@@ -157,8 +157,8 @@ func TestValidateEssentialConfig(t *testing.T) {
 	}
 }
 
-// worker 面は OAuth の設定を要求しません。面ごとにサービスを分けた意味
-// （worker の env を最小に保つ）が失われるためです。
+// The worker role does not require OAuth settings. Doing so would defeat the point of separate
+// services per role (keeping the worker's env minimal).
 func TestValidateEssentialConfig_WorkerSkipsWebSettings(t *testing.T) {
 	t.Parallel()
 
@@ -170,24 +170,24 @@ func TestValidateEssentialConfig_WorkerSkipsWebSettings(t *testing.T) {
 	cfg.GCP.LocationID = ""
 
 	if err := cfg.ValidateEssentialConfig(); err != nil {
-		t.Fatalf("worker 面が web の設定を要求している: %v", err)
+		t.Fatalf("the worker role requires web settings: %v", err)
 	}
 }
 
 func TestValidateTimeouts(t *testing.T) {
 	t.Parallel()
 
-	t.Run("既定の PIPELINE_TIMEOUT は打ち切りより短い", func(t *testing.T) {
+	t.Run("the default PIPELINE_TIMEOUT is shorter than the cut-off", func(t *testing.T) {
 		t.Parallel()
 		if testPipelineTimeout >= testDispatchDeadline {
-			t.Fatalf("%s が打ち切り %s 以上", testPipelineTimeout, testDispatchDeadline)
+			t.Fatalf("%s is not shorter than the cut-off %s", testPipelineTimeout, testDispatchDeadline)
 		}
 		if err := validBase().ValidateEssentialConfig(); err != nil {
-			t.Errorf("既定値で失敗した: %v", err)
+			t.Errorf("failed with the defaults: %v", err)
 		}
 	})
 
-	t.Run("dispatch deadline 以上は起動時に落とす", func(t *testing.T) {
+	t.Run("at or above the dispatch deadline fails startup", func(t *testing.T) {
 		t.Parallel()
 		for _, d := range []time.Duration{
 			testDispatchDeadline,
@@ -198,82 +198,82 @@ func TestValidateTimeouts(t *testing.T) {
 			c.Pipeline.Timeout = d
 			err := c.ValidateEssentialConfig()
 			if err == nil {
-				t.Errorf("Pipeline.Timeout=%s で通ってしまった", d)
+				t.Errorf("passed with Pipeline.Timeout=%s", d)
 				continue
 			}
 			if !strings.Contains(err.Error(), "PIPELINE_TIMEOUT") {
-				t.Errorf("エラーに変数名が無い: %v", err)
+				t.Errorf("the error does not name the variable: %v", err)
 			}
 		}
 	})
 
-	// dispatch deadline を伸ばせば、それに合わせて pipeline も伸ばせること。
-	// ここが定数に戻ると、長いレビューは再ビルドなしには救えなくなります。
-	t.Run("dispatch deadline を伸ばせば pipeline も伸ばせる", func(t *testing.T) {
+	// Raising the dispatch deadline lets the pipeline be raised with it.
+	// If this went back to a constant, a long review could not be saved without a rebuild.
+	t.Run("raising the dispatch deadline lets the pipeline grow", func(t *testing.T) {
 		t.Parallel()
 		c := validBase()
 		c.Tasks.DispatchDeadline = 30 * time.Minute
 		c.Pipeline.Timeout = 25 * time.Minute
 		if err := c.ValidateEssentialConfig(); err != nil {
-			t.Errorf("伸ばした組み合わせで失敗した: %v", err)
+			t.Errorf("the raised combination failed: %v", err)
 		}
 	})
 
-	// 無制限は許しません。Cloud Tasks が先に打ち切ると、失敗レポートも Slack 通知も
-	// 残らないまま再試行もされず、レビューが queued のまま消えます。
-	t.Run("未設定・無制限は worker で落とす", func(t *testing.T) {
+	// Unlimited is not allowed. If Cloud Tasks cuts first, nothing is retried and neither a
+	// failure report nor a Slack notice is left, so the review vanishes while queued.
+	t.Run("unset or unlimited fails on the worker", func(t *testing.T) {
 		t.Parallel()
 		for _, d := range []time.Duration{0, -time.Second} {
 			c := validBase()
 			c.Pipeline.Timeout = d
 			err := c.ValidateEssentialConfig()
 			if err == nil {
-				t.Errorf("Pipeline.Timeout=%s が通ってしまった", d)
+				t.Errorf("Pipeline.Timeout=%s passed", d)
 				continue
 			}
 			if !strings.Contains(err.Error(), "PIPELINE_TIMEOUT") {
-				t.Errorf("エラーに変数名が無い: %v", err)
+				t.Errorf("the error does not name the variable: %v", err)
 			}
 		}
 	})
 
-	// 渡されるのは worker 面だけなので、web 面では要求しません。
-	t.Run("web 面では PIPELINE_TIMEOUT を要求しない", func(t *testing.T) {
+	// Only the worker role receives it, so the web role does not require it.
+	t.Run("the web role does not require PIPELINE_TIMEOUT", func(t *testing.T) {
 		t.Parallel()
 		c := validBase()
 		c.Server.Role = serverrole.Web
 		c.Pipeline.Timeout = 0
 		if err := c.ValidateEssentialConfig(); err != nil {
-			t.Errorf("web 面が PIPELINE_TIMEOUT を要求している: %v", err)
+			t.Errorf("the web role requires PIPELINE_TIMEOUT: %v", err)
 		}
 	})
 
-	t.Run("dispatch deadline が 0 以下なら落とす", func(t *testing.T) {
+	t.Run("a dispatch deadline at or below 0 fails", func(t *testing.T) {
 		t.Parallel()
 		c := validBase()
 		c.Tasks.DispatchDeadline = 0
 		err := c.ValidateEssentialConfig()
 		if err == nil {
-			t.Fatal("0 が通ってしまった")
+			t.Fatal("0 passed")
 		}
 		if !strings.Contains(err.Error(), "TASK_DISPATCH_DEADLINE") {
-			t.Errorf("エラーに変数名が無い: %v", err)
+			t.Errorf("the error does not name the variable: %v", err)
 		}
 	})
 }
 
-// 環境変数を触るため t.Parallel() は使わない（t.Setenv と併用できない）。
+// It touches environment variables, so no t.Parallel() (it cannot be combined with t.Setenv).
 func TestPipelineTimeoutFromEnv(t *testing.T) {
-	t.Run("書式エラーは既定値へ黙って落とさず起動時に落とす", func(t *testing.T) {
+	t.Run("a format error fails startup instead of falling back to the default", func(t *testing.T) {
 		t.Setenv("SERVER_ROLE", "both")
-		t.Setenv("PIPELINE_TIMEOUT", "25min") // Go の Duration では不正
+		t.Setenv("PIPELINE_TIMEOUT", "25min") // invalid as a Go Duration
 
 		if _, err := LoadConfig(); err == nil {
-			t.Fatal("不正な書式が素通りした")
+			t.Fatal("an invalid format passed")
 		}
 	})
 
-	t.Run("正しい書式は読める", func(t *testing.T) {
+	t.Run("a valid format is read", func(t *testing.T) {
 		t.Setenv("SERVER_ROLE", "both")
 		t.Setenv("PIPELINE_TIMEOUT", "10m")
 		cfg, err := LoadConfig()
@@ -285,7 +285,7 @@ func TestPipelineTimeoutFromEnv(t *testing.T) {
 		}
 	})
 
-	t.Run("未設定なら既定値", func(t *testing.T) {
+	t.Run("unset gives the default", func(t *testing.T) {
 		t.Setenv("SERVER_ROLE", "both")
 		t.Setenv("PIPELINE_TIMEOUT", "")
 		cfg, err := LoadConfig()
@@ -293,11 +293,11 @@ func TestPipelineTimeoutFromEnv(t *testing.T) {
 			t.Fatalf("LoadConfig failed: %v", err)
 		}
 		if cfg.Pipeline.Timeout != 0 {
-			t.Errorf("Pipeline.Timeout = %s, 既定値を持たせないでください", cfg.Pipeline.Timeout)
+			t.Errorf("Pipeline.Timeout = %s; do not give it a default", cfg.Pipeline.Timeout)
 		}
 	})
 
-	t.Run("明示の 0 は無制限として読める", func(t *testing.T) {
+	t.Run("an explicit 0 reads as unlimited", func(t *testing.T) {
 		t.Setenv("SERVER_ROLE", "both")
 		t.Setenv("PIPELINE_TIMEOUT", "0")
 		cfg, err := LoadConfig()
@@ -310,10 +310,10 @@ func TestPipelineTimeoutFromEnv(t *testing.T) {
 	})
 }
 
-// LoadConfig が入れる既定値の検証です。HTTP_TIMEOUT は envDefault と定数が同じ値で
-// あること（片方だけ動かすと、コードが言う既定値と実際に入る値が食い違います）、
-// TASK_DISPATCH_DEADLINE は既定値を持たないことを見ます。
-// PIPELINE_TIMEOUT の同じ確認は TestPipelineTimeoutFromEnv が持っています。
+// Checks the defaults LoadConfig fills in: HTTP_TIMEOUT's envDefault equals its constant
+// (moving only one makes the default the code claims differ from the value actually set), and
+// TASK_DISPATCH_DEADLINE has no default.
+// The same check for PIPELINE_TIMEOUT is in TestPipelineTimeoutFromEnv.
 func TestDefaultsMatchEnvDefaults(t *testing.T) {
 	t.Setenv("SERVER_ROLE", "both")
 	for _, key := range []string{"TASK_DISPATCH_DEADLINE", "HTTP_TIMEOUT", "MAX_DIFF_BYTES"} {
@@ -325,23 +325,23 @@ func TestDefaultsMatchEnvDefaults(t *testing.T) {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
 
-	// TASK_DISPATCH_DEADLINE に既定値は持ちません（出どころはデプロイ設定 1 箇所）。
+	// TASK_DISPATCH_DEADLINE has no default (its single source is the deployment settings).
 	if cfg.Tasks.DispatchDeadline != 0 {
-		t.Errorf("TASK_DISPATCH_DEADLINE = %s, 既定値を持たせないでください", cfg.Tasks.DispatchDeadline)
+		t.Errorf("TASK_DISPATCH_DEADLINE = %s; do not give it a default", cfg.Tasks.DispatchDeadline)
 	}
 	if cfg.HTTP.Timeout != DefaultHTTPTimeout {
-		t.Errorf("HTTP_TIMEOUT の既定 = %s, want %s", cfg.HTTP.Timeout, DefaultHTTPTimeout)
+		t.Errorf("HTTP_TIMEOUT default = %s, want %s", cfg.HTTP.Timeout, DefaultHTTPTimeout)
 	}
-	// ★ 三段のタイムアウトと違い、ここは既定値を持つ側です（理由は MaxDiffBytes の doc）。
+	// ★ Unlike the three-tier timeout, this one has a default (the reason is in MaxDiffBytes's doc).
 	if cfg.Pipeline.MaxDiffBytes != DefaultMaxDiffBytes {
-		t.Errorf("MAX_DIFF_BYTES の既定 = %d, want %d", cfg.Pipeline.MaxDiffBytes, DefaultMaxDiffBytes)
+		t.Errorf("MAX_DIFF_BYTES default = %d, want %d", cfg.Pipeline.MaxDiffBytes, DefaultMaxDiffBytes)
 	}
 }
 
-// 差分の上限は、実測から締めたり緩めたりする値です。再ビルドなしで動かせることと、
-// 狭めたつもりの入力が「無制限」で通らないことを見ます。
+// The diff limit is tightened or loosened from measurements. Checks that it can move without a
+// rebuild, and that input meant to tighten it does not pass as "unlimited".
 func TestMaxDiffBytesFromEnv(t *testing.T) {
-	t.Run("env で上書きできる", func(t *testing.T) {
+	t.Run("env overrides it", func(t *testing.T) {
 		t.Setenv("SERVER_ROLE", "both")
 		t.Setenv("MAX_DIFF_BYTES", "1048576")
 		cfg, err := LoadConfig()
@@ -353,42 +353,41 @@ func TestMaxDiffBytesFromEnv(t *testing.T) {
 		}
 	})
 
-	t.Run("書式エラーは既定値へ黙って落とさず起動時に落とす", func(t *testing.T) {
+	t.Run("a format error fails startup instead of falling back to the default", func(t *testing.T) {
 		t.Setenv("SERVER_ROLE", "both")
 		t.Setenv("MAX_DIFF_BYTES", "320KiB")
 
 		if _, err := LoadConfig(); err == nil {
-			t.Fatal("不正な書式が素通りした")
+			t.Fatal("an invalid format passed")
 		}
 	})
 
-	t.Run("明示の 0 は無制限として通る", func(t *testing.T) {
+	t.Run("an explicit 0 passes as unlimited", func(t *testing.T) {
 		cfg := validBase()
 		cfg.Pipeline.MaxDiffBytes = 0
 
 		if err := cfg.ValidateEssentialConfig(); err != nil {
-			t.Errorf("0（無制限）が弾かれました: %v", err)
+			t.Errorf("0 (unlimited) was rejected: %v", err)
 		}
 	})
 
-	// ★ ライブラリは 0 以下を無視して無制限にします。黙って落とすと、上限を狭めた
-	// つもりの入力が「上限なし」で動きます。
-	t.Run("負値は起動時に落とす", func(t *testing.T) {
+	// ★ The library ignores 0 and below and goes unlimited. Silently falling back would run
+	// input meant to tighten the limit with "no limit".
+	t.Run("a negative value fails startup", func(t *testing.T) {
 		cfg := validBase()
 		cfg.Pipeline.MaxDiffBytes = -1
 
 		err := cfg.ValidateEssentialConfig()
 		if err == nil {
-			t.Fatal("負の上限が素通りした")
+			t.Fatal("a negative limit passed")
 		}
 		if !strings.Contains(err.Error(), "MAX_DIFF_BYTES") {
-			t.Errorf("エラーが原因の env を指していません: %v", err)
+			t.Errorf("the error does not name the offending env var: %v", err)
 		}
 	})
 }
 
-// バケットは名前であって URI ではありません。gs:// 付きで渡されても URI を
-// 二重に組み立てないこと。
+// The bucket is a name, not a URI. Given with gs://, the URI must not be built twice.
 func TestGCSBucketNormalization(t *testing.T) {
 	t.Setenv("SERVER_ROLE", "both")
 	t.Setenv("GCS_REVIEW_BUCKET", " gs://review-archive/ ")
@@ -402,11 +401,11 @@ func TestGCSBucketNormalization(t *testing.T) {
 	}
 }
 
-// 打ち切りは env が無ければ起動時に落ちること。
+// Without the env var, the cut-off fails startup.
 //
-// 三段のタイムアウトはデプロイ先の事情で決まるので、出どころは Terraform 1 箇所に
-// 閉じます。アプリが既定値を持つと同じ数字が 2 箇所に現れ、設定漏れが
-// 「誰も選んでいない値」で動いてしまいます。
+// The three-tier timeout is decided by the deployment, so its single source is Terraform.
+// A default in the app would put the same number in two places, and a missing setting would
+// run on "a value nobody chose".
 func TestDispatchDeadlineIsRequired(t *testing.T) {
 	t.Parallel()
 
@@ -415,9 +414,9 @@ func TestDispatchDeadlineIsRequired(t *testing.T) {
 
 	err := cfg.ValidateEssentialConfig()
 	if err == nil {
-		t.Fatal("未設定が素通りしました")
+		t.Fatal("unset passed")
 	}
 	if !strings.Contains(err.Error(), "TASK_DISPATCH_DEADLINE") {
-		t.Errorf("エラーに変数名がありません: %v", err)
+		t.Errorf("the error does not name the variable: %v", err)
 	}
 }

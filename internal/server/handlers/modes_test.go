@@ -30,17 +30,17 @@ func TestHandleModes_ListsEveryMode(t *testing.T) {
 	for _, key := range []string{"article", "code", "novel"} {
 		mode, ok := byKey[key]
 		if !ok {
-			t.Errorf("モード %q がありません: %+v", key, got.Modes)
+			t.Errorf("mode %q is missing: %+v", key, got.Modes)
 			continue
 		}
-		// 説明が空だと、呼び出し元はモードを選べません。
+		// With an empty description, callers cannot choose a mode.
 		if mode.Label == "" || mode.Direction == "" || mode.UseWhen == "" {
-			t.Errorf("%s: 説明が欠けています: %+v", key, mode)
+			t.Errorf("%s: the description is missing: %+v", key, mode)
 		}
 	}
 
-	// excerpt はプロンプト側の宣言をそのまま出します。
+	// excerpt passes the prompt's declaration through unchanged.
 	if byKey["code"].Excerpt != string(assets.ExcerptCode) {
-		t.Errorf("code の excerpt = %q, want %q", byKey["code"].Excerpt, assets.ExcerptCode)
+		t.Errorf("code excerpt = %q, want %q", byKey["code"].Excerpt, assets.ExcerptCode)
 	}
 }

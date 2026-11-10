@@ -11,14 +11,14 @@ import (
 	"github.com/shouni/go-review-kit/review"
 )
 
-// baseRepoDirName は、クローン先を集めるディレクトリ名です。
+// baseRepoDirName is the name of the directory that collects the clones.
 const baseRepoDirName = "reviewer-repos"
 
-// NewDiffSourceFactory は review.DiffSourceFactory を構築します。
+// NewDiffSourceFactory builds a review.DiffSourceFactory.
 //
-// go-git 実装（GoGit）を選ぶのは、本サービスが Cloud Run 上で動き、インスタンスが
-// 使い捨てられるためです。git バイナリを必要とせず、Close で作業ディレクトリごと
-// 消えるので、後始末の取りこぼしがそのまま容量として残りません。
+// The go-git implementation (GoGit) is chosen because this service runs on Cloud Run, where
+// instances are disposable. It needs no git binary, and Close removes the whole working
+// directory, so a missed cleanup does not stay behind as used disk space.
 func NewDiffSourceFactory(sshKeyPath string) (review.DiffSourceFactory, error) {
 	root := filepath.Join(os.TempDir(), baseRepoDirName)
 
@@ -27,17 +27,17 @@ func NewDiffSourceFactory(sshKeyPath string) (review.DiffSourceFactory, error) {
 		gitsource.WithDirNamer(uniqueRepoDirName),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("DiffSourceFactoryの構築に失敗しました: %w", err)
+		return nil, fmt.Errorf("failed to build the DiffSourceFactory: %w", err)
 	}
 	return factory, nil
 }
 
-// uniqueRepoDirName は、実行ごとに重複しないクローン先の名前を返します。
+// uniqueRepoDirName returns a clone directory name unique to each run.
 //
-// 既定の命名はリポジトリURLだけから決まるため、同じリポジトリのレビューが同時に走ると
-// 同じディレクトリを奪い合います。GoGit は Close で作業ディレクトリを削除するので、
-// 先に終わった側の後始末が、まだ差分を取っている側の足元を消してしまいます。
-// 実行ごとに固有の名前にして、その競合を避けます。
+// The default name is derived from the repository URL alone, so concurrent reviews of the
+// same repository fight over one directory. GoGit deletes the working directory on Close, so
+// the cleanup of whichever finishes first pulls the ground from under the one still taking
+// its diff. A name unique to each run avoids that race.
 func uniqueRepoDirName(repoURL string) string {
 	return gitsource.RepoDirName(repoURL) + "-" + uuid.NewV4().String()
 }

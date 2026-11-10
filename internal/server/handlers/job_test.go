@@ -34,24 +34,24 @@ func TestHandleJob_ReturnsStatus(t *testing.T) {
 	}
 
 	got := decodeJSON[map[string]any](t, rec)
-	// jobstatus.Status を埋め込んでいるので、JSON はフラットに並びます。
+	// jobstatus.Status is embedded, so the JSON is flat.
 	for _, key := range []string{"job_id", "state", "mode", "model_name", "decision"} {
 		if _, ok := got[key]; !ok {
-			t.Errorf("%q が応答にありません: %v", key, got)
+			t.Errorf("%q is not in the response: %v", key, got)
 		}
 	}
-	// 指摘の全文はポーリング先に載せません。
+	// The full findings are not in the polled response.
 	if _, ok := got["report"]; ok {
-		t.Errorf("進行状況に report が含まれています: %v", got)
+		t.Errorf("the progress contains report: %v", got)
 	}
-	// 成果物が無い間は取得先も出しません（キーの有無で「まだ無い」が分かります）。
+	// Without an artifact its location is not given either (the key's absence means "not there yet").
 	if _, ok := got["report_url"]; ok {
-		t.Errorf("成果物が無いのに report_url があります: %v", got)
+		t.Errorf("report_url is set without an artifact: %v", got)
 	}
 }
 
-// 成果物ができたら、その取得先を同じ応答に載せること。
-// 呼び出し元がパスの規約を知らなくても全文へ辿れるようにします。
+// Once the artifact exists, its location is in the same response.
+// Callers reach the full text without knowing the path convention.
 func TestHandleJob_LinksReportWhenPresent(t *testing.T) {
 	t.Parallel()
 
@@ -70,8 +70,8 @@ func TestHandleJob_LinksReportWhenPresent(t *testing.T) {
 	}
 }
 
-// HTML を求められたら、進行状況ではなく詳細画面を返すこと。
-// ブラウザは投入直後の Location からここへ来ます。
+// When HTML is asked for, the detail page is returned instead of the progress.
+// Browsers arrive here from the Location right after submission.
 func TestHandleJob_RendersDetailPageForHTML(t *testing.T) {
 	t.Parallel()
 
@@ -91,7 +91,7 @@ func TestHandleJob_RendersDetailPageForHTML(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/html", ct)
 	}
 	if history.gotJobID != "20260810-213000-a1b2c3d4" {
-		t.Errorf("詳細の取得先が違います: %q", history.gotJobID)
+		t.Errorf("the detail was fetched for the wrong job: %q", history.gotJobID)
 	}
 }
 
@@ -128,8 +128,8 @@ func TestHandleJobReport_ReturnsReport(t *testing.T) {
 	}
 }
 
-// 「まだ無い」と「もう出ない」を状態コードで分けること。
-// 前者は待てば出るので 409、後者は待っても出ないので 404 です。
+// "Not there yet" and "never coming" get different status codes.
+// The former appears with waiting, so 409; the latter never does, so 404.
 func TestHandleJobReport_DistinguishesPendingFromAbsent(t *testing.T) {
 	t.Parallel()
 
@@ -138,10 +138,10 @@ func TestHandleJobReport_DistinguishesPendingFromAbsent(t *testing.T) {
 		state jobstatus.State
 		want  int
 	}{
-		{name: "実行中", state: jobstatus.StateRunning, want: http.StatusConflict},
-		{name: "受付済み", state: jobstatus.StateQueued, want: http.StatusConflict},
-		{name: "失敗", state: jobstatus.StateFailed, want: http.StatusNotFound},
-		{name: "スキップ", state: jobstatus.StateSucceeded, want: http.StatusNotFound},
+		{name: "running", state: jobstatus.StateRunning, want: http.StatusConflict},
+		{name: "queued", state: jobstatus.StateQueued, want: http.StatusConflict},
+		{name: "failed", state: jobstatus.StateFailed, want: http.StatusNotFound},
+		{name: "skipped", state: jobstatus.StateSucceeded, want: http.StatusNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -158,14 +158,14 @@ func TestHandleJobReport_DistinguishesPendingFromAbsent(t *testing.T) {
 				t.Fatalf("status = %d, want %d\n%s", rec.Code, tt.want, rec.Body.String())
 			}
 			if got := decodeJSON[errorBody](t, rec); got.Error == "" {
-				t.Error("エラー本文が空です")
+				t.Error("the error body is empty")
 			}
 		})
 	}
 }
 
-// 「まだ無い」と「読めなかった」を別の状態コードへ割り当てること
-// （同一視したときに何が起きるかは recordErrorStatus の doc）。
+// "Not there yet" and "could not be read" map to different status codes
+// (what happens when they are conflated is in recordErrorStatus's doc).
 func TestHandleJob_SeparatesMissingFromUnreadable(t *testing.T) {
 	t.Parallel()
 
@@ -174,9 +174,9 @@ func TestHandleJob_SeparatesMissingFromUnreadable(t *testing.T) {
 		err  error
 		want int
 	}{
-		{name: "未記録", err: jobstatus.ErrNotFound, want: http.StatusNotFound},
-		{name: "読めない", err: jobstatus.ErrUnavailable, want: http.StatusBadGateway},
-		{name: "その他", err: errors.New("boom"), want: http.StatusInternalServerError},
+		{name: "not recorded", err: jobstatus.ErrNotFound, want: http.StatusNotFound},
+		{name: "unreadable", err: jobstatus.ErrUnavailable, want: http.StatusBadGateway},
+		{name: "other", err: errors.New("boom"), want: http.StatusInternalServerError},
 	}
 
 	for _, tt := range tests {
@@ -192,7 +192,7 @@ func TestHandleJob_SeparatesMissingFromUnreadable(t *testing.T) {
 				t.Fatalf("status = %d, want %d\n%s", rec.Code, tt.want, rec.Body.String())
 			}
 			if got := decodeJSON[errorBody](t, rec); got.Error == "" {
-				t.Error("エラー本文が空です")
+				t.Error("the error body is empty")
 			}
 		})
 	}
@@ -211,9 +211,9 @@ func TestHandleJob_RejectsInvalidJobID(t *testing.T) {
 	}
 }
 
-// ジョブ ID はストレージのパス要素になるため、traversal は切り詰めてから使うこと。
+// The job ID becomes a storage path element, so traversal is trimmed before use.
 //
-// Sanitize はエラーにせず末尾要素だけを残します。詳細画面と同じ扱いです。
+// Sanitize does not fail; it keeps only the last element. Same as the detail page.
 func TestHandleJob_StripsPathTraversal(t *testing.T) {
 	t.Parallel()
 
@@ -223,7 +223,7 @@ func TestHandleJob_StripsPathTraversal(t *testing.T) {
 	req := withURLParam(jsonRequest(http.MethodGet, "/jobs/x"), "jobID", "../../etc/passwd")
 	h.HandleJob(rec, req)
 
-	// 切り詰めた ID で問い合わせた結果として 404 になります（400 でも 500 でもありません）。
+	// The query with the trimmed ID results in a 404 (neither 400 nor 500).
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404\n%s", rec.Code, rec.Body.String())
 	}
@@ -247,17 +247,17 @@ func TestHandleJobDelete_ConflictAsJSON(t *testing.T) {
 		t.Fatalf("status = %d, want 409\n%s", rec.Code, rec.Body.String())
 	}
 	if got := decodeJSON[errorBody](t, rec); got.Error == "" {
-		t.Error("エラー本文が空です")
+		t.Error("the error body is empty")
 	}
 	if history.deleteCalls != 0 {
-		t.Error("実行中なのに削除が呼ばれました")
+		t.Error("delete was called although it is running")
 	}
 }
 
-// detailRequest は chi のルートパラメータを埋めたリクエストを返します。
+// detailRequest returns a request with the chi route parameter filled in.
 //
-// パスは固定にし、検証したい値はルートパラメータにだけ入れます。空白などを含む値を
-// パスへ埋めると httptest.NewRequest 側が panic し、ハンドラーへ届く前に落ちるためです。
+// The path is fixed and the value under test goes only into the route parameter. A value with
+// spaces and the like in the path makes httptest.NewRequest panic before reaching the handler.
 func detailRequest(jobID string) *http.Request {
 	req := httptest.NewRequest(http.MethodGet, "/jobs/x", nil)
 
@@ -292,12 +292,12 @@ func TestHandleJob_PageRendersReport(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{"概ね良好です。", "軽微な指摘が1件", "auth.go:42", "未使用です。", "削除してください。"} {
 		if !strings.Contains(body, want) {
-			t.Errorf("詳細に %q が含まれていません", want)
+			t.Errorf("the detail does not contain %q", want)
 		}
 	}
 }
 
-// 成果物がまだ無い（実行中・失敗・スキップ）場合も、進行状況までは見せます。
+// Without an artifact yet (running, failed, skipped), the progress is still shown.
 func TestHandleJob_PageWithoutReport(t *testing.T) {
 	history := &recordingHistory{
 		detail: domain.ReviewDetail{Status: sampleStatus(jobstatus.StateRunning, "")},
@@ -310,12 +310,12 @@ func TestHandleJob_PageWithoutReport(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	if !strings.Contains(w.Body.String(), "結果がまだありません") {
-		t.Error("結果が無いときの案内が出ていません")
+		t.Error("the no-result message is not shown")
 	}
 }
 
-// ジョブ ID はストレージのパス要素になるため、受け取った時点で正規化します。
-// jobid.Sanitize は末尾要素だけを取り出すので、パス要素は下流へ渡りません。
+// The job ID becomes a storage path element, so it is sanitised on receipt.
+// jobid.Sanitize takes only the last element, so no path elements reach downstream.
 func TestHandleJob_PageStripsPathTraversal(t *testing.T) {
 	history := &recordingHistory{}
 
@@ -323,25 +323,25 @@ func TestHandleJob_PageStripsPathTraversal(t *testing.T) {
 	buildHandlerWithHistory(t, history).HandleJob(w, detailRequest("../../etc/passwd"))
 
 	if strings.ContainsAny(history.gotJobID, "/.") {
-		t.Fatalf("パス要素が下流へ渡っています: %q", history.gotJobID)
+		t.Fatalf("path elements reached downstream: %q", history.gotJobID)
 	}
 	if history.gotJobID != "passwd" {
-		t.Errorf("正規化後のID = %q, want %q", history.gotJobID, "passwd")
+		t.Errorf("sanitised ID = %q, want %q", history.gotJobID, "passwd")
 	}
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", w.Code)
 	}
 }
 
-// 正規化しても形式を満たさない値は弾きます。
+// A value still malformed after sanitising is rejected.
 func TestHandleJob_PageRejectsInvalidJobID(t *testing.T) {
 	tests := []struct {
 		name  string
 		jobID string
 	}{
-		{"空", " "},
-		{"記号始まり", "-bad-id"},
-		{"使えない文字", "job$id"},
+		{"empty", " "},
+		{"starts with a symbol", "-bad-id"},
+		{"invalid character", "job$id"},
 	}
 
 	for _, tt := range tests {
@@ -355,7 +355,7 @@ func TestHandleJob_PageRejectsInvalidJobID(t *testing.T) {
 				t.Fatalf("status = %d, want 400", w.Code)
 			}
 			if history.gotJobID != "" {
-				t.Errorf("不正なIDでストレージを読みにいっています: %q", history.gotJobID)
+				t.Errorf("storage is read with an invalid ID: %q", history.gotJobID)
 			}
 		})
 	}
@@ -382,7 +382,7 @@ func TestHandleJob_PageGetError(t *testing.T) {
 		t.Fatalf("status = %d, want 500", w.Code)
 	}
 	if strings.Contains(w.Body.String(), "gcs down") {
-		t.Error("内部のエラー内容が画面へ出ています")
+		t.Error("internal error details are shown on screen")
 	}
 }
 
@@ -406,22 +406,22 @@ func TestHandleJobDelete(t *testing.T) {
 		t.Fatalf("status = %d, want 204", w.Code)
 	}
 	if history.deleteCalls != 1 {
-		t.Errorf("削除回数 = %d, want 1", history.deleteCalls)
+		t.Errorf("delete calls = %d, want 1", history.deleteCalls)
 	}
 	if history.deletedJobID != "20260810-213000-a1b2c3d4" {
-		t.Errorf("削除対象 = %q", history.deletedJobID)
+		t.Errorf("deleted job = %q", history.deletedJobID)
 	}
 }
 
-// 画面にボタンが出ていなくても、直接呼ばれた実行中の削除を弾くこと
-// （消せない理由は domain.JobStatus.Deletable）。
+// Even without the button on screen, a direct delete of a running job is rejected
+// (why it cannot be deleted is in domain.JobStatus.Deletable).
 func TestHandleJobDeleteRejectsRunning(t *testing.T) {
 	tests := []struct {
 		name  string
 		state jobstatus.State
 	}{
-		{"受付済み", jobstatus.StateQueued},
-		{"実行中", jobstatus.StateRunning},
+		{"queued", jobstatus.StateQueued},
+		{"running", jobstatus.StateRunning},
 	}
 
 	for _, tt := range tests {
@@ -437,7 +437,7 @@ func TestHandleJobDeleteRejectsRunning(t *testing.T) {
 				t.Fatalf("status = %d, want 409", w.Code)
 			}
 			if history.deleteCalls != 0 {
-				t.Errorf("削除が実行されています: %d 回", history.deleteCalls)
+				t.Errorf("delete ran: %d calls", history.deleteCalls)
 			}
 		})
 	}
@@ -451,19 +451,19 @@ func TestHandleJobDeleteErrors(t *testing.T) {
 		wantCode int
 	}{
 		{
-			name:     "不正なジョブID",
+			name:     "invalid job ID",
 			jobID:    "-bad-id",
 			history:  &recordingHistory{},
 			wantCode: http.StatusBadRequest,
 		},
 		{
-			name:     "見つからない",
+			name:     "not found",
 			jobID:    "20260810-213000-a1b2c3d4",
 			history:  &recordingHistory{getErr: jobstatus.ErrNotFound},
 			wantCode: http.StatusNotFound,
 		},
 		{
-			name:  "削除に失敗",
+			name:  "delete fails",
 			jobID: "20260810-213000-a1b2c3d4",
 			history: &recordingHistory{
 				detail:    domain.ReviewDetail{Status: sampleStatus(jobstatus.StateSucceeded, review.StatusSucceeded)},
@@ -482,23 +482,23 @@ func TestHandleJobDeleteErrors(t *testing.T) {
 				t.Fatalf("status = %d, want %d", w.Code, tt.wantCode)
 			}
 			if strings.Contains(w.Body.String(), "gcs down") {
-				t.Error("内部のエラー内容が応答に出ています")
+				t.Error("internal error details are in the response")
 			}
 		})
 	}
 }
 
-// 削除できる状態のときだけボタンを描くこと。実行中に出すと押せてしまいます。
+// The button is drawn only when deletion is allowed. Shown while running, it could be pressed.
 func TestJobDetailShowsDeleteButtonOnlyWhenDeletable(t *testing.T) {
 	tests := []struct {
 		name  string
 		state jobstatus.State
 		want  bool
 	}{
-		{"完了", jobstatus.StateSucceeded, true},
-		{"失敗", jobstatus.StateFailed, true},
-		{"実行中", jobstatus.StateRunning, false},
-		{"受付済み", jobstatus.StateQueued, false},
+		{"succeeded", jobstatus.StateSucceeded, true},
+		{"failed", jobstatus.StateFailed, true},
+		{"running", jobstatus.StateRunning, false},
+		{"queued", jobstatus.StateQueued, false},
 	}
 
 	for _, tt := range tests {
@@ -511,16 +511,16 @@ func TestJobDetailShowsDeleteButtonOnlyWhenDeletable(t *testing.T) {
 			buildHandlerWithHistory(t, history).HandleJob(w, detailRequest("20260810-213000-a1b2c3d4"))
 
 			if got := strings.Contains(w.Body.String(), "delete-review-btn"); got != tt.want {
-				t.Errorf("削除ボタンの表示 = %v, want %v", got, tt.want)
+				t.Errorf("delete button shown = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-// 再依頼のリンクは、もう動いていない依頼にだけ出すこと。
+// The resubmit link is shown only for requests no longer in flight.
 //
-// queued / running に出すと、結果を待っているレビューがもう 1 本走ります。
-// 依頼内容が記録されていないジョブに出さないのは、開いても埋まらないためです。
+// Shown for queued / running, another copy of a review still awaiting its result would run.
+// It is not shown for jobs without a recorded request because opening it fills nothing.
 func TestJobDetailShowsRerunLinkOnlyWhenRerunnable(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -528,11 +528,11 @@ func TestJobDetailShowsRerunLinkOnlyWhenRerunnable(t *testing.T) {
 		repoURL string
 		want    bool
 	}{
-		{"完了", jobstatus.StateSucceeded, "git@github.com:org/repo.git", true},
-		{"失敗", jobstatus.StateFailed, "git@github.com:org/repo.git", true},
-		{"実行中", jobstatus.StateRunning, "git@github.com:org/repo.git", false},
-		{"受付済み", jobstatus.StateQueued, "git@github.com:org/repo.git", false},
-		{"依頼内容の記録が無い", jobstatus.StateFailed, "", false},
+		{"succeeded", jobstatus.StateSucceeded, "git@github.com:org/repo.git", true},
+		{"failed", jobstatus.StateFailed, "git@github.com:org/repo.git", true},
+		{"running", jobstatus.StateRunning, "git@github.com:org/repo.git", false},
+		{"queued", jobstatus.StateQueued, "git@github.com:org/repo.git", false},
+		{"no recorded request", jobstatus.StateFailed, "", false},
 	}
 
 	for _, tt := range tests {
@@ -545,17 +545,17 @@ func TestJobDetailShowsRerunLinkOnlyWhenRerunnable(t *testing.T) {
 			buildHandlerWithHistory(t, history).HandleJob(w, detailRequest("20260810-213000-a1b2c3d4"))
 
 			if got := strings.Contains(w.Body.String(), "/?from="+status.JobID); got != tt.want {
-				t.Errorf("再依頼リンクの表示 = %v, want %v", got, tt.want)
+				t.Errorf("resubmit link shown = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-// 削除ボタンと一緒に、送信に使う CSRF トークンが実際に埋まること。
+// Along with the delete button, the CSRF token used to send it is actually embedded.
 //
-// ボタンの有無だけを見ていたため、トークンが空のまま描画される不具合を見逃していました。
-// 空だと X-CSRF-Token に空文字が載り、削除が 403 で必ず失敗します。ミドルウェアを
-// 通したうえで値の中身まで確かめます。
+// Checking only for the button once missed a bug that rendered the token empty. Empty, an empty
+// string goes into X-CSRF-Token and deletion always fails with a 403. This goes through the
+// middleware and checks the value itself.
 func TestJobDetailRendersCSRFTokenForDelete(t *testing.T) {
 	authHandler, err := session.New(session.Config{
 		ClientID:      "client-id",
@@ -572,8 +572,8 @@ func TestJobDetailRendersCSRFTokenForDelete(t *testing.T) {
 	history := &recordingHistory{
 		detail: domain.ReviewDetail{Status: sampleStatus(jobstatus.StateSucceeded, review.StatusSucceeded)},
 	}
-	// 見たいのは「コンテキストのトークンがテンプレートへ届くか」なので、
-	// 認証を一往復させず直接載せます（発行そのものは gcp-kit 側のテストが見ます）。
+	// The point is "does the context's token reach the template", so it is put on directly
+	// without an authentication round trip (gcp-kit's tests cover issuing it).
 	_ = authHandler
 	handler := http.HandlerFunc(buildHandlerWithHistory(t, history).HandleJob)
 
@@ -588,17 +588,17 @@ func TestJobDetailRendersCSRFTokenForDelete(t *testing.T) {
 
 	matched := regexp.MustCompile(`id="csrf_token" value="([^"]+)"`).FindStringSubmatch(w.Body.String())
 	if matched == nil {
-		t.Fatalf("CSRFトークンが空のまま描画されています: %s", w.Body.String())
+		t.Fatalf("the CSRF token is rendered empty: %s", w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), "delete-review-btn") {
-		t.Error("削除ボタンが描画されていません")
+		t.Error("the delete button is not rendered")
 	}
 }
 
-// ★ 途中で切れたレビューは、画面でそれと分かること。
+// ★ A review cut off midway is recognisable as such on screen.
 //
-// 不完全な結果を黙って完全なものとして見せない、が要点です。ここが無いと、
-// 読む側は「指摘 1 件のレビュー」として受け取り、切れた先にあったものを知る手段を失います。
+// The point is never to present an incomplete result as complete. Without this, the reader takes
+// it as "a review with 1 finding" and has no way to know what lay beyond the cut.
 func TestHandleJob_PageShowsTruncatedAndMetrics(t *testing.T) {
 	status := sampleStatus(jobstatus.StateSucceeded, review.StatusSucceeded)
 	status.Truncated = true
@@ -621,20 +621,20 @@ func TestHandleJob_PageShowsTruncatedAndMetrics(t *testing.T) {
 	body := html.UnescapeString(rec.Body.String())
 
 	for _, want := range []string{
-		"部分",         // バッジ
-		"完結していた指摘だけ", // 何が起きたかの説明
-		"320 KiB",    // 差分の大きさ（MAX_DIFF_BYTES と見比べる値）
-		"2 分 32 秒",   // 所要時間
-		"5 回",        // ツール呼び出し
-		"63950",      // 出力トークン（64Ki への距離）
+		"部分",         // badge
+		"完結していた指摘だけ", // explanation of what happened
+		"320 KiB",    // diff size (compared against MAX_DIFF_BYTES)
+		"2 分 32 秒",   // duration
+		"5 回",        // tool calls
+		"63950",      // output tokens (distance to 64Ki)
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("詳細画面に %q がありません", want)
+			t.Errorf("the detail page lacks %q", want)
 		}
 	}
 }
 
-// 計測値が無い実行（旧い記録や、レビューへ到達しなかったもの）でも描画できること。
+// A run without measurements (old records, or runs that never reached the review) still renders.
 func TestHandleJob_PageRendersWithoutMetrics(t *testing.T) {
 	status := sampleStatus(jobstatus.StateFailed, review.StatusFailed)
 	h := buildHandlerWithHistory(t, &recordingHistory{detail: domain.ReviewDetail{Status: status}})
@@ -647,6 +647,6 @@ func TestHandleJob_PageRendersWithoutMetrics(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	if body := rec.Body.String(); strings.Contains(body, "部分") {
-		t.Error("切れていないのに部分バッジが出ています")
+		t.Error("the partial badge is shown although nothing was cut")
 	}
 }

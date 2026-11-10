@@ -1,5 +1,5 @@
 # -----------------------------------------------
-# Git/バージョン管理システム
+# Git / version control
 # -----------------------------------------------
 .git
 .gitignore
@@ -7,60 +7,60 @@
 .svn
 
 # -----------------------------------------------
-# Go言語特有のファイル
+# Go-specific files
 # -----------------------------------------------
-# テスト実行用のバイナリ
+# Test binaries
 *.test
-# テストソースコード
+# Test sources
 *_test.go
 
 # -----------------------------------------------
-# IDE/OS の設定ファイルと一時ファイル
+# IDE / OS settings and temporary files
 # -----------------------------------------------
-# IntelliJ IDEA の設定
+# IntelliJ IDEA settings
 .idea/
-# VS Code の設定
+# VS Code settings
 .vscode/
-# Claude Code のローカル設定
+# Claude Code local settings
 .claude/
-# IntelliJ IDEA のプロジェクトファイル
+# IntelliJ IDEA project files
 *.iml
-# macOS のメタデータ
+# macOS metadata
 .DS_Store
-# Windows のメタデータ
+# Windows metadata
 Thumbs.db
 
 # -----------------------------------------------
-# ドキュメント/設定ファイル
+# Documentation / settings files
 # -----------------------------------------------
 docs/
 # README.md
 README.md
-# ライセンスファイル
+# License file
 LICENSE
-# Cloud Run Job の設定 YAML (設定自体はデプロイに必要だが、イメージビルドには不要)
+# Cloud Run Job settings YAML (needed for deployment, not for the image build)
 job-config*.yaml
-# Cloud Build 設定 (ビルドコンテキストには不要)
+# Cloud Build settings (not needed in the build context)
 cloudbuild.yaml
 
 # -----------------------------------------------
-# 運用スクリプト (イメージビルドには不要)
+# Operations scripts (not needed for the image build)
 # -----------------------------------------------
 scripts/
 
 # -----------------------------------------------
-# 機密情報 (最重要)
+# Secrets (most important)
 # -----------------------------------------------
-# ローカル環境変数や機密情報を含むファイル
+# Files holding local environment variables or secrets
 .env
 .env.*
 !.env.example
 !.env.sample
-# SSHキーファイル、その他の秘密鍵ファイル
+# SSH keys and other private key files
 *.key
 
 # -----------------------------------------------
-# Go のビルド成果物・カバレッジ (.gitignore と同期)
+# Go build output and coverage (kept in sync with .gitignore)
 # -----------------------------------------------
 *.exe
 *.dll

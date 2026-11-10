@@ -30,8 +30,8 @@ type noopPipeline struct{}
 
 func (noopPipeline) Execute(context.Context, domain.ReviewRequest) error { return nil }
 
-// newTestAuthHandler は、テスト用の auth.Handler を返します。
-// OAuth の実際のやり取りは行わず、セッション判定と CSRF 検証だけを対象にします。
+// newTestAuthHandler returns an auth.Handler for tests.
+// It performs no real OAuth exchange and covers only session checks and CSRF verification.
 func newTestAuthHandler(t *testing.T) *session.Handler {
 	t.Helper()
 
@@ -84,7 +84,7 @@ func newRouterForTest(t *testing.T) http.Handler {
 
 	workerHandler := worker.NewHandler[domain.ReviewRequest](noopPipeline{})
 
-	// audience と許可サービスアカウントの両方が揃わないと検証は常に失敗します。
+	// Without both the audience and the allowed service accounts, verification always fails.
 	appHandlers := &builder.AppHandlers{
 		Auth:     authHandler,
 		Web:      webHandler,
@@ -142,12 +142,12 @@ func TestNewRouter_RouteReachabilityAndGuards(t *testing.T) {
 	}
 }
 
-// GET リクエストではセッションに CSRF トークンが無ければ自動生成され、
-// context 経由でテンプレートに渡ること。
+// On a GET request, a CSRF token is generated when the session has none and reaches the
+// template through the context.
 //
-// これが壊れるとフォームにトークンが埋まらず、submit が全部弾かれます。
-// ミドルウェアは gcp-kit の実装ですが、handlers 側が同じキーで読めているか
-// （context.go の委譲が効いているか）はこちらで確かめる必要があります。
+// If this breaks, the form gets no token and every submit is rejected. The middleware is
+// gcp-kit's, but whether the handlers read it with the same key (whether the delegation in
+// context.go works) has to be checked here.
 func TestCSRFAutoGenPopulatesContextOnGet(t *testing.T) {
 	t.Parallel()
 
@@ -162,13 +162,13 @@ func TestCSRFAutoGenPopulatesContextOnGet(t *testing.T) {
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 
 	if token == "" {
-		t.Fatal("GET リクエストで CSRF トークンが自動生成されていない")
+		t.Fatal("no CSRF token was generated on a GET request")
 	}
 }
 
-// POST では CSRF トークンを自動生成しないこと。
-// 生成してしまうと、トークンを持たないリクエストに正当なトークンを与えることになり、
-// CSRF 検証が意味をなさなくなります。
+// A POST does not generate a CSRF token.
+// Generating one would hand a valid token to a request that had none, making CSRF verification
+// meaningless.
 func TestCSRFAutoGenSkipsPost(t *testing.T) {
 	t.Parallel()
 
@@ -183,11 +183,11 @@ func TestCSRFAutoGenSkipsPost(t *testing.T) {
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 
 	if token != "" {
-		t.Fatalf("POST で CSRF トークンが自動生成されている: %q", token)
+		t.Fatalf("a CSRF token was generated on POST: %q", token)
 	}
 }
 
-// 認証済みのフォーム描画で、context のトークンが実際に埋め込まれること。
+// When an authenticated form is rendered, the context's token is actually embedded.
 func TestFormRendersCSRFTokenFromMiddleware(t *testing.T) {
 	t.Parallel()
 
@@ -214,12 +214,12 @@ func TestFormRendersCSRFTokenFromMiddleware(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	if !regexp.MustCompile(`name="csrf_token" value="[^"]+"`).MatchString(w.Body.String()) {
-		t.Fatalf("フォームに CSRF トークンが埋まっていません: %s", w.Body.String())
+		t.Fatalf("the form has no CSRF token: %s", w.Body.String())
 	}
 }
 
-// 静的ファイルは認証の外側で配信されること。
-// 認証の内側に入れると、ログイン画面でスタイルが当たりません。
+// Static files are served outside authentication.
+// Inside it, the login page would get no styles.
 func TestStaticFilesNeedNoAuth(t *testing.T) {
 	t.Parallel()
 
@@ -234,13 +234,13 @@ func TestStaticFilesNeedNoAuth(t *testing.T) {
 				t.Fatalf("status = %d, want 200", w.Code)
 			}
 			if w.Header().Get("Cache-Control") == "" {
-				t.Error("Cache-Control が設定されていません")
+				t.Error("Cache-Control is not set")
 			}
 		})
 	}
 }
 
-// 削除は認証の内側にあること。未認証で消せてはいけません。
+// Deletion sits inside authentication. It must not work unauthenticated.
 func TestDeleteRequiresAuth(t *testing.T) {
 	t.Parallel()
 
@@ -250,11 +250,11 @@ func TestDeleteRequiresAuth(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/jobs/20260810-213000-a1b2c3d4", nil))
 
 	if w.Code == http.StatusNoContent {
-		t.Fatal("未認証の削除が通っています")
+		t.Fatal("an unauthenticated deletion passed")
 	}
 }
 
-// CSP が全レスポンスに付き、script-src が緩められていないこと。
+// Every response carries the CSP, and script-src is not loosened.
 func TestResponsesCarryContentSecurityPolicy(t *testing.T) {
 	t.Parallel()
 
@@ -264,25 +264,25 @@ func TestResponsesCarryContentSecurityPolicy(t *testing.T) {
 
 	policy := rec.Header().Get("Content-Security-Policy")
 	if policy == "" {
-		t.Fatal("Content-Security-Policy が付いていない")
+		t.Fatal("Content-Security-Policy is missing")
 	}
 	for _, want := range []string{"default-src 'self'", "script-src 'self'", "object-src 'none'", "frame-ancestors 'none'"} {
 		if !strings.Contains(policy, want) {
-			t.Errorf("CSP に %q が無い: %s", want, policy)
+			t.Errorf("the CSP lacks %q: %s", want, policy)
 		}
 	}
-	// script-src の 'unsafe-inline' は、review_form.html からインラインスクリプトを
-	// 外した意味を消します（assets の TestTemplatesHaveNoInlineScripts が対です）。
+	// 'unsafe-inline' in script-src would undo the point of moving the inline script out of
+	// review_form.html (its counterpart is TestTemplatesHaveNoInlineScripts in assets).
 	scriptSrc := cspDirective(policy, "script-src")
 	if scriptSrc == "" {
-		t.Fatalf("script-src が無い: %s", policy)
+		t.Fatalf("script-src is missing: %s", policy)
 	}
 	if strings.Contains(scriptSrc, "unsafe-inline") || strings.Contains(scriptSrc, "unsafe-eval") {
-		t.Errorf("script-src が緩められています: %s", scriptSrc)
+		t.Errorf("script-src is loosened: %s", scriptSrc)
 	}
 }
 
-// cspDirective は CSP から 1 ディレクティブ分を取り出します。無ければ空文字を返します。
+// cspDirective extracts one directive from the CSP. It returns an empty string when absent.
 func cspDirective(policy, name string) string {
 	for directive := range strings.SplitSeq(policy, ";") {
 		directive = strings.TrimSpace(directive)
@@ -293,8 +293,8 @@ func cspDirective(policy, name string) string {
 	return ""
 }
 
-// 圧縮が効いていること。画面は日本語 UTF-8（1 文字 3 バイト）でよく縮むのに、
-// これまで無圧縮で配信していました。
+// Compression applies. The screens are Japanese UTF-8 (3 bytes per character) and shrink well,
+// yet they used to be served uncompressed.
 func TestCompressibleResponsesAreCompressed(t *testing.T) {
 	t.Parallel()
 
@@ -317,18 +317,18 @@ func TestCompressibleResponsesAreCompressed(t *testing.T) {
 
 	body, err := io.ReadAll(reader)
 	if err != nil {
-		t.Fatalf("解凍できない: %v", err)
+		t.Fatalf("cannot decompress: %v", err)
 	}
 	if !strings.Contains(string(body), "Bootstrap") {
-		t.Error("解凍した中身が Bootstrap の CSS でない")
+		t.Error("the decompressed content is not Bootstrap's CSS")
 	}
 	if len(body) <= rec.Body.Len() {
-		t.Errorf("圧縮後 %d バイトが元の %d バイトを下回っていない", rec.Body.Len(), len(body))
+		t.Errorf("compressed %d bytes is not below the original %d bytes", rec.Body.Len(), len(body))
 	}
 }
 
-// CSP 以外の防御ヘッダーも全レスポンスに付くこと。どれも 1 行で入る割に、
-// 抜けても画面は正常に見えるため気付けません。
+// Every response carries the other protective headers besides the CSP too. Each takes one line,
+// yet a missing one goes unnoticed because the screens look normal.
 func TestResponsesCarrySecurityHeaders(t *testing.T) {
 	router := newRouterForTest(t)
 	rec := httptest.NewRecorder()
@@ -344,21 +344,21 @@ func TestResponsesCarrySecurityHeaders(t *testing.T) {
 			t.Errorf("%s = %q, want %q", name, got, value)
 		}
 	}
-	// autoplay は塞ぎません（メディア再生が壊れます）。
+	// autoplay is not blocked (media playback would break).
 	policy := rec.Header().Get("Permissions-Policy")
 	if policy == "" {
-		t.Error("Permissions-Policy が付いていない")
+		t.Error("Permissions-Policy is missing")
 	}
 	if strings.Contains(policy, "autoplay") {
-		t.Errorf("Permissions-Policy が autoplay を塞いでいます: %s", policy)
+		t.Errorf("Permissions-Policy blocks autoplay: %s", policy)
 	}
 }
 
-// loggedInCookie は、h でログイン済みのセッションを作り、そのクッキーを返します。
+// loggedInCookie creates a logged-in session with h and returns its cookie.
 //
-// CSRF トークンの発行は認証を通ったあとに行われるため、OAuth のコールバックを
-// 経ずにログイン状態を作ります。クッキーは h 自身に焼かせます。自前でストアを
-// 組み立てると、セッションの実体は h の側にあるので読めません。
+// CSRF tokens are issued after authentication, so the logged-in state is created without going
+// through the OAuth callback. h itself bakes the cookie. A hand-built store could not read it,
+// because the session data lives on h's side.
 func loggedInCookie(t *testing.T, h *session.Handler) *http.Cookie {
 	t.Helper()
 
@@ -369,12 +369,12 @@ func loggedInCookie(t *testing.T, h *session.Handler) *http.Cookie {
 
 	cookies := rec.Result().Cookies()
 	if len(cookies) == 0 {
-		t.Fatal("セッションクッキーが生成されていない")
+		t.Fatal("no session cookie was created")
 	}
 	return cookies[0]
 }
 
-// mustOIDC は、テスト用に構成済みの検証器を作ります（New は設定が欠けるとエラーを返します）。
+// mustOIDC creates a configured verifier for tests (New returns an error when settings are missing).
 func mustOIDC(t *testing.T, audience string, allowed []string) *oidc.Verifier {
 	t.Helper()
 	v, err := oidc.New(audience, allowed)

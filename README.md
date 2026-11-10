@@ -6,172 +6,176 @@
 [![Platform](https://img.shields.io/badge/Platform-Cloud%20Run-blue?logo=google-cloud)](https://cloud.google.com/run)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 🚀 概要 (About) - 人もエージェントも、同じ URL でレビューを頼む
+English | [日本語](README.ja.md)
 
-**ADK Review** は、Git リポジトリの差分を AI エージェントにレビューさせる Cloud Run + Cloud Tasks 上の
-サービスです。
+## 🚀 About - People and agents request reviews at the same URL
 
-リポジトリの URL と比較する 2 つのブランチ、レビューモードを渡すと、[ADK for Go](https://github.com/google/adk-go)
-のエージェントが head をチェックアウトした作業ディレクトリを読み取り専用ツール（`read_file` / `list_files` /
-`search_text`）で調べ、**差分の外**と突き合わせてから指摘をまとめます。差分だけでは見えない
-「前の章との矛盾」「登場人物の設定の一貫性」「変更した関数の呼び出し元」が拾えます。
-主用途は Git で管理している記事・小説の原稿とソースコードで、何を見るかは `assets/prompts/` の
-モード（`article` / `novel` / `code`）で切り替えます。
+**ADK Review** is a service on Cloud Run + Cloud Tasks that has an AI agent review the diff of a Git
+repository.
 
-画面用と API 用でルートを分けていません。ブラウザのフォームからでも、MCP ゲートウェイ経由の
-エージェントからでも、同じ URL で依頼して結果を読めます。結果は判定（`Blocker` / `Major` / `Minor` /
-`None`）と指摘の一覧で、履歴に並びます。モデルの出力が上限で切れた場合は、完結していた指摘だけを
-`✂ 部分` として残し、一覧と詳細にそう表示します。差分の大きさ・所要時間・トークン使用量・
-ツール呼び出し回数は、失敗した実行も含めて履歴から読めます。
+Given a repository URL, the two branches to compare and a review mode, an [ADK for Go](https://github.com/google/adk-go)
+agent investigates the working directory with head checked out using read-only tools (`read_file` / `list_files` /
+`search_text`), checks the diff against what lies **beyond the diff**, and then writes up its findings. It catches
+what the diff alone cannot show: "a contradiction with the previous chapter", "consistency of a character's
+settings", "the callers of a changed function". The main subjects are article and novel manuscripts kept in Git
+and source code; what to look at is switched by the modes in `assets/prompts/` (`article` / `novel` / `code`).
 
-1 つのイメージを `SERVER_ROLE` で **Web 面（公開）と Worker 面（非公開）の 2 サービス**として
-デプロイします。レビューの手順そのものは [`go-review-kit`](https://github.com/shouni/go-review-kit) に、
-ジョブの記録とページングは [`go-job-kit`](https://github.com/shouni/go-job-kit) に委ね、本リポジトリは
-依頼の受付・認証・非同期実行・結果の保存と提供（画面と JSON API）、そしてレビュアー（ADK エージェント）の
-実装を担います。
+There are no separate routes for the screens and the API. Whether from the browser form or from an agent through
+the MCP gateway, you request a review and read the result at the same URL. A result is a decision (`Blocker` /
+`Major` / `Minor` / `None`) plus a list of findings, and it appears in the history. When the model's output is cut
+off at its limit, only the completed findings are kept as `✂ 部分` (partial), and the list and detail pages say so.
+The diff size, duration, token usage and number of tool calls can be read from the history, failed runs included.
+
+One image is deployed as **two services by `SERVER_ROLE`: the web role (public) and the worker role (private)**.
+The review procedure itself is delegated to [`go-review-kit`](https://github.com/shouni/go-review-kit), job
+records and paging to [`go-job-kit`](https://github.com/shouni/go-job-kit); this repository handles accepting
+requests, authentication, asynchronous execution, storing and serving results (screens and a JSON API), and the
+implementation of the reviewer (the ADK agent).
 
 ---
 
-## 📦 使い方
+## 📦 Usage
 
-### 1. 環境設定
+### 1. Configuration
 
-`ValidateEssentialConfig` はロールごとに必要なものだけを検証します。担当しない面の設定は
-読みません（worker 面は OAuth 系を要求しません）。Duration や整数の書式が不正な値は、既定値へ
-落とさず起動時にエラーになります。
+`ValidateEssentialConfig` validates only what each role needs. Settings for a role the process does not serve are
+not read (the worker role does not require OAuth settings). Durations or integers with an invalid format are an
+error at startup rather than falling back to the default.
 
-**どのロールでも必須**
+**Required for every role**
 
-| 変数名 | 説明 |
+| Variable | Description |
 | --- | --- |
-| `SERVER_ROLE` | `web` / `worker` / `both`（`both` はローカル開発用）。**未設定・未知の値は起動時エラー**です。担当する面だけを組み立て、ルートもその面のものだけを登録します。 |
-| `SERVICE_URL` | このサービス自身のルート URL（末尾スラッシュなし）。**既定値は無く、本番では HTTPS 必須**です（`localhost` などの開発用ホスト名だけ免除）。OAuth のリダイレクト先（`<SERVICE_URL>/auth/callback`）と、通知に載せる詳細画面の URL を組み立てます。 |
-| `GEMINI_MODELS` | Gemini モデル名。**カンマ区切りで複数指定でき、先頭が既定モデル**です。複数あればフォームで選べます。**既定値は持たず、未設定なら起動時にエラー**になります。 |
-| `GCP_PROJECT_ID` | GCP Project ID。**Gemini は Vertex AI 経由でのみ呼びます**（API キー経路は持ちません）。ローカル実行では ADC が必要です。 |
-| `GCS_REVIEW_BUCKET` | 進行状況と結果の置き場。バケット**名**で、`gs://` と末尾の `/` は付いていても落とします。web は履歴の表示・削除に、worker は保存に使うため、**どちらのロールでも必須**です。 |
-| `TASK_DISPATCH_DEADLINE` | Cloud Tasks がワーカーの応答を待つ上限（`10m` の形）。**ワーカーの実行時間の実効上限**で、`PIPELINE_TIMEOUT` より長くします。**既定値は持ちません。** Cloud Tasks が受け付ける範囲（15 秒〜30 分）の検査は投入口の構築時に gcp-kit が行います。 |
+| `SERVER_ROLE` | `web` / `worker` / `both` (`both` is for local development). **Unset or unknown values are an error at startup.** Only the roles served are built, and only their routes are registered. |
+| `SERVICE_URL` | This service's own root URL (no trailing slash). **It has no default, and HTTPS is required in production** (only development host names such as `localhost` are exempt). It builds the OAuth redirect (`<SERVICE_URL>/auth/callback`) and the detail page URL put in notifications. |
+| `GEMINI_MODELS` | Gemini model names. **Several can be given, comma-separated; the first is the default model.** With several, they can be chosen on the form. **There is no default; unset is an error at startup.** |
+| `GCP_PROJECT_ID` | GCP project ID. **Gemini is called through Vertex AI only** (there is no API key path). Running locally needs ADC. |
+| `GCS_REVIEW_BUCKET` | Where progress and results are stored. A bucket **name**; a leading `gs://` and trailing `/` are dropped if present. The web role uses it to show and delete history, the worker role to save, so **it is required for both roles**. |
+| `TASK_DISPATCH_DEADLINE` | How long Cloud Tasks waits for the worker's response (in the form `10m`). **It is the effective limit on the worker's run time** and must be longer than `PIPELINE_TIMEOUT`. **It has no default.** gcp-kit checks the range Cloud Tasks accepts (15 seconds to 30 minutes) when the enqueuer is built. |
 
-**Web 面（`web` / `both`）で必須**
+**Required for the web role (`web` / `both`)**
 
-| 変数名 | 説明 |
+| Variable | Description |
 | --- | --- |
-| `CLOUD_TASKS_QUEUE_ID` | 投入先のキュー名。 |
-| `WORKER_URL` | worker **サービス**の URL。パスは含めません。`both` では未設定なら `SERVICE_URL` を使います（自己投入）。 |
-| `GCP_LOCATION_ID` | **Cloud Tasks キューのリージョン**（例: `asia-northeast1`）。Gemini のロケーションとは別物で、そちらは `global` に固定してあります。 |
-| `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` | タスクに載せる caller SA（web 面の実行 SA）。**トークンを発行するのは Cloud Tasks** であって、このプロセスが署名するわけではありません。 |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth のクライアント。 |
-| `ALLOWED_EMAILS` / `ALLOWED_DOMAINS` | ログインを許可する相手（カンマ区切り）。**どちらも空だと起動しません。** |
-| `ALLOWED_M2M_SERVICE_ACCOUNTS` | 機械（MCP ゲートウェイなど）が OIDC Bearer で叩くときに許可する SA（カンマ区切り）。**空だと web 面は起動しません。** |
+| `CLOUD_TASKS_QUEUE_ID` | The name of the queue tasks are submitted to. |
+| `WORKER_URL` | The URL of the worker **service**, without a path. Under `both`, unset falls back to `SERVICE_URL` (enqueueing to itself). |
+| `GCP_LOCATION_ID` | **The region of the Cloud Tasks queue** (e.g. `asia-northeast1`). It is not Gemini's location, which is fixed to `global`. |
+| `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` | The caller SA put on tasks (the web role's runtime SA). **Cloud Tasks issues the token**; this process does not sign it. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | The Google OAuth client. |
+| `ALLOWED_EMAILS` / `ALLOWED_DOMAINS` | Who may log in (comma-separated). **If both are empty, startup fails.** |
+| `ALLOWED_M2M_SERVICE_ACCOUNTS` | The SAs allowed when machines (such as the MCP gateway) call with an OIDC Bearer token (comma-separated). **If empty, the web role does not start.** |
 
-**Worker 面（`worker` / `both`）で必須**
+**Required for the worker role (`worker` / `both`)**
 
-| 変数名 | 説明 |
+| Variable | Description |
 | --- | --- |
-| `PIPELINE_TIMEOUT` | レビュー 1 件（clone〜AI〜保存）の実行時間の上限（`5m` の形）。**既定値は無く、`TASK_DISPATCH_DEADLINE` より短いこと**を起動時に検査します（無制限は許しません）。 |
-| `ALLOWED_TASK_SERVICE_ACCOUNTS` | 受け付ける caller SA（カンマ区切り）。**投入側**の SA を指定します。web/worker で実行 SA を分けるため、worker には「他人の SA」が並びます。 |
-| `TASK_AUDIENCE_URL` | OIDC 検証の audience（Worker 自身の URL）。未設定なら `SERVICE_URL` を使います。 |
+| `PIPELINE_TIMEOUT` | The run time limit of one review (clone to AI to save), in the form `5m`. **It has no default, and startup checks that it is shorter than `TASK_DISPATCH_DEADLINE`** (unlimited is not allowed). |
+| `ALLOWED_TASK_SERVICE_ACCOUNTS` | The caller SAs accepted (comma-separated). Give the **submitting side's** SA. The web and worker roles run as separate SAs, so the worker lists "someone else's SA". |
+| `TASK_AUDIENCE_URL` | The audience for OIDC verification (the worker's own URL). Unset falls back to `SERVICE_URL`. |
 
-**任意**
+**Optional**
 
-| 変数名 | 説明 |
+| Variable | Description |
 | --- | --- |
-| `PORT` | 待ち受けポート (Default: `8080`)。 |
-| `AGENT_MAX_TOOL_CALLS` | レビュー 1 件あたりのツール呼び出し回数の上限。`0` で既定値の `32`。浅く速く済ませたいときはこの数を下げます。 |
-| `MAX_DIFF_BYTES` | AI へ送る差分の上限（バイト） (Default: `327680` = 320 KiB)。超えるとレビューを実行せず失敗します。`0` で無制限、負値は起動時エラーです。 |
-| `SSH_KEY_PATH` | リポジトリのクローンに使う SSH 秘密鍵のパス (Default: `~/.ssh/id_rsa`)。Cloud Run では Secret Manager のマウント先を渡します。 |
-| `SESSION_FIRESTORE_DATABASE` / `SESSION_FIRESTORE_COLLECTION` | セッションを置く Firestore（既定はどちらも `sessions`）。Web 面のみ。ジョブ状態は GCS に置くため、このデータベースはセッション専用です。 |
-| `HTTP_TIMEOUT` | Slack 通知など外部 HTTP 呼び出しの上限 (Default: `10s`)。 |
-| `SLACK_WEBHOOK_URL` | 完了・失敗・スキップの通知先。未設定なら通知は無効になります。 |
-| `LOG_LEVEL` | ログ出力レベル（`debug` / `info` / `warn` / `error`。Default: `info`）。 |
+| `PORT` | The listening port (Default: `8080`). |
+| `AGENT_MAX_TOOL_CALLS` | The limit on tool calls per review. `0` means the default of `32`. Lower it for shallower, faster reviews. |
+| `MAX_DIFF_BYTES` | The limit on the diff sent to the AI, in bytes (Default: `327680` = 320 KiB). Beyond it the review fails without running. `0` means unlimited; a negative value is an error at startup. |
+| `SSH_KEY_PATH` | The path of the SSH private key used to clone repositories (Default: `~/.ssh/id_rsa`). On Cloud Run, give the Secret Manager mount path. |
+| `SESSION_FIRESTORE_DATABASE` / `SESSION_FIRESTORE_COLLECTION` | The Firestore holding sessions (both default to `sessions`). Web role only. Job status lives in GCS, so this database is for sessions only. |
+| `HTTP_TIMEOUT` | The limit on external HTTP calls such as Slack notifications (Default: `10s`). |
+| `SLACK_WEBHOOK_URL` | Where success, failure and skip notifications go. Unset disables notifications. |
+| `LOG_LEVEL` | The log level (`debug` / `info` / `warn` / `error`. Default: `info`). |
 
-> **SSH ホストキー検証を無効化するスイッチはありません。** `Dockerfile` がビルド時に GitHub のホストキーを
-> `/etc/ssh/ssh_known_hosts` へ焼き込み、`SSH_KNOWN_HOSTS` で参照先を指しています。受け付ける
-> リポジトリ URL は `git@github.com:owner/repo.git` の形式だけです。
+> **There is no switch to disable SSH host key verification.** The `Dockerfile` bakes GitHub's host keys into
+> `/etc/ssh/ssh_known_hosts` at build time and points `SSH_KNOWN_HOSTS` at it. The only repository URL format
+> accepted is `git@github.com:owner/repo.git`.
 
-> 環境変数が持つのは**デプロイ先が決める設定**だけです。リポジトリ・ブランチ・モード・モデルといった
-> 実行ごとに変わる値は、タスクのペイロード（JSON）で渡します。
+> Environment variables hold only **settings decided by the deployment**. Values that change per run, such as the
+> repository, branches, mode and model, are passed in the task payload (JSON).
 
-実行 SA は面ごとに分けます。IAM の定義はインフラ側の Terraform が正で、必要な権限は次のとおりです。
+Each role runs as its own SA. The infrastructure's Terraform is the source of truth for IAM; the permissions
+needed are:
 
-| 面 | 必要な権限 |
+| Role | Permissions needed |
 | --- | --- |
-| web 面の SA | `GCS_REVIEW_BUCKET` の読み書き（受付記録・履歴表示・削除）、Cloud Tasks キューへの投入、`TASK_CALLER_SERVICE_ACCOUNT_EMAIL` としての OIDC トークン発行（ActAs）、セッション用 Firestore データベースの読み書き |
-| worker 面の SA | `GCS_REVIEW_BUCKET` の読み書き（`status.json` / `report.json`）、Vertex AI の呼び出し（`roles/aiplatform.user`） |
-| 共通 | 使用するシークレット（SSH 鍵・OAuth シークレットなど）の読み取り |
+| Web role SA | Read/write on `GCS_REVIEW_BUCKET` (acceptance records, showing and deleting history), submitting to the Cloud Tasks queue, issuing OIDC tokens as `TASK_CALLER_SERVICE_ACCOUNT_EMAIL` (ActAs), read/write on the session Firestore database |
+| Worker role SA | Read/write on `GCS_REVIEW_BUCKET` (`status.json` / `report.json`), calling Vertex AI (`roles/aiplatform.user`) |
+| Both | Reading the secrets used (SSH key, OAuth secret and so on) |
 
-* GCS はバケット単位で `objectUser` を付けます（`objectAdmin` やプロジェクトレベルは使いません）。
-* シークレットはシークレット単位で付けます。
-* セッション用の Firestore には `expiresAt` を対象にした TTL ポリシーが要ります。
+* GCS gets `objectUser` per bucket (not `objectAdmin`, and not at the project level).
+* Secrets are granted per secret.
+* The session Firestore needs a TTL policy on `expiresAt`.
 
-設定が不足していると `403 Forbidden` になります。
+Missing permissions result in `403 Forbidden`.
 
-### 2. 起動
+### 2. Startup
 
 ```bash
-go run .        # SERVER_ROLE が必須
+go run .        # SERVER_ROLE is required
 ```
 
-`SERVER_ROLE` が担う面だけを組み立てます。役割とハンドラーが噛み合わない構成は、ルーターが 404 を
-返す前に起動時に落とします（`builder.AppHandlers.Validate`）。
+Only the roles in `SERVER_ROLE` are built. A setup where roles and handlers do not match fails at startup, before
+the router could return a 404 (`builder.AppHandlers.Validate`).
 
-| ロール | 組み立てるもの | 公開されるルート |
+| Role | What is built | Routes exposed |
 | --- | --- | --- |
-| `web` | 依頼フォーム・モード一覧・履歴・詳細・削除・Cloud Tasks への投入、セッション用 Firestore | `/`, `/modes`, `/jobs/*`, `/auth/*` |
-| `worker` | パイプライン（Git + ADK エージェント + GCS + 通知） | `POST /tasks/execute-review` |
-| `both` | 両方（ローカル開発用） | 上記すべて |
+| `web` | Request form, mode list, history, detail, deletion, submission to Cloud Tasks, session Firestore | `/`, `/modes`, `/jobs/*`, `/auth/*` |
+| `worker` | Pipeline (Git + ADK agent + GCS + notifications) | `POST /tasks/execute-review` |
+| `both` | Both (for local development) | All of the above |
 
-`both` で起動しても、Cloud Tasks は localhost へ配送できないため、**依頼を送ってもレビューは実行されず、
-履歴が `queued` のまま残ります**（キューは `max_attempts = 1` で再試行も来ません）。ロジックの確認は
-`go test ./... -race` で行います。
+Even started with `both`, Cloud Tasks cannot deliver to localhost, so **a submitted request never runs a review and
+the history stays at `queued`** (the queue has `max_attempts = 1`, so no retry comes either). Verify the logic with
+`go test ./... -race`.
 
-### 3. HTTP エンドポイント
+### 3. HTTP endpoints
 
-**認証は 1 つです。** `auth.Protected` が OIDC の Bearer とセッションの両方を通すため、同じ URL を
-人も機械も叩けます。`GET /health` と `/static/*` だけが認証の外側で、ロールに関係なく登録されます。
+**There is a single authentication.** `auth.Protected` accepts both an OIDC Bearer token and a session, so people
+and machines call the same URLs. Only `GET /health` and `/static/*` are outside authentication, and they are
+registered regardless of the role.
 
-| メソッド | パス | 用途 |
+| Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/health` | ヘルスチェック。認証不要 |
-| `GET` | `/static/*` | 埋め込みの CSS / JS と `vendor/` 配下の Bootstrap。認証不要。CDN を参照しないため CSP は `default-src 'self'`。バージョンがパスに入る `vendor/` は `public, max-age=31536000, immutable`、自前アセットは `public, max-age=300, must-revalidate` |
-| `GET` | `/auth/login` `/auth/callback` `/auth/logout` | Google OAuth のログイン・コールバック・ログアウト |
-| `GET` | `/` | レビュー依頼フォーム。`?from={jobID}` でそのレビューの依頼内容を引き継ぎます（詳細画面の「同じ内容で再依頼」）。読み込めなければ既定値で開きます |
-| `GET` | `/modes` | 選べるレビューモードの一覧（JSON のみ。`key` / `label` / `direction` / `use_when` / `excerpt`）。`assets/prompts/*.md` の front matter が唯一の出所です |
-| `POST` | `/jobs` | レビューを投入。本文がフォームなら画面、JSON なら機械です（項目は[4. タスクのペイロード](#4-タスクのペイロード)）。受付は `202` と `Location: /jobs/{jobID}`、JSON には `job_id` と `detail_url` |
-| `GET` | `/jobs` | 履歴を新しい順に。`?page=` / `?per_page=`（既定 20、上限 100）。JSON は `items` と `meta` |
-| `GET` | `/jobs/{jobID}` | ジョブ 1 件。投入から削除まで同じ URL です。ブラウザには詳細画面（指摘の全文・判定・計測値）、`Accept: application/json` には進行状況（`queued` / `running` / `succeeded` / `failed`）と `outcome`、`truncated`、`metrics`、成果物があれば `report_url`。完了検知のポーリング先はここです。**記録が無ければ 404、読めなければ 502** |
-| `GET` | `/jobs/{jobID}/report` | 指摘の全文（JSON のみ）。実行中は `409`、終わったが成果物が無い（失敗・スキップ）は `404` |
-| `DELETE` | `/jobs/{jobID}` | ジョブのプレフィックス配下をまとめて削除し `204`。画面の削除ボタンも fetch で DELETE を送ります。**実行中（`queued` / `running`）は `409`** |
-| `POST` | `/tasks/execute-review` | Cloud Tasks 専用のワーカー。OIDC 検証を通らないリクエストは 401、`SERVER_ROLE=web` では**ルートごと登録されない**ため 404 |
+| `GET` | `/health` | Health check. No authentication |
+| `GET` | `/static/*` | The embedded CSS / JS and Bootstrap under `vendor/`. No authentication. No CDN is referenced, so the CSP is `default-src 'self'`. `vendor/`, whose version is in the path, is `public, max-age=31536000, immutable`; the app's own assets are `public, max-age=300, must-revalidate` |
+| `GET` | `/auth/login` `/auth/callback` `/auth/logout` | Google OAuth login, callback and logout |
+| `GET` | `/` | The review request form. `?from={jobID}` carries over that review's request (the detail page's 「同じ内容で再依頼」, resubmit with the same contents). If it cannot be loaded, the form opens with the defaults |
+| `GET` | `/modes` | The selectable review modes (JSON only: `key` / `label` / `direction` / `use_when` / `excerpt`). The front matter of `assets/prompts/*.md` is the only source |
+| `POST` | `/jobs` | Submit a review. A form body means the screen, a JSON body means a machine (fields in [4. Task payload](#4-task-payload)). Acceptance is `202` with `Location: /jobs/{jobID}`; the JSON carries `job_id` and `detail_url` |
+| `GET` | `/jobs` | The history, newest first. `?page=` / `?per_page=` (default 20, max 100). JSON has `items` and `meta` |
+| `GET` | `/jobs/{jobID}` | One job. The same URL from submission to deletion. Browsers get the detail page (full findings, decision, measurements); `Accept: application/json` gets the progress (`queued` / `running` / `succeeded` / `failed`) with `outcome`, `truncated`, `metrics`, and `report_url` once there is an artifact. Poll here to detect completion. **No record is a 404, an unreadable one a 502** |
+| `GET` | `/jobs/{jobID}/report` | The full findings (JSON only). `409` while running, `404` when finished without an artifact (failed, skipped) |
+| `DELETE` | `/jobs/{jobID}` | Deletes everything under the job's prefix and returns `204`. The delete button on screen also sends DELETE via fetch. **`409` while running (`queued` / `running`)** |
+| `POST` | `/tasks/execute-review` | The worker, for Cloud Tasks only. A request failing OIDC verification gets 401; with `SERVER_ROLE=web` **the route is not registered at all**, so 404 |
 
-**同じリソースはルートも 1 本です。** 表現は `Accept` で決まり、`application/json` を送れば JSON が、
-ブラウザの `Accept` なら画面が返ります。エラー本文も同じ判定で `{"error": "..."}` になります。
-パスの切り方は public-docs の URL 命名規約に従います。
+**One resource, one route.** The representation is decided by `Accept`: send `application/json` and you get JSON;
+a browser's `Accept` gets the screen. Error bodies follow the same rule and become `{"error": "..."}`. Paths follow
+the public-docs URL naming convention.
 
-**副作用のあるメソッドには CSRF トークンが要ります。** フォームは `csrf_token` の hidden で、画面の JS は
-`X-CSRF-Token` ヘッダーで送ります。OIDC Bearer で認証した機械はセッションと CSRF の検証に入らず、
-代わりに `ALLOWED_M2M_SERVICE_ACCOUNTS` で呼び出し元を絞ります。
+**Methods with side effects need a CSRF token.** Forms send it in the hidden `csrf_token` field, and the screens'
+JS in the `X-CSRF-Token` header. Machines authenticated by an OIDC Bearer token skip session and CSRF checks;
+instead, callers are restricted by `ALLOWED_M2M_SERVICE_ACCOUNTS`.
 
-投入内容の検証（モードが `/modes` にあるか、モデルが `GEMINI_MODELS` にあるか、リポジトリ URL と
-ブランチ名の形式）は、画面も API も**同じ関数**を通ります。
+Validation of a submission (whether the mode is in `/modes`, the model in `GEMINI_MODELS`, and the format of the
+repository URL and branch names) goes through **the same function** for the screen and the API.
 
-### 4. タスクのペイロード
+### 4. Task payload
 
-ジョブの種類は 1 つです。`status.json` に記録される `command` は `review`（`domain.CommandReview`）で、
-タスク本文は `domain.ReviewRequest` です。
+There is one kind of job. The `command` recorded in `status.json` is `review` (`domain.CommandReview`), and the
+task body is a `domain.ReviewRequest`.
 
-| `command` | 何をするか | 必須フィールド |
+| `command` | What it does | Required fields |
 | --- | --- | --- |
-| `review` | 差分を取り、エージェントにレビューさせ、`report.json` を保存して通知する | `job_id`, `repo_url`, `base_branch`, `feature_branch`, `mode`, `model_name`, `storage_uri`, `public_url` |
+| `review` | Gets the diff, has the agent review it, saves `report.json` and notifies | `job_id`, `repo_url`, `base_branch`, `feature_branch`, `mode`, `model_name`, `storage_uri`, `public_url` |
 
-| フィールド | 説明 |
+| Field | Description |
 | --- | --- |
-| `job_id` | ジョブの識別子。成果物と進行状況の置き場、履歴の 1 行に対応します。Web 面が採番します。 |
-| `repo_url` | レビュー対象のリポジトリ。`git@github.com:owner/repo.git` の形式のみ。 |
-| `base_branch` / `feature_branch` | 比較するブランチ。`feature_branch` が head で、作業ディレクトリにはこちらがチェックアウトされます。 |
-| `mode` | レビューモード。`assets/prompts/<mode>.md` を置けばモードが増えます。表示名と説明はファイル冒頭の front matter（`label` / `direction` / `use_when` / `excerpt`）から出ます。一覧は `GET /modes` で見られます。 |
-| `model_name` | 使用する Gemini モデル名。`GEMINI_MODELS` にあるものだけ。 |
-| `storage_uri` | `report.json` の保存先。Web 面がジョブ ID から導きます。 |
-| `public_url` | 詳細画面の URL。Slack 通知のリンク先です。 |
+| `job_id` | The job's identifier. It corresponds to where the artifact and progress are stored and to one row of the history. Minted by the web role. |
+| `repo_url` | The repository to review. Only the form `git@github.com:owner/repo.git`. |
+| `base_branch` / `feature_branch` | The branches compared. `feature_branch` is head, and it is what is checked out in the working directory. |
+| `mode` | The review mode. Placing `assets/prompts/<mode>.md` adds a mode. The display name and description come from the front matter at the top of the file (`label` / `direction` / `use_when` / `excerpt`). `GET /modes` lists them. |
+| `model_name` | The Gemini model to use. Only those in `GEMINI_MODELS`. |
+| `storage_uri` | Where `report.json` is saved. Derived from the job ID by the web role. |
+| `public_url` | The detail page URL. The link target in Slack notifications. |
 
 ```json
 {
@@ -186,8 +190,8 @@ go run .        # SERVER_ROLE が必須
 }
 ```
 
-**`POST /jobs` に渡すのは最初の 5 項目だけです。** `job_id` / `storage_uri` / `public_url` は Web 面が
-決めるので、送ると `400` になります（知らない項目は黙って捨てません）。
+**Only the first 5 fields are sent to `POST /jobs`.** The web role decides `job_id` / `storage_uri` / `public_url`,
+so sending them is a `400` (unknown fields are not silently dropped).
 
 ```json
 {
@@ -199,96 +203,96 @@ go run .        # SERVER_ROLE が必須
 }
 ```
 
-1 ジョブ分のオブジェクトは、ジョブ ID のプレフィックス配下にまとまります。
+A job's objects are gathered under its job ID prefix.
 
 ```text
 gs://{GCS_REVIEW_BUCKET}/reviews/{jobID}/
-├── status.json   # 進行状況・一覧用メタ・実行の計測値（投入時に作成）
-└── report.json   # レビュー結果の全文（成功時のみ）
+├── status.json   # progress, list metadata, run measurements (created on submission)
+└── report.json   # the full review result (on success only)
 ```
 
-履歴一覧は `reviews/` 直下のプレフィックスを列挙して作るため、実行中・失敗・スキップのジョブも並びます。
-結果は JSON のまま保存し、表示は `/jobs/{jobID}` が行います。
+The history list is built by enumerating the prefixes directly under `reviews/`, so running, failed and skipped
+jobs appear too. Results are stored as JSON, and `/jobs/{jobID}` renders them.
 
 ---
 
-## 🔄 処理シーケンス図
+## 🔄 Sequence diagram
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as 利用者
-    participant Web as Web 面 (公開)
+    actor User as User
+    participant Web as Web role (public)
     participant Tasks as Cloud Tasks
-    participant Worker as Worker 面 (非公開)
+    participant Worker as Worker role (private)
     participant Git as GitHub (SSH)
-    participant Agent as ADK エージェント (Vertex AI)
+    participant Agent as ADK agent (Vertex AI)
     participant Store as GCS
     participant Slack as Slack
 
-    Note over User, Slack: 1. レビューを依頼する
-    User->>Web: POST /jobs （リポジトリ・ブランチ・モード・モデル）
-    Web->>Web: 検証し、ジョブ ID を発行。storage_uri と public_url を導出
-    Web->>Store: status.json に queued を記録
-    Note right of Web: **enqueue より先に**。逆だと Worker の running を上書きしかねません
+    Note over User, Slack: 1. Request a review
+    User->>Web: POST /jobs (repository, branches, mode, model)
+    Web->>Web: Validate and mint a job ID. Derive storage_uri and public_url
+    Web->>Store: Record queued in status.json
+    Note right of Web: **Before enqueueing.** The other way round could overwrite the worker's running
     Web->>Tasks: enqueue(ReviewRequest)
-    Note right of Web: 投入に失敗したら queued の記録を取り消します
-    Web-->>User: 202 受付 + Location: /jobs/{jobID}
+    Note right of Web: If enqueueing fails, the queued record is rolled back
+    Web-->>User: 202 Accepted + Location: /jobs/{jobID}
 
-    Note over User, Slack: 2. レビューを実行する
+    Note over User, Slack: 2. Run the review
     Tasks->>Worker: POST /tasks/execute-review (OIDC)
-    Worker->>Store: status.json を読む
-    Note right of Worker: succeeded なら再配信とみなして打ち切ります
-    Worker->>Store: running を記録
-    Worker->>Git: clone し、base..head の差分を取る
-    Note right of Worker: 差分が無ければ skipped、MAX_DIFF_BYTES 超なら失敗
-    Worker->>Worker: mode のプロンプトに差分を埋める
-    Worker->>Git: head をチェックアウト（作業ディレクトリ）
-    Worker->>Agent: プロンプト＋ツール（read_file / list_files / search_text）
-    loop ツール呼び出し（AGENT_MAX_TOOL_CALLS まで）
-        Agent->>Worker: 作業ディレクトリを読む
-        Worker-->>Agent: ファイル・一覧・検索結果
+    Worker->>Store: Read status.json
+    Note right of Worker: If succeeded, treat it as a redelivery and stop
+    Worker->>Store: Record running
+    Worker->>Git: Clone and take the base..head diff
+    Note right of Worker: No diff means skipped; over MAX_DIFF_BYTES means failed
+    Worker->>Worker: Fill the mode's prompt with the diff
+    Worker->>Git: Check out head (working directory)
+    Worker->>Agent: Prompt + tools (read_file / list_files / search_text)
+    loop Tool calls (up to AGENT_MAX_TOOL_CALLS)
+        Agent->>Worker: Read the working directory
+        Worker-->>Agent: Files, listings, search results
     end
-    Agent-->>Worker: Report（OutputSchema 準拠の JSON）
-    Note right of Worker: 出力が切れていたら完結していた指摘だけを拾い、truncated を立てます
-    Worker->>Store: report.json を書く
-    Worker->>Slack: 通知（成功は詳細画面のリンク、失敗は工程名）
-    Worker->>Store: succeeded / failed を記録（判定・計測値・truncated）
+    Agent-->>Worker: Report (JSON conforming to OutputSchema)
+    Note right of Worker: If the output was cut, keep only the completed findings and set truncated
+    Worker->>Store: Write report.json
+    Worker->>Slack: Notify (success links the detail page, failure names the step)
+    Worker->>Store: Record succeeded / failed (decision, measurements, truncated)
 
-    Note over User, Slack: 3. 結果を読む
+    Note over User, Slack: 3. Read the result
     User->>Web: GET /jobs/{jobID}
-    Web->>Store: status.json（と report.json）を読む
-    Web-->>User: 進行状況と report_url（JSON）／詳細画面（HTML）
+    Web->>Store: Read status.json (and report.json)
+    Web-->>User: Progress and report_url (JSON) / detail page (HTML)
     User->>Web: GET /jobs/{jobID}/report
-    Web-->>User: 指摘の全文
+    Web-->>User: The full findings
 ```
 
-## 🌳 プロジェクト構成ツリー図
+## 🌳 Project structure
 
 ```text
 adk-review/
-├── main.go                  # エントリポイント（ロガーの組み立てとサーバー起動）
-├── Dockerfile               # 静的バイナリと GitHub のホストキーだけを持つイメージ
-├── cloudbuild.yaml          # ビルドして 2 サービスへデプロイ
-├── assets/                  # 埋め込み（prompts/*.md・partials/*.md・templates/*.html・static/）
+├── main.go                  # Entry point (builds the logger and starts the server)
+├── Dockerfile               # An image holding only the static binary and GitHub's host keys
+├── cloudbuild.yaml          # Builds and deploys to the 2 services
+├── assets/                  # Embedded files (prompts/*.md, partials/*.md, templates/*.html, static/)
 └── internal/
-    ├── adapters/            # Git / Slack / 結果保存 / プロンプト / Vertex AI クライアント設定
-    ├── adkagent/            # ADK エージェント（llmagent + ツール + 出力スキーマ）
-    ├── app/                 # Container（依存の保持とライフサイクル）
-    ├── builder/             # SERVER_ROLE に応じた組み立て
-    ├── config/              # 環境変数の読み込みとロール別検証
-    ├── domain/              # モデル、保存先の規約、ポート定義、ワーカーのルート定数
-    ├── giturl/              # リポジトリ URL から表示用パスを取り出す
-    ├── pipeline/            # ワーカー本体。Runner が worker.Lifecycle に go-review-kit を載せる
-    ├── repository/          # GCS 上の履歴の読み取りと削除
-    └── server/              # chi ルーター・グレースフルシャットダウン
-        └── handlers/        #   Web 面（依頼フォーム・履歴・詳細・削除・モード一覧）
+    ├── adapters/            # Git / Slack / result storage / prompts / Vertex AI client config
+    ├── adkagent/            # ADK agent (llmagent + tools + output schema)
+    ├── app/                 # Container (holds dependencies and their lifecycle)
+    ├── builder/             # Assembly by SERVER_ROLE
+    ├── config/              # Loading environment variables and per-role validation
+    ├── domain/              # Models, storage conventions, port definitions, the worker route constant
+    ├── giturl/              # Extracts the display path from a repository URL
+    ├── pipeline/            # The worker body. Runner puts go-review-kit on worker.Lifecycle
+    ├── repository/          # Reading and deleting the history on GCS
+    └── server/              # chi router, graceful shutdown
+        └── handlers/        #   Web role (request form, history, detail, deletion, mode list)
 ```
 
 ---
 
-## 📜 ライセンス (License)
+## 📜 License
 
-* 同梱の [Bootstrap](https://getbootstrap.com/) と [Bootstrap Icons](https://icons.getbootstrap.com/) は
-  MIT License で、`assets/static/vendor/` に各 `LICENSE` を併置しています。
-* このプロジェクトは [MIT License](https://opensource.org/licenses/MIT) の下で公開されています。
+* The bundled [Bootstrap](https://getbootstrap.com/) and [Bootstrap Icons](https://icons.getbootstrap.com/) are
+  under the MIT License, each with its `LICENSE` next to it in `assets/static/vendor/`.
+* This project is released under the [MIT License](https://opensource.org/licenses/MIT).

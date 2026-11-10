@@ -6,44 +6,45 @@ import (
 	"github.com/shouni/netarmor/securenet"
 )
 
-// IsSecureServiceURL は、設定された ServiceURL が安全なスキーム (HTTPS など) を使用しているかどうかを確認します。
+// IsSecureServiceURL reports whether the configured ServiceURL uses a secure scheme (HTTPS and the like).
 func (c *Config) IsSecureServiceURL() bool {
 	return securenet.IsSecureServiceURL(c.Server.ServiceURL)
 }
 
-// ValidateEssentialConfig は設定バリデーションを行います。
+// ValidateEssentialConfig validates the settings.
 //
-// 書式の検証（Duration や SERVER_ROLE の解析など）は LoadConfig が済ませているため、
-// ここでは値の組み合わせと不足だけを確かめます。役割に関係ない共通項目を先に確かめ、
-// 面ごとの設定は担当するプロセスでだけ要求します。worker に OAuth の設定を要求すると、
-// 面ごとにサービスを分けた意味（worker の env を最小に保つ）が失われるためです。
+// Format checks (parsing Durations, SERVER_ROLE and so on) are done by LoadConfig, so only
+// combinations of values and missing values are checked here. Common items unrelated to the
+// role come first, and per-role settings are required only by the process serving that role.
+// Requiring OAuth settings on the worker would defeat the point of separate services per role
+// (keeping the worker's env minimal).
 //
-// 失敗は「起動を止める」ことに意味があります。ここを通してしまうと、設定漏れは
-// 利用者がレビューを投げたあと、しかも AI 呼び出しを終えた保存段階で初めて表面化します。
+// The point of failing is to stop startup. Let through, a missing setting would surface only
+// after a user submits a review, and at the save step after the AI call at that.
 func (c *Config) ValidateEssentialConfig() error {
 	if c.Server.ServiceURL == "" {
-		return fmt.Errorf("SERVICE_URL が設定されていません（OAuth のリダイレクト先と履歴リンクの組み立てに使います）")
+		return fmt.Errorf("SERVICE_URL is not set (it builds the OAuth redirect and the history links)")
 	}
 	if !c.IsSecureServiceURL() {
-		return fmt.Errorf("本番環境では SERVICE_URL ('%s') は HTTPS である必要があります", c.Server.ServiceURL)
+		return fmt.Errorf("SERVICE_URL ('%s') must be HTTPS in production", c.Server.ServiceURL)
 	}
 
 	if len(c.AI.GeminiModels) == 0 {
-		return fmt.Errorf("GEMINI_MODELS が設定されていません（カンマ区切りで複数指定すると、先頭が既定でフォームの選択肢になります）")
+		return fmt.Errorf("GEMINI_MODELS is not set (with several, comma-separated, the first is the default and all become choices on the form)")
 	}
 
-	// Gemini は Vertex AI 経由で呼ぶため、両面で要ります。
+	// Gemini is called through Vertex AI, so both roles need it.
 	if c.GCP.ProjectID == "" {
-		return fmt.Errorf("GCP_PROJECT_ID が設定されていません（Gemini は Vertex AI 経由で呼びます）")
+		return fmt.Errorf("GCP_PROJECT_ID is not set (Gemini is called through Vertex AI)")
 	}
 
-	// 両ロールで要ります。web は履歴の一覧・詳細・削除に、worker は成果物の保存に使います。
+	// Both roles need it: web for the history list, detail and deletion, worker for saving artifacts.
 	if c.Storage.GCSBucket == "" {
-		return fmt.Errorf("GCS_REVIEW_BUCKET が設定されていません")
+		return fmt.Errorf("GCS_REVIEW_BUCKET is not set")
 	}
 
 	if c.Tasks.DispatchDeadline <= 0 {
-		return fmt.Errorf("TASK_DISPATCH_DEADLINE が設定されていません（三段のタイムアウトはデプロイ設定が決めます。例: 10m）")
+		return fmt.Errorf("TASK_DISPATCH_DEADLINE is not set (the deployment settings decide the three-tier timeout, e.g. 10m)")
 	}
 
 	if c.Server.Role.ServesWeb() {
@@ -64,80 +65,81 @@ func (c *Config) ValidateEssentialConfig() error {
 	return nil
 }
 
-// validateWebConfig は、web 面（OAuth・セッション、タスク投入）の設定を検証します。
+// validateWebConfig validates the web role's settings (OAuth, sessions, task submission).
 func (c *Config) validateWebConfig() error {
-	// タスクを投入するのは web 面だけなので、キュー名も投入先も web 面の要件です。
+	// Only the web role submits tasks, so the queue name and the destination are web requirements.
 	if c.Tasks.QueueID == "" {
-		return fmt.Errorf("CLOUD_TASKS_QUEUE_ID が設定されていません")
+		return fmt.Errorf("CLOUD_TASKS_QUEUE_ID is not set")
 	}
 	if c.Tasks.WorkerURL == "" {
-		return fmt.Errorf("WORKER_URL が設定されていません")
+		return fmt.Errorf("WORKER_URL is not set")
 	}
 
-	// LocationID はそのキューが属するリージョンです。使うのは builder/task.go の
-	// タスク投入だけで、Gemini は adapters.geminiLocationID ("global") 固定のため
-	// worker 面では要りません。インフラ管理リポジトリが両ロールへ渡しますが、アプリ側に既定値は
-	// 置きません（プレースホルダで起動が通ると、失敗するのはタスク投入時になります）。
+	// LocationID is the queue's region. Only the task submission in builder/task.go uses it;
+	// Gemini is fixed to adapters.geminiLocationID ("global"), so the worker does not need it.
+	// The infrastructure repository passes it to both roles, but the app keeps no default (if a
+	// placeholder let startup through, the failure would come at task submission).
 	if c.GCP.LocationID == "" {
-		return fmt.Errorf("GCP_LOCATION_ID が設定されていません（Cloud Tasks のキューが属するリージョンです。例: asia-northeast1）")
+		return fmt.Errorf("GCP_LOCATION_ID is not set (the region of the Cloud Tasks queue, e.g. asia-northeast1)")
 	}
-	// caller SA はタスクを投入する側＝ web 面の要件です。worker が受け付ける許可リストは
-	// ALLOWED_TASK_SERVICE_ACCOUNTS で別に指定します。
+	// The caller SA is a requirement of the submitting side = the web role. The allowlist the
+	// worker accepts is given separately in ALLOWED_TASK_SERVICE_ACCOUNTS.
 	if c.Tasks.CallerServiceAccountEmail == "" {
-		return fmt.Errorf("TASK_CALLER_SERVICE_ACCOUNT_EMAIL が設定されていません")
+		return fmt.Errorf("TASK_CALLER_SERVICE_ACCOUNT_EMAIL is not set")
 	}
 
 	if c.Auth.GoogleClientID == "" || c.Auth.GoogleClientSecret == "" {
-		return fmt.Errorf("google OAuth 関連の設定（ClientID, ClientSecret）が不足しています")
+		return fmt.Errorf("google OAuth settings (ClientID, ClientSecret) are missing")
 	}
 
 	if len(c.Auth.AllowedEmails) == 0 && len(c.Auth.AllowedDomains) == 0 {
-		return fmt.Errorf("許可されたメールアドレスまたはドメインが一つも設定されていません（認可リストが空です）")
+		return fmt.Errorf("no allowed email address or domain is set (the allowlist is empty)")
 	}
 
 	return nil
 }
 
-// validateWorkerConfig は、Worker 面（Cloud Tasks の受信）の設定を検証します。
+// validateWorkerConfig validates the worker role's settings (receiving Cloud Tasks).
 func (c *Config) validateWorkerConfig() error {
 	if c.Tasks.TaskAudienceURL == "" {
-		return fmt.Errorf("TASK_AUDIENCE_URL が設定されていません。Cloud Tasks の OIDC 検証に必須です")
+		return fmt.Errorf("TASK_AUDIENCE_URL is not set; Cloud Tasks OIDC verification requires it")
 	}
-	// 空だと検証器が fail-closed になり、全タスクが失敗し続けます。
+	// Empty, the verifier fails closed and every task keeps failing.
 	if len(c.Tasks.AllowedServiceAccounts) == 0 {
-		return fmt.Errorf("許可する caller SA が 1 件も指定されていません。ALLOWED_TASK_SERVICE_ACCOUNTS を設定してください")
+		return fmt.Errorf("no caller SA is allowed; set ALLOWED_TASK_SERVICE_ACCOUNTS")
 	}
 
-	// 負値は無制限（0）へ黙って落とさずエラーにします。ライブラリは 0 以下を無視するので、
-	// 上限を狭めたつもりの入力が「上限なし」で動きます。差分の大きさで落ちるのは
-	// モデルを呼び終えたあとなので、いちばん高くつく壊れ方が既定に戻ります。
+	// A negative value is an error rather than silently becoming unlimited (0). The library
+	// ignores 0 and below, so input meant to tighten the limit would run with "no limit". A
+	// failure over the diff's size then comes after the model call, so the most expensive
+	// failure would become the default again.
 	if c.Pipeline.MaxDiffBytes < 0 {
-		return fmt.Errorf("MAX_DIFF_BYTES に負の値は指定できません (%d)。無制限にするなら 0 です", c.Pipeline.MaxDiffBytes)
+		return fmt.Errorf("MAX_DIFF_BYTES cannot be negative (%d); use 0 for unlimited", c.Pipeline.MaxDiffBytes)
 	}
 	return nil
 }
 
-// validateTimeouts は、タイムアウトの三段の大小関係を起動時に確かめます。
+// validateTimeouts checks the ordering of the three-tier timeout at startup.
 //
-// ★ PIPELINE_TIMEOUT と dispatch deadline が同時に見えるのはこの package だけなので、
-// 不変条件の番人はここに置きます。逆転していると「Cloud Tasks が先に打ち切る →
-// 失敗レポートも Slack 通知も残らない」という、いちばん気付きにくい壊れ方をします。
+// ★ This package is the only place that sees both PIPELINE_TIMEOUT and the dispatch deadline,
+// so the invariant's guard lives here. Inverted, it breaks in the least noticeable way:
+// "Cloud Tasks cuts first -> neither a failure report nor a Slack notice is left".
 //
-// 三段目（Cloud Run の timeout）はアプリからは見えないので、そちらとの関係は
-// インフラ管理リポジトリの precondition が受け持ちます。
+// The third tier (Cloud Run's timeout) is invisible to the app, so its relation is covered by
+// a precondition in the infrastructure repository.
 func (c *Config) validateTimeouts() error {
-	// 無制限は許しません。Cloud Tasks が先に打ち切ると、失敗レポートも Slack 通知も
-	// 残らないまま review-queue は max_attempts = 1 で再試行しないため、
-	// レビューが queued のまま消えます（兄弟アプリと同じ判断です）。
+	// Unlimited is not allowed. If Cloud Tasks cuts first, neither a failure report nor a Slack
+	// notice is left and review-queue does not retry with max_attempts = 1, so the review
+	// vanishes while queued (the same decision as the sibling apps).
 	if c.Pipeline.Timeout <= 0 {
-		return fmt.Errorf("PIPELINE_TIMEOUT が設定されていません（worker では無制限にできません。TASK_DISPATCH_DEADLINE より短い値を設定してください）")
+		return fmt.Errorf("PIPELINE_TIMEOUT is not set (it cannot be unlimited on the worker; set a value shorter than TASK_DISPATCH_DEADLINE)")
 	}
 
 	if c.Pipeline.Timeout >= c.Tasks.DispatchDeadline {
 		return fmt.Errorf(
-			"PIPELINE_TIMEOUT (%s) は TASK_DISPATCH_DEADLINE (%s) より短くしてください。"+
-				"長いと Cloud Tasks が先にリクエストを打ち切り、失敗レポートも Slack 通知も残らず、"+
-				"review-queue は max_attempts = 1 なので再試行もされません",
+			"PIPELINE_TIMEOUT (%s) must be shorter than TASK_DISPATCH_DEADLINE (%s); "+
+				"otherwise Cloud Tasks cuts the request first, leaving neither a failure report nor a Slack notice, "+
+				"and review-queue has max_attempts = 1, so there is no retry either",
 			c.Pipeline.Timeout, c.Tasks.DispatchDeadline)
 	}
 

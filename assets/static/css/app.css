@@ -7,34 +7,34 @@ body { background-color: #fcfdfb; }
 .nav-link { color: white !important; transition: all 0.2s; }
 .nav-link:hover { opacity: 0.8; transform: translateY(-1px); }
 
-/* ボタン等のブランドカラー統一 */
+/* Unify the brand colour of buttons and the like */
 .btn-primary { background-color: var(--zunda-green); border-color: var(--zunda-green); }
 .btn-primary:hover { background-color: var(--zunda-dark); border-color: var(--zunda-dark); }
 
-/* アクティブなリンクの強調 */
+/* Emphasise the active link */
 .nav-link.active { font-weight: bold; border-bottom: 2px solid white; }
 
-/* フッターの装飾 */
+/* Footer decoration */
 footer hr { border-top: 1px solid #dee2e6; width: 50%; margin: 2rem auto; }
 
-/* モデルが書いた地の文（判定理由・概要・指摘の本文）。
-   改行を残すのは、モデルが段落や箇条書きを改行で表すためです。潰すと 1 つの塊になり、
-   数文以上あるものが読めなくなります。
+/* Prose written by the model (decision rationale, summary, finding bodies).
+   Line breaks are kept because the model expresses paragraphs and bullet lists with them.
+   Collapsed, they become one block and anything longer than a few sentences is unreadable.
 
-   3 箇所に同じインラインスタイルを書いていたところ、判定理由だけ抜け落ちていました。
-   **同じ決まりが 3 つあると、増やしたときに 1 つ忘れます。** 定義はここ 1 つです。 */
+   The same inline style used to be written in 3 places, and the decision rationale lost it.
+   **With the same rule in 3 places, one is forgotten when another is added.** It is defined here only. */
 .model-text {
     white-space: pre-wrap;
 }
 
-/* 指摘の引用（excerpt）と修正案。
-   見せ方はモードで分かれます（プロンプトの front matter の excerpt が宣言し、
-   テンプレートの excerptClass がクラスへ写します）。code は等幅の暗い背景、
-   novel / article は地の文としての引用です。**同じ体裁で出すと、原稿の引用が
-   コードに見えます。** このアプリの主対象は原稿なので、そこは分けます。
+/* A finding's quotation (excerpt) and suggested fix.
+   The presentation depends on the mode (the prompt front matter's excerpt declares it,
+   and the template's excerptClass maps it to a class). code is monospace on a dark
+   background, novel / article are quoted as prose. **In the same style, a quote from a
+   manuscript looks like code.** Manuscripts are this app's main subject, so they differ.
 
-   どちらも折り返しを既定にします。横スクロールにすると、1 件読むたびにカードの中を
-   左右へ動かすことになります。インデントは残すので、コードでもネストの深さは読めます。 */
+   Both wrap by default. With horizontal scrolling, every finding would mean scrolling
+   sideways inside the card. Indentation is kept, so nesting depth stays readable in code. */
 .code-block,
 .quote-block {
     margin-bottom: 0;
@@ -42,42 +42,43 @@ footer hr { border-top: 1px solid #dee2e6; width: 50%; margin: 2rem auto; }
     border-radius: 0.5rem;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    /* 長い引用でページが埋まらないように、一定の高さで内側スクロールへ切り替えます。 */
+    /* Switch to inner scrolling past a fixed height so a long quote does not fill the page. */
     max-height: 24rem;
     overflow-y: auto;
 }
 
-/* コードとしての引用。配色はエディタテーマ Tokyo Night に寄せています。
-   ページ全体が明るいので、引用だけを沈ませると「モデルが引いてきた原文」と
-   「モデルが書いた文章」の境目が一目で分かります。 */
+/* A quote shown as code. The colours follow the Tokyo Night editor theme.
+   The page as a whole is light, so darkening only the quote shows at a glance where
+   "the original text the model quoted" ends and "the text the model wrote" begins. */
 .code-block {
     background-color: #1a1b26;
     color: #c0caf5;
     border: 1px solid #292e42;
-    /* 本文と同じ 16px です。引用はモデルが判断の根拠にした原文で、いちばん確かめたい
-       ところなので、それについて書かれた解説より小さくしません。13px まで落とすと、
-       日本語混じりのコードが解説より読みにくくなり、確認する側の視線が本文へ逃げます。 */
+    /* 16px, the same as the body text. The quote is the original text the model based its
+       judgement on, the part most worth checking, so it is not smaller than the commentary
+       about it. At 13px, code mixed with Japanese reads worse than the commentary and the
+       reader's eye drifts to the body text instead. */
     font-size: 1rem;
     line-height: 1.7;
-    /* 既定の 8 は、Go のようにタブで字下げするコードだと画面の半分が余白になります。 */
+    /* With the default of 8, code indented with tabs, like Go, is half blank space. */
     tab-size: 4;
 }
 
-/* 選択範囲も暗い背景に合わせます（既定の淡い青は文字が沈みます）。 */
+/* Match the selection to the dark background too (the default pale blue swallows the text). */
 .code-block ::selection,
 .code-block::selection {
     background-color: #33467c;
     color: #c0caf5;
 }
 
-/* 地の文としての引用。原稿を読む目で読めるように、本文と同じフォント・同じ大きさにし、
-   行間だけ広げます。左の線は、引用であることを一目で示すためのものです。 */
+/* A quote shown as prose. Same font and size as the body text so it reads like the
+   manuscript, with only the line spacing widened. The left rule marks it as a quote at a glance. */
 .quote-block {
     background-color: #fbfbf8;
     color: #212529;
     border: 1px solid #e7e9e3;
     border-left: 3px solid var(--zunda-green);
-    /* pre の既定は等幅です。地の文には本文のフォントを継がせます。 */
+    /* pre defaults to monospace. Prose inherits the body font. */
     font-family: inherit;
     font-size: 1rem;
     line-height: 1.9;

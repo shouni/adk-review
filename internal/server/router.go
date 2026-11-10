@@ -1,4 +1,4 @@
-// Package server は、HTTPルーティングとミドルウェアを構成します。
+// Package server configures HTTP routing and middleware.
 package server
 
 import (
@@ -19,12 +19,12 @@ import (
 	"github.com/shouni/adk-review/internal/domain"
 )
 
-// compressionLevel は gzip の圧縮レベルです。
+// compressionLevel is the gzip compression level.
 const compressionLevel = 5
 
-// NewRouter は、ミドルウェアとルーティングを統合した http.Handler を構築します。
+// NewRouter builds the http.Handler combining middleware and routing.
 //
-// projectID は Cloud Logging のトレース相関にのみ使用し、空なら相関を行いません。
+// projectID is used only for Cloud Logging trace correlation; empty means no correlation.
 func NewRouter(h *builder.AppHandlers, projectID string) http.Handler {
 	r := chi.NewRouter()
 	registerMiddleware(r, projectID)
@@ -33,28 +33,28 @@ func NewRouter(h *builder.AppHandlers, projectID string) http.Handler {
 	return r
 }
 
-// registerMiddleware は、標準的なミドルウェアを構成します。
+// registerMiddleware configures the standard middleware.
 func registerMiddleware(r *chi.Mux, projectID string) {
-	// トレース相関はログ出力より先に効かせる必要があるため最初に登録します。
-	// これが無いと Cloud Run のリクエストログとアプリログが親子で紐付かず、
-	// web → Cloud Tasks → worker と 2 サービスにまたがる 1 レビューを追えません。
+	// Trace correlation must apply before logging, so it is registered first. Without it the Cloud
+	// Run request logs and the app logs are not linked as parent and child, and one review spanning
+	// two services (web -> Cloud Tasks -> worker) cannot be followed.
 	r.Use(cloudlog.TraceMiddleware(projectID))
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.CleanPath)
-	// 画面は日本語 UTF-8（1 文字 3 バイト）なので圧縮がよく効きます。静的ファイルも
-	// 同じ経路に乗ります（vendor は immutable なので再圧縮は稀です）。
+	// The screens are Japanese UTF-8 (3 bytes per character), so compression works well. Static
+	// files take the same path (vendor is immutable, so recompression is rare).
 	r.Use(middleware.Compress(compressionLevel))
 	r.Use(secureheaders.Middleware(secureheaders.Config{
-		// Bootstrap の JS が遷移中にインラインスタイルを当てるため。
+		// Because Bootstrap's JS applies inline styles during transitions.
 		AllowInlineStyle: true,
 	}))
 }
 
-// registerRoutes は、各コンポーネントのハンドラーをルーティングに登録します。
+// registerRoutes registers each component's handlers with the router.
 func registerRoutes(r chi.Router, h *builder.AppHandlers) {
-	// --- 1. 公開ルート (ヘルスチェック) ---
-	// パスの選択理由（"/healthz" を使わない）は cloudrun.HealthPath を参照。
+	// --- 1. Public route (health check) ---
+	// For why this path (not "/healthz"), see cloudrun.HealthPath.
 	r.Get(cloudrun.HealthPath, cloudrun.Health)
 	registerStaticRoutes(r)
 
@@ -63,13 +63,13 @@ func registerRoutes(r chi.Router, h *builder.AppHandlers) {
 		return
 	}
 
-	// A. 公開ルート（認証もCSRFも不要なログイン周り）。worker 面では Auth ごと無いため
-	// 登録しません。
+	// A. Public routes (login, needing neither authentication nor CSRF). The worker role has no
+	// Auth at all, so they are not registered there.
 	if h.Auth != nil {
 		r.Handle("/auth/*", h.Auth.Routes()) // login / callback / logout
 	}
 
-	// B. 認証が必要なルート (Web UI)
+	// B. Routes requiring authentication (web UI)
 	r.Group(func(r chi.Router) {
 		if h.Auth == nil {
 			if h.Web != nil {
@@ -78,16 +78,18 @@ func registerRoutes(r chi.Router, h *builder.AppHandlers) {
 			return
 		}
 
-		// ブラウザ（セッション + CSRF）と他サービス（OIDC Bearer）が同じルートを叩きます。
-		// 二系統の合成をライブラリに任せるのは、経路ごとに自前で組むと片方だけ
-		// 強化されてドリフトするためです。判定順と CSRF の扱いは auth.Protected を参照。
+		// Browsers (session + CSRF) and other services (OIDC Bearer) call the same routes.
+		// Combining the two is left to the library because, built by hand per path, only one
+		// would get hardened and they would drift. For the order of checks and CSRF handling,
+		// see auth.Protected.
 		r.Use(auth.Protected(h.M2M, h.Auth))
 
 		r.Get("/", h.Web.HandleForm)
 		r.Get("/modes", h.Web.HandleModes)
 
-		// ジョブが唯一の主リソースです。投入から削除まで同じ /jobs/{jobID} で指し、
-		// 履歴は完了したジョブの一覧ビューです（public-docs の URL 命名規約）。
+		// The job is the only primary resource. The same /jobs/{jobID} names it from submission
+		// to deletion, and the history is a list view of finished jobs (the public-docs URL
+		// naming convention).
 		r.Route("/jobs", func(r chi.Router) {
 			r.Post("/", h.Web.HandleJobCreate)
 			r.Get("/", h.Web.HandleJobList)
@@ -98,7 +100,7 @@ func registerRoutes(r chi.Router, h *builder.AppHandlers) {
 
 	})
 
-	// C. ワーカー専用ルート (OIDC認証)
+	// C. Worker-only route (OIDC authentication)
 	r.Group(func(r chi.Router) {
 		if h.TaskAuth == nil {
 			if h.Worker != nil {
@@ -115,16 +117,16 @@ func registerRoutes(r chi.Router, h *builder.AppHandlers) {
 	})
 }
 
-// registerStaticRoutes は、埋め込み済みの静的ファイルを /static/* で配信します。
-// Cache-Control の判断（自前は短命、vendor は不変）とディレクトリ一覧の抑止は
-// go-serve-kit の staticfiles が持ちます。
+// registerStaticRoutes serves the embedded static files at /static/*.
+// go-serve-kit's staticfiles owns the Cache-Control decision (short-lived for our own files,
+// immutable for vendor) and suppressing directory listings.
 //
-// 認証の外側に置きます。スタイルシートにログインを求める理由が無く、
-// 未認証で表示されるログイン画面からも参照されるためです。
+// It sits outside authentication. There is no reason to require login for a stylesheet, and the
+// login page, shown unauthenticated, references them too.
 func registerStaticRoutes(r chi.Router) {
 	files, err := staticfiles.New(staticfiles.Config{FS: assets.StaticFiles, Dir: "static"})
 	if err != nil {
-		// 埋め込んだ定数の取り違えなので、リクエストを受ける前に止めます。
+		// This would be a mix-up of embedded constants, so it stops before accepting requests.
 		panic(fmt.Sprintf("static assets: %v", err))
 	}
 	r.Handle("/static/*", files)

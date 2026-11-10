@@ -12,7 +12,7 @@ import (
 	"github.com/shouni/adk-review/internal/pipeline"
 )
 
-// buildPipeline は、実行可能な domain.Pipeline を返します。
+// buildPipeline returns a runnable domain.Pipeline.
 func buildPipeline(_ context.Context, appCtx *app.Container) (domain.Pipeline, error) {
 	sources, err := adapters.NewDiffSourceFactory(appCtx.Config.Git.SSHKeyPath)
 	if err != nil {
@@ -21,7 +21,7 @@ func buildPipeline(_ context.Context, appCtx *app.Container) (domain.Pipeline, e
 
 	publisher, err := adapters.NewReportPublisher(appCtx.Store)
 	if err != nil {
-		return nil, fmt.Errorf("ReportPublisher の構築に失敗しました: %w", err)
+		return nil, fmt.Errorf("failed to build the ReportPublisher: %w", err)
 	}
 
 	core, err := reviewpipeline.New(reviewpipeline.Deps{
@@ -31,15 +31,16 @@ func buildPipeline(_ context.Context, appCtx *app.Container) (domain.Pipeline, e
 		Publisher:         publisher,
 		Notifier:          appCtx.Notifier,
 	},
-		// 締切はライブラリに持たせます。自前で context に被せると、公開・通知のための
-		// 切り離しより外側に掛かり、打ち切りと同時に失敗通知まで落ちます。
+		// The deadline is left to the library. Put on the context by hand, it would sit outside
+		// the detachment done for publishing and notifying, and the failure notice would be lost
+		// together with the cut-off.
 		reviewpipeline.WithRunTimeout(appCtx.Config.Pipeline.Timeout),
-		// 大きすぎる差分は AI へ送る前に落とします。送っても出力の途中切れか締切超過で
-		// 失敗しますが、どちらもモデルを呼び終えたあとにしか分かりません。
+		// An oversized diff fails before it is sent to the AI. Sent, it would fail anyway with
+		// truncated output or a missed deadline, but either is known only after the model call.
 		reviewpipeline.WithMaxDiffBytes(appCtx.Config.Pipeline.MaxDiffBytes),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("パイプラインの構築に失敗しました: %w", err)
+		return nil, fmt.Errorf("failed to build the pipeline: %w", err)
 	}
 
 	return pipeline.NewRunner(core, appCtx.StatusStore), nil

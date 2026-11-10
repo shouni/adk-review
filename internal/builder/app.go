@@ -1,5 +1,5 @@
-// Package builder は、設定値から各サービスクライアント・パイプラインの
-// 依存関係を組み立てるファクトリ関数を提供します。
+// Package builder provides the factory functions that build the service clients and the
+// pipeline's dependencies from the configuration.
 package builder
 
 import (
@@ -18,7 +18,7 @@ import (
 	"github.com/shouni/adk-review/internal/repository"
 )
 
-// BuildContainer は外部サービスとの接続を確立し、依存関係を組み立てた app.Container を返します。
+// BuildContainer connects to the external services and returns an app.Container with its dependencies built.
 func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Container, err error) {
 	var resources []io.Closer
 	defer func() {
@@ -31,21 +31,21 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 		}
 	}()
 
-	// 1. HTTP クライアント
+	// 1. HTTP client
 	httpClient := httpkit.New(httpkit.WithTimeout(cfg.HTTP.Timeout))
 
-	// 2. ストレージ I/O
+	// 2. Storage I/O
 	storage, err := gcs.New(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("GCSストレージの生成に失敗しました: %w", err)
+		return nil, fmt.Errorf("failed to create the GCS storage: %w", err)
 	}
 	resources = append(resources, storage)
 	store, err := storage.Store()
 	if err != nil {
-		return nil, fmt.Errorf("I/Oコンポーネントの初期化に失敗しました: %w", err)
+		return nil, fmt.Errorf("failed to initialise the I/O components: %w", err)
 	}
 
-	// 3. 進行状況と履歴
+	// 3. Progress and history
 	layout := domain.NewStorageLayout(cfg.Storage.GCSBucket)
 	statusStore := buildStatusStore(store, layout)
 	history := repository.NewHistory(store, statusStore, layout)
@@ -56,19 +56,19 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 		Layout:      layout,
 		StatusStore: statusStore,
 		History:     history,
-		// Store はファクトリが持つクライアントを包むだけで、寿命はファクトリ側にあります。
-		// 組み立てに失敗したときは resources 側が storage を直接閉じるため、
-		// Closers は成功して返ったあとの解放だけを受け持ちます。
+		// Store only wraps the factory's client; the factory owns its lifetime.
+		// When construction fails, resources closes storage directly, so Closers only
+		// handles the release after a successful return.
 		Closers: []io.Closer{storage},
 	}
 
-	// 4. web 面だけの依存: セッションの保存先と Task Enqueuer（レビュー依頼の投入口）
+	// 4. Web-only dependencies: the session store and the Task Enqueuer (where review requests are submitted)
 	if cfg.Server.Role.ServesWeb() {
-		// セッションはジョブ状態とは別のデータベースに置きます（SessionDatabase）。
-		// クライアントの寿命はストアが持つので、Closers にはストアを登録します。
+		// Sessions live in a database separate from the job status (SessionDatabase).
+		// The store owns the client's lifetime, so the store is registered in Closers.
 		sessionStore, err := session.OpenFirestoreStore(ctx, cfg.GCP.ProjectID, cfg.Auth.SessionDatabase, cfg.Auth.SessionCollection)
 		if err != nil {
-			return nil, fmt.Errorf("セッションストアの構築に失敗しました: %w", err)
+			return nil, fmt.Errorf("failed to build the session store: %w", err)
 		}
 		resources = append(resources, sessionStore)
 		appCtx.Closers = append(appCtx.Closers, sessionStore)
@@ -76,34 +76,34 @@ func BuildContainer(ctx context.Context, cfg *config.Config) (container *app.Con
 
 		enqueuer, err := buildTaskEnqueuer(ctx, cfg)
 		if err != nil {
-			return nil, fmt.Errorf("TaskEnqueuer の構築に失敗しました: %w", err)
+			return nil, fmt.Errorf("failed to build the TaskEnqueuer: %w", err)
 		}
-		// nil のポインタを app.TaskEnqueuer へ代入すると「非 nil のインターフェースが
-		// nil を保持する」状態になり、Closers の nil チェックをすり抜けて nil レシーバーで
-		// Close が呼ばれます。組み立てたときにだけ両方へ入れるのはそれを避けるためです。
-		// resources だけに入れると、成功して返ったあとに誰も閉じません。
+		// Assigning a nil pointer to app.TaskEnqueuer makes "a non-nil interface holding
+		// nil", which slips past the nil check in Closers and calls Close on a nil receiver.
+		// It goes into both only when built, to avoid that. Put only into resources,
+		// nobody would close it after a successful return.
 		resources = append(resources, enqueuer)
 		appCtx.Closers = append(appCtx.Closers, enqueuer)
 		appCtx.TaskEnqueuer = enqueuer
 	}
 
-	// 5. Worker 面だけの依存: プロンプト・通知・パイプライン（レビューの実行系）
+	// 5. Worker-only dependencies: prompts, notifications, pipeline (what runs the review)
 	if cfg.Server.Role.ServesWorker() {
 		promptGen, err := adapters.NewPromptAdapter()
 		if err != nil {
-			return nil, fmt.Errorf("PromptAdapter の構築に失敗しました: %w", err)
+			return nil, fmt.Errorf("failed to build the PromptAdapter: %w", err)
 		}
 		appCtx.PromptGen = promptGen
 
 		slack, err := adapters.NewSlackAdapter(httpClient.WithoutRetry(), cfg.Notification.SlackWebhookURL)
 		if err != nil {
-			return nil, fmt.Errorf("SlackAdapter の構築に失敗しました: %w", err)
+			return nil, fmt.Errorf("failed to build the SlackAdapter: %w", err)
 		}
 		appCtx.Notifier = slack
 
 		pipeline, err := buildPipeline(ctx, appCtx)
 		if err != nil {
-			return nil, fmt.Errorf("パイプラインの初期化に失敗しました: %w", err)
+			return nil, fmt.Errorf("failed to initialise the pipeline: %w", err)
 		}
 		appCtx.Pipeline = pipeline
 	}

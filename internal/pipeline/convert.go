@@ -6,7 +6,7 @@ import (
 	"github.com/shouni/adk-review/internal/domain"
 )
 
-// toReviewRequest は domain.ReviewRequest をライブラリの review.Request へ変換します。
+// toReviewRequest converts a domain.ReviewRequest into the library's review.Request.
 func toReviewRequest(req domain.ReviewRequest) review.Request {
 	return review.Request{
 		JobID:      req.JobID,

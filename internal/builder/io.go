@@ -7,10 +7,10 @@ import (
 	"github.com/shouni/adk-review/internal/domain"
 )
 
-// buildStatusStore は、ジョブ進行状況の読み書きを初期化します。
+// buildStatusStore initialises reading and writing of the job progress.
 //
-// 配置を UnderJobDir に委ねているのは、成果物と同じジョブディレクトリ配下へ置くためです。
-// 履歴の削除がプレフィックスの一括削除で済み、状態ファイルの消し漏れが起きません。
+// Placement is left to UnderJobDir so it sits under the same job directory as the artifacts.
+// Deleting history is then one prefix deletion, and no status file is left behind.
 func buildStatusStore(store remoteio.Store, layout domain.StorageLayout) domain.StatusStore {
 	return jobstatus.NewStore[domain.JobStatus](
 		store,

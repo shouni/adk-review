@@ -25,7 +25,7 @@ func TestGetRepositoryPath(t *testing.T) {
 		{
 			name:     "SSH_Protocol_Colon",
 			inputURL: "git@bitbucket.org:team/repository.git",
-			want:     "team/repository", // git@ と .git が除去され、: が / に変換される
+			want:     "team/repository", // git@ and .git are removed and : becomes /
 		},
 		{
 			name:     "SSH_Protocol_LongPath",
@@ -35,7 +35,7 @@ func TestGetRepositoryPath(t *testing.T) {
 		{
 			name:     "SSH_URLScheme",
 			inputURL: "ssh://git@github.com/owner/repo.git",
-			want:     "owner/repo", // net/url が処理
+			want:     "owner/repo", // handled by net/url
 		},
 		{
 			name:     "URL_SubDir",
@@ -50,12 +50,12 @@ func TestGetRepositoryPath(t *testing.T) {
 		{
 			name:     "EmptyURL",
 			inputURL: "",
-			want:     "", // パースエラー時、元のURLがそのまま返される
+			want:     "", // on a parse error the original URL is returned as is
 		},
 		{
 			name:     "InvalidURL",
 			inputURL: "::invalid-url",
-			want:     "::invalid-url", // パースエラー時、元のURLがそのまま返される
+			want:     "::invalid-url", // on a parse error the original URL is returned as is
 		},
 	}
 

@@ -9,10 +9,10 @@ import (
 	"github.com/shouni/adk-review/internal/domain"
 )
 
-// buildTaskEnqueuer は、Cloud Tasks エンキューアを初期化します。
+// buildTaskEnqueuer initialises the Cloud Tasks enqueuer.
 //
-// 投入先は自分自身ではなく worker サービス（WORKER_URL）です。both で動かすローカル
-// 開発では WORKER_URL 未設定 → SERVICE_URL に落ちるため、自己投入になります。
+// Tasks go to the worker service (WORKER_URL), not to this process. In local development under
+// both, an unset WORKER_URL falls back to SERVICE_URL, so it enqueues to itself.
 func buildTaskEnqueuer(ctx context.Context, cfg *config.Config) (*tasks.Enqueuer[domain.ReviewRequest], error) {
 
 	taskCfg := tasks.Config{
@@ -23,7 +23,7 @@ func buildTaskEnqueuer(ctx context.Context, cfg *config.Config) (*tasks.Enqueuer
 		WorkerPath:          domain.WorkerTaskPath,
 		ServiceAccountEmail: cfg.Tasks.CallerServiceAccountEmail,
 		Audience:            cfg.Tasks.TaskAudienceURL,
-		// 未指定だと Cloud Tasks 既定の 10 分に落ちる。2026-08-10 まで指定が無かった。
+		// Unset, it falls back to the Cloud Tasks default of 10 minutes. It was unset until 2026-08-10.
 		DispatchDeadline: cfg.Tasks.DispatchDeadline,
 	}
 	return tasks.NewEnqueuer[domain.ReviewRequest](ctx, taskCfg)

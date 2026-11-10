@@ -11,33 +11,33 @@ import (
 	"google.golang.org/adk/v2/agent"
 )
 
-// read_file ツールです。作業ディレクトリ配下の 1 ファイルを、行範囲を指定して読みます。
+// The read_file tool. It reads one file under the working directory, optionally a line range.
 
 type readFileArgs struct {
 	Path string `json:"path"`
-	// From は読み始める行番号です（1 始まり）。0 や負値は先頭からとみなします。
+	// From is the line number to start at (1-based). 0 or negative means from the top.
 	From int `json:"from,omitempty"`
-	// Lines は読む行数です。0 以下なら From から末尾までです。
+	// Lines is the number of lines to read. 0 or less means from From to the end.
 	Lines int `json:"lines,omitempty"`
 }
 
 type readFileResult struct {
 	Content string `json:"content,omitempty"`
-	// From / To は実際に返した行の範囲です（1 始まり、To を含む）。
+	// From / To are the range of lines actually returned (1-based, To inclusive).
 	From int `json:"from,omitempty"`
 	To   int `json:"to,omitempty"`
-	// TotalLines はファイル全体の行数です。続きがあるかどうかはこれで分かります。
-	// 無いと、範囲を指定して読んだモデルは「これで全部なのか」を判断できません。
+	// TotalLines is the line count of the whole file; it tells whether more follows.
+	// Without it, a model reading a range cannot judge whether it has seen everything.
 	TotalLines int `json:"total_lines,omitempty"`
-	// Truncated は、返す量の上限に当たって末尾を落としたことを示します。
+	// Truncated means the end was dropped because the return limit was reached.
 	Truncated bool   `json:"truncated,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
 
-// readFileTool は ADK へ渡すハンドラです。functiontool が要求する引数型は agent.Context
-// ですが、ツール本体が使うのはその context.Context としての側面（キャンセルとログ）だけです。
-// 本体を素の context.Context で受けておくと、テストから agent.Context の実装を用意せずに
-// 呼べます。list_files / search_text も同じ形です。
+// readFileTool is the handler handed to ADK. functiontool requires an agent.Context argument,
+// but the tool body uses only its context.Context side (cancellation and logging). Taking a
+// plain context.Context in the body lets tests call it without implementing agent.Context.
+// list_files / search_text have the same shape.
 func (t *toolbox) readFileTool(toolCtx agent.Context, args readFileArgs) (readFileResult, error) {
 	return t.readFile(toolCtx, args)
 }
@@ -46,27 +46,27 @@ func (t *toolbox) readFile(toolCtx context.Context, args readFileArgs) (readFile
 	if !t.spend() {
 		return readFileResult{Error: budgetExhaustedMsg}, nil
 	}
-	// ★ 範囲も残します。これが無いと、モデルが範囲指定を使っているのかを後から
-	// 確かめられません。上限や道具の説明を変えたときに効いたかどうかは、
-	// prompt_tokens の増減だけでは「なぜ」まで届きません。
+	// ★ Log the range too. Without it there is no checking afterwards whether the model uses
+	// ranges. When a limit or a tool description changes, the rise or fall of prompt_tokens
+	// alone does not reach the "why" of whether it worked.
 	t.trace(toolCtx, "read_file", "path", args.Path, "from", args.From, "lines", args.Lines)
 
 	path, err := t.resolve(args.Path)
 	if err != nil {
-		slog.WarnContext(toolCtx, "ツールがパスを解決できませんでした", "tool", "read_file", "path", args.Path, "error", err)
+		slog.WarnContext(toolCtx, "tool could not resolve the path", "tool", "read_file", "path", args.Path, "error", err)
 		return readFileResult{Error: err.Error()}, nil
 	}
 
-	// path は resolve が root 配下へ閉じ込め済みです（symlink 経由の脱出も実体解決で
-	// 弾いています）。ここを可変にしないとツールとして成立しません。
-	content, err := os.ReadFile(path) //nolint:gosec // resolve でワークスペース内に限定済み
+	// resolve has already confined path under the root (escapes through symlinks are rejected
+	// by resolving the real path). The path has to vary here, or there is no tool.
+	content, err := os.ReadFile(path) //nolint:gosec // resolve has confined it to the workspace
 	if err != nil {
 		return readFileResult{Error: fmt.Sprintf("読み込みに失敗しました: %v", err)}, nil
 	}
 
-	// テキストかどうかは読み込んだ内容そのもので判定します。先に切り詰めると、
-	// 日本語のようなマルチバイト文字が途中で割れて「テキストではない」と誤判定されます
-	// （3 バイト文字なら切り口が文字境界に当たるのは 1/3 だけです）。
+	// Whether it is text is judged on the content as read. Truncating first would split a
+	// multi-byte character such as Japanese and misjudge it as "not text" (with 3-byte
+	// characters, only 1 in 3 cut points lands on a character boundary).
 	if !utf8.Valid(content) {
 		return readFileResult{Error: "テキストファイルではありません"}, nil
 	}
@@ -77,19 +77,19 @@ func (t *toolbox) readFile(toolCtx context.Context, args readFileArgs) (readFile
 	if len(body) > maxFileBytes {
 		body = body[:truncateAtRune(body, maxFileBytes)]
 		truncated = true
-		// 落としたぶん、返した範囲の終わりも縮みます。ここを直さないと、モデルは
-		// 読めていない行を読んだつもりで次へ進みます。
+		// What was dropped also shrinks the end of the returned range. Without fixing it here,
+		// the model moves on believing it read lines it never got.
 		//
-		// 改行の数が、返し切れた行数です。末尾が行の途中で切れていればその行は
-		// 数に入らず、ちょうど改行の直後で切れていれば次の行は 1 バイトも入って
-		// いません。どちらも to へ足すと、モデルは次にその先から読むので、
-		// 渡していない行が黙って飛ばされます。
+		// The number of newlines is the number of lines fully returned. If the end is cut
+		// mid-line, that line does not count; if it is cut right after a newline, not one byte
+		// of the next line is included. Adding either to `to` makes the model read on from
+		// beyond it, silently skipping lines it was never given.
 		if complete := strings.Count(body, "\n"); complete > 0 {
 			to = from + complete - 1
 		} else {
-			// 1 行が maxFileBytes を超えています。全部は返せないので、この行は
-			// 返したことにして先へ進ませます。範囲を空にすると、同じ行を読み直す
-			// だけのやり取りが残りの呼び出し回数ぶん繰り返されます。
+			// A single line exceeds maxFileBytes. It cannot be returned whole, so the line counts
+			// as returned and the model moves on. An empty range would repeat the exchange of
+			// re-reading the same line for every remaining call.
 			to = from
 		}
 	}
@@ -102,14 +102,13 @@ func (t *toolbox) readFile(toolCtx context.Context, args readFileArgs) (readFile
 	}, nil
 }
 
-// selectLines は、1 始まりの行範囲を切り出し、範囲と全体の行数を返します。
+// selectLines cuts out a 1-based line range and returns the range and the total line count.
 //
-// 範囲の指定が無ければ全体を返します（従来どおり）。範囲が外れている場合は空を返し、
-// 行番号は 0 になります。呼び出し側が総行数を見て指定し直せるようにするためで、
-// エラーにはしません。
+// Without a range it returns everything (as before). A range out of bounds returns empty with
+// line numbers 0. It is not an error, so the caller can look at the total and try again.
 func selectLines(text string, from, count int) (body string, first, last, total int) {
 	lines := strings.Split(text, "\n")
-	// 末尾の改行で生まれる空要素は行として数えません。
+	// The empty element produced by a trailing newline is not counted as a line.
 	if n := len(lines); n > 0 && lines[n-1] == "" {
 		lines = lines[:n-1]
 	}
@@ -123,26 +122,26 @@ func selectLines(text string, from, count int) (body string, first, last, total 
 	}
 
 	end := total
-	// from+count が桁溢れし得るため、残りの行数と比べる形にします。どちらの値も
-	// モデルが書く JSON なので、int の上限に近い値が届きます（足してから比べると
-	// 負に折り返し、end が from を下回って切り出しで panic します）。
+	// from+count can overflow, so compare against the remaining line count. Both values come
+	// from JSON the model writes, so values near the int limit do arrive (adding first would
+	// wrap negative, put end below from and panic on the slice).
 	if remaining := total - from + 1; count > 0 && count < remaining {
 		end = from + count - 1
 	}
 	return strings.Join(lines[from-1:end], "\n"), from, end, total
 }
 
-// truncateAtRune は、limit を超えない範囲で最も後ろの文字境界を返します。
-// content は utf8.Valid 済みであることを前提とします。
+// truncateAtRune returns the last character boundary not beyond limit.
+// content is assumed to have passed utf8.Valid.
 //
-// []byte（read_file の中身）と string（search_text のヒット行）の両方から呼ぶため型
-// パラメータにしています。どちらも中身はバイト列で、判定に使うのは添字だけです。
+// It is generic because it is called with both []byte (read_file's content) and string
+// (search_text's hit lines). Both are byte sequences, and only indexing is used.
 func truncateAtRune[T ~[]byte | ~string](content T, limit int) int {
 	if len(content) <= limit {
 		return len(content)
 	}
-	// limit の位置が文字の途中なら、その文字の先頭まで戻します。
-	// UTF-8 の継続バイトは 0b10xxxxxx なので、最大 3 バイト戻れば境界に着きます。
+	// If limit falls inside a character, step back to its first byte.
+	// UTF-8 continuation bytes are 0b10xxxxxx, so at most 3 steps back reach a boundary.
 	for limit > 0 && content[limit]&0xC0 == 0x80 {
 		limit--
 	}

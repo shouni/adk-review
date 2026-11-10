@@ -1,7 +1,8 @@
-// レビュー投入フォームの送信中表示。二重送信を防ぎ、戻るボタンで復帰させます。
+// The submitting state of the review submission form. Prevents double submission and
+// restores the form on the back button.
 //
-// もとは review_form.html に直接書かれていました。インラインのままだと CSP の
-// script-src に 'unsafe-inline' が必要になり、CDN 由来の危険と同じ扱いになります。
+// This used to be written directly in review_form.html. Left inline, CSP's script-src
+// would need 'unsafe-inline', which carries the same risk as CDN-sourced scripts.
 (function () {
     'use strict';
 
@@ -15,7 +16,7 @@
     const featureBranchInput = document.getElementById('feature_branch');
 
     /**
-     * ブランチ名のバリデーション
+     * Validates a branch name
      */
     function validateBranchInput(input) {
         const value = input.value || '';
@@ -32,7 +33,7 @@
     }
 
     /**
-     * ボタンの表示状態を切り替えるヘルパー
+     * Helper that switches the button's display state
      */
     function setSubmittingState(isSubmitting) {
         submitBtn.disabled = isSubmitting;
@@ -60,14 +61,14 @@
             return;
         }
 
-        // 即時無効化による送信キャンセルを避けるためsetTimeoutを使用
+        // setTimeout avoids cancelling the submission by disabling the button immediately
         setTimeout(() => {
             setSubmittingState(true);
         }, 0);
     });
 
     /**
-     * ブラウザの「戻る」ボタン等でBFキャッシュから復元された際の処理
+     * Handles a restore from the bfcache, such as by the browser's back button
      */
     window.addEventListener('pageshow', function(event) {
         if (event.persisted) {
