@@ -193,7 +193,7 @@ func testDomainRequest() domain.ReviewRequest {
 // The library (reviewpipeline.WithRunTimeout) owns the deadline, but if it were not passed, the
 // Cloud Tasks dispatch deadline would come first, the process would be SIGTERMed, and neither a
 // failure record nor a Slack notice would be left. This pins the wiring.
-func TestRunner_レビューに締切を被せる(t *testing.T) {
+func TestRunner_PutsADeadlineOnTheReview(t *testing.T) {
 	t.Parallel()
 
 	var reviewDeadline time.Time
@@ -219,7 +219,7 @@ func TestRunner_レビューに締切を被せる(t *testing.T) {
 }
 
 // 0 or below is unlimited. The escape hatch for long local debugging must stay open.
-func TestRunner_ゼロなら無制限(t *testing.T) {
+func TestRunner_ZeroMeansNoLimit(t *testing.T) {
 	t.Parallel()
 
 	var hasDeadline bool
@@ -241,7 +241,7 @@ func TestRunner_ゼロなら無制限(t *testing.T) {
 //
 // When cut off there is no result to save, so the Publisher is not called. This is exactly when
 // a report is needed, so it checks that the Notifier is called with an unexpired context.
-func TestRunner_打ち切り後も通知は走る(t *testing.T) {
+func TestRunner_NotifiesAfterTheCutOff(t *testing.T) {
 	t.Parallel()
 
 	notifier := &stubNotifier{}
@@ -271,7 +271,7 @@ func TestRunner_打ち切り後も通知は走る(t *testing.T) {
 }
 
 // The start of the run is recorded and the attempt count is incremented.
-func TestRunner_実行開始を記録する(t *testing.T) {
+func TestRunner_RecordsTheStart(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
@@ -292,7 +292,7 @@ func TestRunner_実行開始を記録する(t *testing.T) {
 
 // A redelivered finished task stops without running the review.
 // Cloud Tasks delivers at least once; without this the AI calls would run twice.
-func TestRunner_完了済みの再配信は打ち切る(t *testing.T) {
+func TestRunner_StopsARedeliveryOfASucceededJob(t *testing.T) {
 	t.Parallel()
 
 	req := testDomainRequest()
@@ -319,7 +319,7 @@ func TestRunner_完了済みの再配信は打ち切る(t *testing.T) {
 // redelivery (worker convention 2.1, item 5). It used to proceed, reasoning that "running twice
 // is easier to recover from", but proceeding rebuilds a finished job and pays the very cost this
 // guard exists to prevent.
-func TestRunner_状態を読めなければ実行しない(t *testing.T) {
+func TestRunner_DoesNotRunWhenTheStatusIsUnreadable(t *testing.T) {
 	t.Parallel()
 
 	unavailable := errors.New("gcs unavailable")
@@ -348,7 +348,7 @@ func TestRunner_状態を読めなければ実行しない(t *testing.T) {
 
 // The outcome is recorded from Run's return values. It used to ride on the notification hook,
 // but now that Run returns the Report it can be built directly.
-func TestRunner_結末を記録する(t *testing.T) {
+func TestRunner_RecordsTheOutcome(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -415,7 +415,7 @@ func TestRunner_結末を記録する(t *testing.T) {
 }
 
 // On success the review's contents (title, decision) are recorded too; they become a row of the history list.
-func TestRunner_結末にレビューの中身を載せる(t *testing.T) {
+func TestRunner_PutsTheReviewOnTheOutcome(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
@@ -440,7 +440,7 @@ func TestRunner_結末にレビューの中身を載せる(t *testing.T) {
 
 // The outcome is recorded even when the review is cut off at the deadline.
 // Recording with the expired context would leave nothing exactly when the record matters most.
-func TestRunner_打ち切り後も結末を記録する(t *testing.T) {
+func TestRunner_RecordsTheOutcomeAfterTheCutOff(t *testing.T) {
 	t.Parallel()
 
 	store := &stubStore{}
