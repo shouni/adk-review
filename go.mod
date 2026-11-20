@@ -11,13 +11,13 @@ require (
 	github.com/shouni/go-job-kit v1.5.8
 	github.com/shouni/go-notify v1.6.6
 	github.com/shouni/go-prompt-kit v1.7.3
-	github.com/shouni/go-remote-io v1.13.17
+	github.com/shouni/go-remote-io v1.13.18
 	github.com/shouni/go-review-kit v1.9.6
 	github.com/shouni/go-serve-kit v1.3.1
 	github.com/shouni/go-utils v1.8.2
 	github.com/shouni/netarmor v1.4.4
 	go.yaml.in/yaml/v3 v3.0.6
-	google.golang.org/adk/v2 v2.7.1
+	google.golang.org/adk/v2 v2.8.0
 	google.golang.org/genai v1.77.0
 )
 
