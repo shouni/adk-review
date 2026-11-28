@@ -245,7 +245,7 @@ sequenceDiagram
     Note right of Worker: If succeeded, treat it as a redelivery and stop
     Worker->>Store: Record running
     Worker->>Git: Clone and take the base..head diff
-    Note right of Worker: No diff means skipped; over MAX_DIFF_BYTES means failed
+    Note right of Worker: No diff means skipped, over MAX_DIFF_BYTES means failed
     Worker->>Worker: Fill the mode's prompt with the diff
     Worker->>Git: Check out head (working directory)
     Worker->>Agent: Prompt + tools (read_file / list_files / search_text)
